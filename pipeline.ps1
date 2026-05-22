@@ -27,15 +27,33 @@
 
 .PARAMETER SkipVerify
     Skip flac-detective verification.
+
+.PARAMETER DoRetry
+    Run Phase E : retry missed/fake tracks with query variants.
+
+.PARAMETER DoDeploy
+    Run Phase F : copy authentic FLACs to USB in correct folders. Off by default
+    because it modifies the USB - opt-in explicitly.
+
+.PARAMETER DeleteOld
+    Together with -DoDeploy : also delete the old fake .wav files from the USB
+    once their FLAC replacement is in place.
+
+.PARAMETER UsbRoot
+    Target USB root for deployment (default: D:\2023 Playlist Ultime)
 #>
 [CmdletBinding()]
 param(
     [string]$InputCsv = "D:\2023 Playlist Ultime\to_replace.csv",
+    [string]$UsbRoot = "D:\2023 Playlist Ultime",
     [int]$Limit = 0,
     [int]$OnlyTier = 0,
     [switch]$SkipConvert,
     [switch]$SkipDownload,
-    [switch]$SkipVerify
+    [switch]$SkipVerify,
+    [switch]$DoRetry,
+    [switch]$DoDeploy,
+    [switch]$DeleteOld
 )
 
 $ErrorActionPreference = 'Stop'
@@ -65,6 +83,26 @@ function Get-SoulseekCreds {
         throw "Could not parse Soulseek user/pass from $slskdYml"
     }
     return @{ User = $user; Pass = $pass }
+}
+
+function Parse-SldlMisses {
+    # Parse the sldl.log to find tracks reported as "Not found" or "All downloads failed"
+    param([string]$SldlLog, [string]$SldlInputCsv, [string]$OutCsv)
+    if (-not (Test-Path -LiteralPath $SldlLog))   { return 0 }
+    if (-not (Test-Path -LiteralPath $SldlInputCsv)) { return 0 }
+    $log = Get-Content -LiteralPath $SldlLog -Raw
+    # Match patterns: "Not found: Artist - Title" and "All downloads failed: ..."
+    $misses = New-Object System.Collections.Generic.HashSet[string]
+    foreach ($m in [regex]::Matches($log, '(?im)^(?:Not found|All downloads failed):\s*(.+)$')) {
+        [void]$misses.Add($m.Groups[1].Value.Trim())
+    }
+    $rows = Import-Csv -LiteralPath $SldlInputCsv -Encoding UTF8
+    $hits = $rows | Where-Object {
+        $key = "$($_.Artist) - $($_.Title)"
+        $misses.Contains($key)
+    }
+    $hits | Export-Csv -LiteralPath $OutCsv -NoTypeInformation -Encoding UTF8
+    return $hits.Count
 }
 
 # ----- main -----------------------------------------------------------------
@@ -140,8 +178,49 @@ if (-not $SkipVerify) {
     Log 'Step 3/4 : SKIPPED'
 }
 
-# Step 4: report (placeholder - full routing logic in lib\route-files.ps1 later)
-Log 'Step 4/4 : report (TODO)'
+# Step 4: parse misses
+Log 'Step 4 : parse sldl misses'
+$missCsv = "$Root\outputs\sldl_misses.csv"
+$missCount = Parse-SldlMisses -SldlLog "$Root\logs\sldl.log" -SldlInputCsv "$Root\inputs\sldl_input.csv" -OutCsv $missCsv
+Log ("Missed tracks : {0} -> {1}" -f $missCount, $missCsv)
+
+# Step 5: retry misses (opt-in)
+if ($DoRetry -and $missCount -gt 0) {
+    Log 'Step 5 : retry missed tracks with query variants'
+    $creds = if ($null -eq $creds) { Get-SoulseekCreds } else { $creds }
+    # stop slskd if it crept back in
+    Get-Process slskd -ErrorAction SilentlyContinue | Stop-Process -Force
+    & "$Root\lib\retry-fakes.ps1" `
+        -MissCsv $missCsv `
+        -MapJson "$Root\inputs\sldl_input_map.json" `
+        -SldlExe "$Root\bin\sldl\sldl.exe" `
+        -SldlConfig "$Root\config\sldl.conf" `
+        -SoulseekUser $creds.User `
+        -SoulseekPass $creds.Pass `
+        -StagingRetryDir "$Root\staging\retry"
+    Log 'retry complete'
+} else {
+    Log 'Step 5 : SKIPPED (-DoRetry not set or no misses)'
+}
+
+# Step 6: deploy to USB (opt-in, destructive on USB)
+if ($DoDeploy) {
+    Log 'Step 6 : deploy authentic FLACs to USB'
+    $latestReport = Get-ChildItem "$Root\staging" -Filter 'flac_report_*.txt' -ErrorAction SilentlyContinue | Sort-Object LastWriteTime -Descending | Select-Object -First 1
+    $reportPath = if ($latestReport) { $latestReport.FullName } else { '' }
+    & "$Root\lib\route-files.ps1" `
+        -StagingDir "$Root\staging" `
+        -MapJson "$Root\inputs\sldl_input_map.json" `
+        -UsbRoot $UsbRoot `
+        -DetectiveReport $reportPath `
+        -OutputDir "$Root\outputs" `
+        -DeleteOld:$DeleteOld
+    Log 'deploy complete'
+} else {
+    Log 'Step 6 : SKIPPED (-DoDeploy not set)'
+}
+
+# Final report
 $staged = Get-ChildItem "$Root\staging" -Recurse -File -ErrorAction SilentlyContinue
 Log ("Staging contains {0} files ({1:N1} MB total)" -f $staged.Count, (($staged | Measure-Object Length -Sum).Sum / 1MB))
 
