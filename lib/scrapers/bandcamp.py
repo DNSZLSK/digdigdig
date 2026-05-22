@@ -39,10 +39,11 @@ from pathlib import Path
 from typing import Any
 
 import requests
+import cloudscraper
 from bs4 import BeautifulSoup
 
 WISHLIST_URL = "https://bandcamp.com/{username}/wishlist"
-WISHLIST_API = "https://bandcamp.com/api/fancollector/1/wishlist_items"
+WISHLIST_API = "https://bandcamp.com/api/fancollection/1/wishlist_items"
 USER_AGENT = (
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
     "(KHTML, like Gecko) Chrome/120.0 Safari/537.36 searchseek/0.1"
@@ -53,7 +54,10 @@ TRALBUM_RE = re.compile(r"var\s+TralbumData\s*=\s*(\{.*?\});", re.DOTALL)
 
 
 def get_session() -> requests.Session:
-    s = requests.Session()
+    # Bandcamp is behind FingerprintJS / bot challenges on some endpoints.
+    # cloudscraper handles those transparently; underlying object is a
+    # requests.Session-compatible interface so the rest of the code is unchanged.
+    s = cloudscraper.create_scraper(browser={"browser": "chrome", "platform": "windows"})
     s.headers.update({
         "User-Agent": USER_AGENT,
         "Accept-Language": "en-US,en;q=0.9",
@@ -77,23 +81,29 @@ def fetch_initial_wishlist(session: requests.Session, username: str) -> dict[str
 
 
 def extract_initial_items(blob: dict) -> tuple[list[dict], int | None, str | None, bool]:
-    """Walk the blob to find (items, fan_id, last_token, more_available)."""
-    # The shape differs slightly across Bandcamp page versions.
-    # Try common paths.
-    fan_id = None
-    if "fan_data" in blob and "fan_id" in blob["fan_data"]:
-        fan_id = blob["fan_data"]["fan_id"]
-    elif "current_fan" in blob and "fan_id" in blob["current_fan"]:
-        fan_id = blob["current_fan"]["fan_id"]
+    """Walk the blob to find (items, fan_id, last_token, more_available).
 
-    wd = blob.get("wishlist_data") or blob.get("item_cache", {}).get("wishlist") or {}
-    items = wd.get("items") or list((wd.get("sequence") or []) or [])
+    Bandcamp pre-loads ~20 wishlist items in `item_cache.wishlist` (dict keyed
+    by item id like 'a764667333'), with display order given by
+    `wishlist_data.sequence`. The cursor for pagination is
+    `wishlist_data.last_token`, and `more_available` is implicit
+    (more_to_load if sequence length < item_count).
+    """
+    fan_id = (blob.get("fan_data") or {}).get("fan_id") \
+             or (blob.get("current_fan") or {}).get("fan_id")
+
+    wd = blob.get("wishlist_data") or {}
+    cache = (blob.get("item_cache") or {}).get("wishlist") or {}
+    sequence = wd.get("sequence") or []
     last_token = wd.get("last_token") or wd.get("older_than_token")
-    more = bool(wd.get("more_available", False))
+    item_count = wd.get("item_count", len(sequence))
+    more = len(sequence) < item_count
 
-    # Some versions put items in item_cache.wishlist as dict keyed by id
-    if not items and isinstance(blob.get("item_cache", {}).get("wishlist"), dict):
-        items = list(blob["item_cache"]["wishlist"].values())
+    # Build items in display order from sequence + cache
+    items = []
+    for sid in sequence:
+        if sid in cache and isinstance(cache[sid], dict):
+            items.append(cache[sid])
 
     return items, fan_id, last_token, more
 
