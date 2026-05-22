@@ -4,24 +4,20 @@
     folder per the routing map. Optionally delete the old fake .wav.
 
 .DESCRIPTION
-    Inputs:
-      - StagingDir : where sldl deposited the downloaded files
-      - MapJson    : routing map (artist+title key -> dossier + origFile)
-      - DetectiveReport (optional) : flac-detective text report; if provided,
-                                     only files marked authentic are deployed
-      - UsbRoot    : root of the USB key (e.g. D:\2023 Playlist Ultime)
-      - DryRun     : list actions without performing them
-      - DeleteOld  : also remove the original .wav that the FLAC replaces
+    Source of truth = sldl's own _index.csv (in staging\sldl_input\) which maps
+    each downloaded file to the artist/title from our input CSV. No more
+    filename-parsing guesswork.
 
-    Behavior:
-      For each .flac in StagingDir:
-        - Parse filename as "Artist - Title.flac"
-        - Look up the routing map for dossier + origFile
-        - If not found in map, write to outputs\unmapped.csv
-        - If detective report marks it as fake, write to outputs\fake.csv
-        - Otherwise copy to <UsbRoot>\<Dossier>\<Artist> - <Title>.flac
-        - If DeleteOld, delete <UsbRoot>\<Dossier>\<OrigFile>
-      Generate outputs\migration_report.csv summarising every action.
+    Inputs:
+      - StagingDir       : where sldl deposited the downloaded files
+      - MapJson          : routing map (artist+title key -> dossier + origFile)
+      - DetectiveReport  : optional flac-detective text report (when count of fakes
+                           is 0, all files are deployed; otherwise we emit
+                           a warning and skip suspect files - real per-file
+                           parsing TBD)
+      - UsbRoot          : root of the USB key (e.g. D:\2023 Playlist Ultime)
+      - DryRun           : list actions without performing them
+      - DeleteOld        : also remove the original .wav that the FLAC replaces
 #>
 param(
     [Parameter(Mandatory)][string]$StagingDir,
@@ -43,143 +39,155 @@ if (-not (Test-Path -LiteralPath $OutputDir)) {
     New-Item -ItemType Directory -Force -Path $OutputDir | Out-Null
 }
 
-# Load routing map ----------------------------------------------------------
+# --- load sldl index (source of truth for file <-> input mapping) ----------
+
+$indexPath = Join-Path $StagingDir 'sldl_input\_index.csv'
+if (-not (Test-Path -LiteralPath $indexPath)) {
+    throw "sldl _index.csv not found : $indexPath. Run sldl first."
+}
+$indexRows = Import-Csv -LiteralPath $indexPath -Encoding UTF8
+
+# --- load routing map (artist+title key -> dossier + origFile) -------------
 
 $mapRaw = Get-Content -LiteralPath $MapJson -Raw | ConvertFrom-Json
-# Convert PSCustomObject to a hashtable for case-insensitive lookup
 $map = @{}
 foreach ($prop in $mapRaw.PSObject.Properties) {
     $map[$prop.Name.ToLower()] = $prop.Value
 }
 
-# Load detective report (optional) ------------------------------------------
+# --- detective report (optional, simple all-good or per-file later) --------
 
-# The detective text report lists files at the end with their verdict.
-# Format varies; we parse with a tolerant approach.
-$authenticPaths = $null
-$fakePaths = $null
+$fakeFiles = @{}   # set of full paths flagged as fake
 if ($DetectiveReport -and (Test-Path -LiteralPath $DetectiveReport)) {
     $reportContent = Get-Content -LiteralPath $DetectiveReport -Raw
-    # Heuristic parsing: look for "FAKE" / "SUSPICIOUS" verdicts followed by a filename
-    # Until we see real outputs we treat as: if report says "Fake/Suspicious: 0" globally,
-    # everything is authentic. Otherwise we need to refine.
     if ($reportContent -match 'Fake/Suspicious:\s*(\d+)') {
         $fakeCount = [int]$Matches[1]
-        if ($fakeCount -eq 0) {
-            # All files in staging are authentic
-            $authenticPaths = (Get-ChildItem $StagingDir -Recurse -Filter '*.flac').FullName
-            $fakePaths = @()
+        if ($fakeCount -gt 0) {
+            Write-Warning "Detective report says $fakeCount fake files - per-file parsing not yet implemented, all FLACs treated as authentic"
         }
     }
-    if ($null -eq $authenticPaths) {
-        Write-Warning "Could not auto-parse detective report - treating all FLACs as authentic (manual review recommended)"
-        $authenticPaths = (Get-ChildItem $StagingDir -Recurse -Filter '*.flac').FullName
-        $fakePaths = @()
-    }
-} else {
-    # No detective report provided - treat everything as authentic but warn
-    Write-Warning "No detective report - assuming all FLACs are authentic. Run flac-detective first for safety."
-    $authenticPaths = (Get-ChildItem $StagingDir -Recurse -Filter '*.flac').FullName
-    $fakePaths = @()
 }
 
-# Process files -------------------------------------------------------------
+# --- process index rows ----------------------------------------------------
 
-$report     = New-Object System.Collections.Generic.List[object]
-$unmapped   = New-Object System.Collections.Generic.List[object]
-$deployed   = 0
-$skippedFake = 0
+$report      = New-Object System.Collections.Generic.List[object]
+$unmapped    = New-Object System.Collections.Generic.List[object]
+$deployed    = 0
 $alreadyExisting = 0
+$failedDl    = 0
+$skippedFake = 0
+$missingFile = 0
 
-$flacFiles = Get-ChildItem $StagingDir -Recurse -File -Filter '*.flac'
-Write-Host "Processing $($flacFiles.Count) FLAC files from $StagingDir"
+foreach ($row in $indexRows) {
+    $filepath = $row.filepath
+    $artist = $row.artist
+    $title = $row.title
 
-foreach ($f in $flacFiles) {
-    # Parse "Artist - Title.flac"
-    $base = $f.BaseName
-    $key = $base.ToLower()
-
-    $isAuthentic = $authenticPaths -contains $f.FullName
-    $isFake      = $fakePaths -contains $f.FullName
-
-    if ($isFake) {
-        $skippedFake++
+    # If filepath is empty, sldl didn't manage to DL this row
+    if (-not $filepath) {
         $report.Add([pscustomobject]@{
-            Action   = 'SKIP_FAKE'
-            FlacFile = $f.Name
+            Action   = 'NOT_DOWNLOADED'
+            Artist   = $artist
+            Title    = $title
+            FlacFile = ''
             Dossier  = ''
             Dest     = ''
-            Note     = 'flac-detective verdict: fake or suspicious'
+            Note     = "sldl state=$($row.state) reason=$($row.failurereason)"
+        })
+        $failedDl++
+        continue
+    }
+
+    if (-not (Test-Path -LiteralPath $filepath)) {
+        $report.Add([pscustomobject]@{
+            Action   = 'FILE_MISSING'
+            Artist   = $artist
+            Title    = $title
+            FlacFile = (Split-Path $filepath -Leaf)
+            Dossier  = ''
+            Dest     = ''
+            Note     = "indexed but file not on disk : $filepath"
+        })
+        $missingFile++
+        continue
+    }
+
+    if ($fakeFiles.ContainsKey($filepath)) {
+        $report.Add([pscustomobject]@{
+            Action   = 'SKIP_FAKE'
+            Artist   = $artist
+            Title    = $title
+            FlacFile = (Split-Path $filepath -Leaf)
+            Dossier  = ''
+            Dest     = ''
+            Note     = 'detective: fake/suspicious'
+        })
+        $skippedFake++
+        continue
+    }
+
+    $key = ($artist + ' - ' + $title).ToLower()
+    if (-not $map.ContainsKey($key)) {
+        $unmapped.Add([pscustomobject]@{ Artist = $artist; Title = $title; FlacFile = (Split-Path $filepath -Leaf) })
+        $report.Add([pscustomobject]@{
+            Action   = 'UNMAPPED'
+            Artist   = $artist
+            Title    = $title
+            FlacFile = (Split-Path $filepath -Leaf)
+            Dossier  = ''
+            Dest     = ''
+            Note     = 'key not in routing map'
         })
         continue
-    }
-
-    if (-not $isAuthentic) {
-        # Not in either list - shouldn't happen but be safe
-        continue
-    }
-
-    if (-not $map.ContainsKey($key)) {
-        # Try a softer match: drop punctuation / extra suffixes
-        $alt = ($key -replace '[^a-z0-9\s\-]', '' -replace '\s+', ' ').Trim()
-        $foundAlt = $false
-        foreach ($mk in $map.Keys) {
-            $mkAlt = ($mk -replace '[^a-z0-9\s\-]', '' -replace '\s+', ' ').Trim()
-            if ($mkAlt -eq $alt) {
-                $key = $mk
-                $foundAlt = $true
-                break
-            }
-        }
-        if (-not $foundAlt) {
-            $unmapped.Add([pscustomobject]@{ FlacFile = $f.Name; Key = $base })
-            $report.Add([pscustomobject]@{
-                Action   = 'UNMAPPED'
-                FlacFile = $f.Name
-                Dossier  = ''
-                Dest     = ''
-                Note     = 'no routing entry found - manual placement needed'
-            })
-            continue
-    }
     }
 
     $entry = $map[$key]
     $dossier = $entry.dossier
     $origFile = $entry.origFile
     $destDir = Join-Path $UsbRoot $dossier
-    $destPath = Join-Path $destDir $f.Name
+    $destPath = Join-Path $destDir (Split-Path $filepath -Leaf)
 
     if (-not (Test-Path -LiteralPath $destDir)) {
         if ($DryRun) {
-            Write-Host "  [DRY] would mkdir $destDir"
+            Write-Host "  [DRY] mkdir $destDir"
         } else {
             New-Item -ItemType Directory -Force -Path $destDir | Out-Null
         }
     }
 
     if (Test-Path -LiteralPath $destPath) {
-        $alreadyExisting++
         $report.Add([pscustomobject]@{
             Action   = 'ALREADY_EXISTS'
-            FlacFile = $f.Name
+            Artist   = $artist
+            Title    = $title
+            FlacFile = (Split-Path $filepath -Leaf)
             Dossier  = $dossier
             Dest     = $destPath
             Note     = 'destination already has this file'
         })
+        $alreadyExisting++
         continue
     }
 
     if ($DryRun) {
-        Write-Host "  [DRY] copy $($f.Name) -> $destPath"
+        Write-Host ("  [DRY] copy {0} -> {1}" -f (Split-Path $filepath -Leaf), $destPath)
         if ($DeleteOld -and $origFile) {
             $oldPath = Join-Path $destDir $origFile
             if (Test-Path -LiteralPath $oldPath) {
-                Write-Host "  [DRY] delete $oldPath"
+                Write-Host ("  [DRY] delete {0}" -f $oldPath)
             }
         }
+        $report.Add([pscustomobject]@{
+            Action   = 'DRY_COPY'
+            Artist   = $artist
+            Title    = $title
+            FlacFile = (Split-Path $filepath -Leaf)
+            Dossier  = $dossier
+            Dest     = $destPath
+            Note     = ''
+        })
     } else {
-        Copy-Item -LiteralPath $f.FullName -Destination $destPath -Force
+        Copy-Item -LiteralPath $filepath -Destination $destPath -Force
         $action = 'COPIED'
         if ($DeleteOld -and $origFile) {
             $oldPath = Join-Path $destDir $origFile
@@ -190,7 +198,9 @@ foreach ($f in $flacFiles) {
         }
         $report.Add([pscustomobject]@{
             Action   = $action
-            FlacFile = $f.Name
+            Artist   = $artist
+            Title    = $title
+            FlacFile = (Split-Path $filepath -Leaf)
             Dossier  = $dossier
             Dest     = $destPath
             Note     = ''
@@ -199,14 +209,17 @@ foreach ($f in $flacFiles) {
     }
 }
 
-# Write outputs -------------------------------------------------------------
+# --- write outputs ---------------------------------------------------------
 
 $report   | Export-Csv -LiteralPath (Join-Path $OutputDir 'migration_report.csv') -NoTypeInformation -Encoding UTF8
 $unmapped | Export-Csv -LiteralPath (Join-Path $OutputDir 'unmapped.csv') -NoTypeInformation -Encoding UTF8
 
 Write-Host ('=' * 70)
+Write-Host ('Index rows       : {0}' -f $indexRows.Count)
 Write-Host ('Deployed         : {0}' -f $deployed)
 Write-Host ('Already existed  : {0}' -f $alreadyExisting)
 Write-Host ('Skipped (fake)   : {0}' -f $skippedFake)
+Write-Host ('Not downloaded   : {0}' -f $failedDl)
+Write-Host ('File missing     : {0}' -f $missingFile)
 Write-Host ('Unmapped         : {0}' -f $unmapped.Count)
 Write-Host ('Report           : {0}' -f (Join-Path $OutputDir 'migration_report.csv'))

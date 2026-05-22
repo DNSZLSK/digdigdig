@@ -36,6 +36,7 @@ function Clean {
 
 $out = New-Object System.Collections.Generic.List[object]
 $map = @{}
+$skippedNoArtist = 0
 
 $i = 0
 foreach ($r in $rows) {
@@ -43,6 +44,7 @@ foreach ($r in $rows) {
     $artist = Clean $r.Artiste
     $title = Clean $r.Titre
     if (-not $title) { continue }   # skip rows we can't search
+    if (-not $artist) { $skippedNoArtist++; continue }   # too risky with strict matching
 
     $row = [pscustomobject]@{
         Artist   = $artist
@@ -73,3 +75,6 @@ $map | ConvertTo-Json -Depth 4 | Out-File -LiteralPath $MapJson -Encoding UTF8
 
 Write-Host "Wrote $($out.Count) rows to $OutputCsv"
 Write-Host "Wrote routing map ($($map.Keys.Count) keys) to $MapJson"
+if ($skippedNoArtist -gt 0) {
+    Write-Host "Skipped $skippedNoArtist rows with no artist (too risky for sldl strict matching)"
+}
