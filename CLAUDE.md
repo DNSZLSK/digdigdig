@@ -5,7 +5,7 @@
 
 Outil CLI pour construire/maintenir une bibliothèque musicale DJ en **vrai lossless**, depuis des listes de favoris multi-sources (Discogs, Bandcamp, ...) avec vérification spectrale anti-fake-FLAC à la sortie.
 
-> **Note sur le scope** : la cible de sortie (le "DEPLOY") peut être n'importe quoi — clé USB DJ, dossier local, NAS, library Rekordbox/Serato, etc. Le cas de test initial était une clé USB (`D:\2023 Playlist Ultime`) parce que c'est ce qui a déclenché le projet (315 faux WAVs détectés dessus), mais la phase Deploy est juste une copie configurable, pas le cœur du projet.
+> **Note sur le scope** : la cible de sortie (le "DEPLOY") peut être n'importe quoi — clé USB DJ, dossier local, NAS, library Rekordbox/Serato, etc. C'est juste une copie configurable, pas le cœur du projet.
 
 Logo : `docs/logo.png`
 
@@ -26,7 +26,7 @@ Logo : `docs/logo.png`
       cœur du projet                                          configurable
 ```
 
-**Pourquoi ce projet ?** Diagnostic initial : sur 329 WAVs d'une clé USB DJ, **315 étaient des MP3 transcodés en faux WAV** (détecté via FFT spectral cliff < 16 kHz). Le but est de tout reconstruire en lossless authentique.
+**Pourquoi ce projet ?** Parce que je suis feignant et que j'aime le son de qualité. Combinaison redoutable. Maintenir une bibliothèque DJ en vrai lossless à la main c'est des heures perdues : vérifier la source de chaque track, retracker quand un fichier est foireux, jongler entre les plateformes, refaire la même recherche pour la 4e fois parce qu'on a oublié qu'on l'avait déjà. Ce projet fait tout ça en batch pour qu'on ait juste à digger et écouter.
 
 ---
 
