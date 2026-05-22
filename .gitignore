@@ -1,0 +1,33 @@
+# Binaries downloaded
+bin/sldl/
+bin/*.zip
+
+# Python venv
+.venv/
+__pycache__/
+*.pyc
+
+# Runtime data
+staging/
+logs/
+inputs/*.csv
+outputs/*.csv
+outputs/*.json
+
+# Local config with creds
+config/*.local.*
+config/secrets.*
+*.env
+
+# Editor / OS
+.vscode/
+.idea/
+Thumbs.db
+.DS_Store
+
+# Keep folder structure (placeholder files)
+!staging/.gitkeep
+!logs/.gitkeep
+!inputs/.gitkeep
+!outputs/.gitkeep
+!bin/.gitkeep
