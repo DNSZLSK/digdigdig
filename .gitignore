@@ -19,6 +19,10 @@ config/*.local.*
 config/secrets.*
 *.env
 
+# Scraper caches
+inputs/.discogs-cache/
+inputs/.*-cache/
+
 # Editor / OS
 .vscode/
 .idea/
