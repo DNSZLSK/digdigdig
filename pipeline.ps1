@@ -41,6 +41,10 @@
 
 .PARAMETER UsbRoot
     Target USB root for deployment (default: D:\2023 Playlist Ultime)
+
+.PARAMETER AutoClean
+    After sldl, auto-delete suspect files with bad names + rename misnamed
+    good matches. Off by default (printed audit only).
 #>
 [CmdletBinding()]
 param(
@@ -53,7 +57,8 @@ param(
     [switch]$SkipVerify,
     [switch]$DoRetry,
     [switch]$DoDeploy,
-    [switch]$DeleteOld
+    [switch]$DeleteOld,
+    [switch]$AutoClean
 )
 
 $ErrorActionPreference = 'Stop'
@@ -159,6 +164,22 @@ if (-not $SkipDownload) {
     Log ('sldl exit code : {0}' -f $LASTEXITCODE)
 } else {
     Log 'Step 2/4 : SKIPPED (using existing staging files)'
+}
+
+# Step 2b: audit staging (after sldl, before verify)
+Log 'Step 2b : audit staging (similarity check requested vs downloaded)'
+$archivedIndexes = @(Get-ChildItem "$Root\logs\sldl_index_*.csv" -ErrorAction SilentlyContinue | ForEach-Object { $_.FullName })
+$indexes = @("$Root\staging\sldl_input\_index.csv") + $archivedIndexes | Where-Object { Test-Path -LiteralPath $_ }
+& "$Root\lib\audit-staging.ps1" `
+    -StagingDir "$Root\staging" `
+    -IndexFiles $indexes `
+    -OutputCsv "$Root\outputs\staging_audit.csv"
+
+if ($AutoClean) {
+    Log 'Step 2c : auto-clean (apply audit recommendations)'
+    & "$Root\lib\clean-staging.ps1" -AuditCsv "$Root\outputs\staging_audit.csv" -Apply
+} else {
+    Log 'Step 2c : SKIPPED (-AutoClean off, review staging_audit.csv manually)'
 }
 
 # Step 3: flac-detective verify
