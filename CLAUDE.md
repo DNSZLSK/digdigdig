@@ -1,11 +1,11 @@
-# DDD — DigDigDig
+# DDD - DigDigDig
 
 > **Le crate digger qui creuse trois fois.**
 > Dig tes sources → Dig Soulseek → Dig le spectre du fichier.
 
 Outil CLI pour construire/maintenir une bibliothèque musicale DJ en **vrai lossless**, depuis des listes de favoris multi-sources (Discogs, Bandcamp, ...) avec vérification spectrale anti-fake-FLAC à la sortie.
 
-> **Note sur le scope** : la cible de sortie (le "DEPLOY") peut être n'importe quoi — clé USB DJ, dossier local, NAS, library Rekordbox/Serato, etc. C'est juste une copie configurable, pas le cœur du projet.
+> **Note sur le scope** : la cible de sortie (le "DEPLOY") peut être n'importe quoi - clé USB DJ, dossier local, NAS, library Rekordbox/Serato, etc. C'est juste une copie configurable, pas le cœur du projet.
 
 Logo : `docs/logo.png`
 
@@ -100,7 +100,7 @@ $env:DISCOGS_TOKEN = "ton_token"
 **Switches utiles** :
 - `-Limit N` : pilote sur N tracks (smoke test)
 - `-OnlyTier 1` : juste le tier prioritaire de l'audit
-- `-DoRetry` : Phase E — retry queries variantes pour les misses
+- `-DoRetry` : Phase E - retry queries variantes pour les misses
 - `-AutoClean` : audit + clean après sldl (auto-rename + auto-delete junk)
 
 ---
@@ -110,7 +110,7 @@ $env:DISCOGS_TOKEN = "ton_token"
 ### Ce qui marche
 - ✅ **Audit FFT** d'origine : a diagnostiqué 315 faux WAVs sur la clé `D:\2023 Playlist Ultime`. Liste tier-isée dans `D:\2023 Playlist Ultime\to_replace.csv`.
 - ✅ **sldl run 1** (fuzzy) : 101/329 trouvés, beaucoup de mismatches → audit a viré 14 mauvais DLs
-- ✅ **sldl run 2** (strict mode `strict-title` + `strict-artist`) : **57% terminé** (27 OK / 131 fails) **— interrompu pour le rename, à relancer**
+- ✅ **sldl run 2** (strict mode `strict-title` + `strict-artist`) : **57% terminé** (27 OK / 131 fails) **- interrompu pour le rename, à relancer**
 - ✅ **Discogs scraper** : 136 tracks scrapées du wantlist `dnszlsk`
 - ✅ **Bandcamp scraper** : **1228 tracks** scrapées du wishlist `gamolka` (279 items, beaucoup d'albums dépliés)
 - ✅ Pipeline complet (`pipeline.ps1`) avec convert + sldl + audit + clean + verify + retry + deploy
@@ -138,14 +138,14 @@ $env:DISCOGS_TOKEN = "ton_token"
 
 ### Décisions actées
 - **Nom** : `DDD` (court) / `DigDigDig` (long). Triple D = trois étapes de digging.
-- **Strict-mode sldl par défaut** (sinon fuzzy match de merde — testé, prouvé)
+- **Strict-mode sldl par défaut** (sinon fuzzy match de merde - testé, prouvé)
 - **Filtrer les CSV rows sans artiste** avant sldl (sinon random match assuré)
 - **Dédupliquer cross-source** sur clé `lower(artist) - lower(title)`
 - **Pas de SoundCloud** pour le moment
 - **Auto-catégorisation par genre = non** ; tout va dans `inbox/`, l'user classe manuellement
 - **Match du titre COMPLET** (durci 2026-05-30) : l'audit ne mesure plus seulement le
   rappel mais aussi la **précision** (mots du fichier qu'on n'a PAS demandés) et la
-  **version** (`Original` ≠ `(X Remix)` ≠ `Extended` ≠ `Radio` — symétrique selon ce
+  **version** (`Original` ≠ `(X Remix)` ≠ `Extended` ≠ `Radio` - symétrique selon ce
   qu'on a demandé). Garde-fous anti-faux-rejet : `(Original Mix)`≡original, `feat.`
   ignoré, bruit (format/année/label/catalogue) ignoré.
   - **Sévérité** : `SUSPECT` (= mauvais enregistrement : mauvaise version, durée
@@ -155,7 +155,7 @@ $env:DISCOGS_TOKEN = "ton_token"
     type `Album - 02 Track`, ou titre court) → **gardé** en staging pour revue, jamais déployé.
   - **Garde au deploy** : `route-files.ps1` ne copie QUE les `Status=OK` (via
     `staging_audit.csv`). PARTIAL/SUSPECT n'atteignent jamais la cible.
-  - **Durée à la source** : les scrapers émettent une colonne `Length` (s) — Discogs
+  - **Durée à la source** : les scrapers émettent une colonne `Length` (s) - Discogs
     convertit `m:ss`, Bandcamp prend `trackinfo.duration`. sldl auto-détecte `Length`
     → filtre `length-tol` (15 s) au download + écrit la durée demandée dans
     `_index.csv`, que l'audit lit pour le check ±10 %. (Vider `inputs/.bandcamp-cache/`

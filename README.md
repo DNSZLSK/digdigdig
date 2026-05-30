@@ -1,8 +1,8 @@
 <p align="center">
-  <img src="docs/logo.png" alt="DDD — DigDigDig" width="240">
+  <img src="docs/logo.png" alt="DDD - DigDigDig" width="400">
 </p>
 
-<h1 align="center">DDD — DigDigDig</h1>
+<h1 align="center">DDD - DigDigDig</h1>
 
 <p align="center">
   <em>Le crate digger qui creuse trois fois.</em><br>
@@ -35,23 +35,23 @@ sur Soulseek en **matchant le titre complet** (pas d'à-peu-près), passe chaque
    wishlists          titre exact           anti-mismatch           NAS, Rekordbox…
 ```
 
-1. **DIG** — scrape tes favoris (`lib/scrapers/discogs.py`, `bandcamp.py`) → un CSV de tracks.
-2. **DOWNLOAD** — `sldl` télécharge en lossless depuis Soulseek (profil strict), avec retry sur les misses.
-3. **DETECT** — double contrôle :
-   - **audit titre-complet** : le fichier doit matcher *exactement* ce qui a été demandé —
+1. **DIG** - scrape tes favoris (`lib/scrapers/discogs.py`, `bandcamp.py`) → un CSV de tracks.
+2. **DOWNLOAD** - `sldl` télécharge en lossless depuis Soulseek (profil strict), avec retry sur les misses.
+3. **DETECT** - double contrôle :
+   - **audit titre-complet** : le fichier doit matcher *exactement* ce qui a été demandé -
      rappel + **précision** (pas de mots en trop) + **version** (`Original` ≠ `(X Remix)` ≠
      `Extended`, selon ta demande) + durée ±10 % + tags. Les mauvais → quarantaine.
    - **flac-detective** : analyse spectrale FFT pour démasquer les faux FLAC (MP3 transcodés).
-4. **deploy** *(opt-in)* — copie **uniquement** les fichiers validés vers la cible de ton choix.
+4. **deploy** *(opt-in)* - copie **uniquement** les fichiers validés vers la cible de ton choix.
 
 ## Stack
 
-- **PowerShell** — pipeline orchestrateur + lib utilitaire (natif Windows)
-- **Python 3.12** (venv local `.venv/`) — scrapers + FLAC_Detective
-- **sldl** (`bin/sldl/`) — binary .NET self-contained, batch Soulseek ([fiso64/slsk-batchdl](https://github.com/fiso64/slsk-batchdl))
-- **ffmpeg / ffprobe** — décodage + durée/tags pour l'audit (`winget install Gyan.FFmpeg`)
-- **cloudscraper** — bypass FingerprintJS sur Bandcamp
-- **slskd** *(optionnel)* — daemon Soulseek headless, dashboard sur le port 5030
+- **PowerShell** - pipeline orchestrateur + lib utilitaire (natif Windows)
+- **Python 3.12** (venv local `.venv/`) - scrapers + FLAC_Detective
+- **sldl** (`bin/sldl/`) - binary .NET self-contained, batch Soulseek ([fiso64/slsk-batchdl](https://github.com/fiso64/slsk-batchdl))
+- **ffmpeg / ffprobe** - décodage + durée/tags pour l'audit (`winget install Gyan.FFmpeg`)
+- **cloudscraper** - bypass FingerprintJS sur Bandcamp
+- **slskd** *(optionnel)* - daemon Soulseek headless, dashboard sur le port 5030
 
 ## Layout
 
