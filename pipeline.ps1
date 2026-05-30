@@ -234,6 +234,7 @@ if ($DoDeploy) {
         -MapJson "$Root\inputs\sldl_input_map.json" `
         -UsbRoot $UsbRoot `
         -DetectiveReport $reportPath `
+        -AuditCsv "$Root\outputs\staging_audit.csv" `
         -OutputDir "$Root\outputs" `
         -DeleteOld:$DeleteOld
     Log 'deploy complete'

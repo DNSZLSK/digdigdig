@@ -15,6 +15,9 @@
                            is 0, all files are deployed; otherwise we emit
                            a warning and skip suspect files - real per-file
                            parsing TBD)
+      - AuditCsv         : staging_audit.csv from audit-staging.ps1. When provided,
+                           ONLY files with Status=OK are deployed - this is the
+                           deploy gate that keeps PARTIAL/SUSPECT off the target.
       - UsbRoot          : root of the USB key (e.g. D:\2023 Playlist Ultime)
       - DryRun           : list actions without performing them
       - DeleteOld        : also remove the original .wav that the FLAC replaces
@@ -24,6 +27,7 @@ param(
     [Parameter(Mandatory)][string]$MapJson,
     [Parameter(Mandatory)][string]$UsbRoot,
     [string]$DetectiveReport = '',
+    [string]$AuditCsv = '',
     [string]$OutputDir = '.\outputs',
     [switch]$DryRun,
     [switch]$DeleteOld
@@ -68,6 +72,21 @@ if ($DetectiveReport -and (Test-Path -LiteralPath $DetectiveReport)) {
     }
 }
 
+# --- audit gate (optional) : only deploy files the audit marked Status=OK --
+# Keyed by canonical full path so it survives slash/case differences between
+# the audit's FilePath column and sldl's index filepath.
+$auditStatus = @{}
+$auditEnabled = $false
+if ($AuditCsv -and (Test-Path -LiteralPath $AuditCsv)) {
+    $auditEnabled = $true
+    foreach ($a in (Import-Csv -LiteralPath $AuditCsv -Encoding UTF8)) {
+        if ($a.FilePath) { $auditStatus[([System.IO.Path]::GetFullPath($a.FilePath)).ToLower()] = $a.Status }
+    }
+    Write-Host ("Audit gate ON : {0} entries loaded - deploying Status=OK only" -f $auditStatus.Count)
+} elseif ($AuditCsv) {
+    Write-Warning "Audit CSV not found ($AuditCsv) - audit gate DISABLED (deploying without quality gate)"
+}
+
 # --- process index rows ----------------------------------------------------
 
 $report      = New-Object System.Collections.Generic.List[object]
@@ -77,6 +96,7 @@ $alreadyExisting = 0
 $failedDl    = 0
 $skippedFake = 0
 $missingFile = 0
+$skippedNotOk = 0
 
 foreach ($row in $indexRows) {
     $filepath = $row.filepath
@@ -110,6 +130,24 @@ foreach ($row in $indexRows) {
         })
         $missingFile++
         continue
+    }
+
+    # Deploy gate : skip anything the audit didn't bless as a complete-title match.
+    if ($auditEnabled) {
+        $st = $auditStatus[([System.IO.Path]::GetFullPath($filepath)).ToLower()]
+        if ($st -ne 'OK') {
+            $report.Add([pscustomobject]@{
+                Action   = 'SKIP_NOT_OK'
+                Artist   = $artist
+                Title    = $title
+                FlacFile = (Split-Path $filepath -Leaf)
+                Dossier  = ''
+                Dest     = ''
+                Note     = ('audit status=' + $(if ($st) { $st } else { '(not in audit - re-run audit)' }))
+            })
+            $skippedNotOk++
+            continue
+        }
     }
 
     if ($fakeFiles.ContainsKey($filepath)) {
@@ -218,6 +256,7 @@ Write-Host ('=' * 70)
 Write-Host ('Index rows       : {0}' -f $indexRows.Count)
 Write-Host ('Deployed         : {0}' -f $deployed)
 Write-Host ('Already existed  : {0}' -f $alreadyExisting)
+Write-Host ('Skipped (not OK) : {0}' -f $skippedNotOk)
 Write-Host ('Skipped (fake)   : {0}' -f $skippedFake)
 Write-Host ('Not downloaded   : {0}' -f $failedDl)
 Write-Host ('File missing     : {0}' -f $missingFile)

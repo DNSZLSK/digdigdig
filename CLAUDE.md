@@ -53,10 +53,10 @@ ddd/
 │   └── logo.png                # le triple D
 ├── lib/
 │   ├── convert-csv.ps1         # audit CSV (FR) -> sldl CSV
-│   ├── audit-staging.ps1       # score similarity DL'd vs requested
-│   ├── clean-staging.ps1       # delete junk + rename misnamed
+│   ├── audit-staging.ps1       # match titre COMPLET (rappel + precision + version)
+│   ├── clean-staging.ps1       # quarantaine SUSPECT -> _rejected/ + rename misnamed
 │   ├── retry-fakes.ps1         # query variants pour misses
-│   ├── route-files.ps1         # deploy verified FLAC -> USB
+│   ├── route-files.ps1         # deploy (garde Status=OK only) FLAC -> USB
 │   └── scrapers/
 │       ├── discogs.py          # wantlist + collection (API officielle)
 │       └── bandcamp.py         # wishlist (cloudscraper + fancollection API)
@@ -143,6 +143,19 @@ $env:DISCOGS_TOKEN = "ton_token"
 - **Dédupliquer cross-source** sur clé `lower(artist) - lower(title)`
 - **Pas de SoundCloud** pour le moment
 - **Auto-catégorisation par genre = non** ; tout va dans `inbox/`, l'user classe manuellement
+- **Match du titre COMPLET** (durci 2026-05-30) : l'audit ne mesure plus seulement le
+  rappel mais aussi la **précision** (mots du fichier qu'on n'a PAS demandés) et la
+  **version** (`Original` ≠ `(X Remix)` ≠ `Extended` ≠ `Radio` — symétrique selon ce
+  qu'on a demandé). Garde-fous anti-faux-rejet : `(Original Mix)`≡original, `feat.`
+  ignoré, bruit (format/année/label/catalogue) ignoré.
+  - **Sévérité** : `SUSPECT` (= mauvais enregistrement : mauvaise version, durée
+    aberrante, tag mismatch, rappel trop bas) → **quarantaine** `staging/_rejected/`
+    (réversible). `PARTIAL` (= rappel complet mais mots en trop / titre court / rappel
+    moyen) → **gardé** en staging pour revue, jamais déployé.
+  - **Garde au deploy** : `route-files.ps1` ne copie QUE les `Status=OK` (via
+    `staging_audit.csv`). PARTIAL/SUSPECT n'atteignent jamais la cible.
+  - Knobs audit : `-MaxExtraWords`, `-NoVersionCheck`, `-NoPrecisionCheck`,
+    `-NoShortTitleGuard`, `-DurationTolerancePct` (10), `-MaxDurationOutlier` (720).
 
 ### Risques connus
 - Soulseek refus si ratio compte bas → slskd peut auto-partager le `staging/` (déjà configuré dans slskd.yml)

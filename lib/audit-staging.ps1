@@ -4,23 +4,36 @@
 
 .DESCRIPTION
     For each audio file in the staging dir, look up the requested track from
-    sldl's _index.csv (or an archived copy) and score on three independent axes:
+    sldl's _index.csv (or an archived copy) and decide whether the file matches
+    the *complete* requested title - not just "are the requested words present".
 
-      - Artist token coverage : (artistTokens in filename) / artistTokens
-      - Title token coverage  : (titleTokens  in filename) / titleTokens
-      - Duration check        : ffprobe-measured duration vs expected length
-                                (or outlier flag when no expected length)
+    Five checks, in increasing strictness :
 
-    Status reflects the weakest axis :
-      OK                  : artist >= OkThreshold AND title >= OkThreshold AND duration ok
-      PARTIAL             : both scores >= PartialThreshold AND duration ok
-      SUSPECT             : any axis fails
+      - Artist token coverage  : (artistTokens in filename) / artistTokens          [recall]
+      - Title token coverage   : (titleTokens  in filename) / titleTokens            [recall]
+      - Title precision        : extra significant words in the file's title that we
+                                 did NOT ask for (remixer names, extra title words). [precision]
+      - Version signature      : the version qualifier we asked for (Original / a
+                                 specific Remix / Extended / Radio ...) must equal
+                                 the file's version qualifier.                        [version]
+      - Duration + tag sanity  : ffprobe duration vs expected/outlier, embedded tags.
+
+    Status (severity: SUSPECT = quarantine, PARTIAL = keep for review, never deploy) :
+      OK                  : artist>=Ok AND title-recall>=Ok AND 0 extra words AND
+                            version matches AND duration ok AND tags ok
+      PARTIAL             : a "review" bucket - full recall but extra words (often
+                            just messy album/rip naming on the right audio), OR an
+                            uncorroborated short title, OR mid-range recall.
+                            Held in staging, never auto-deployed.
+      SUSPECT             : confident "wrong recording" - wrong version, duration
+                            outlier, tag mismatch, or recall below Partial.
       NO_INDEX_ENTRY      : file present but no row in any index
-                            (still flagged SUSPECT if duration is an outlier)
-      NO_MEANINGFUL_WORDS : index row exists but artist+title produce zero usable tokens
+      NO_MEANINGFUL_WORDS : index row exists but artist+title produce zero tokens
 
-    Multiple index files can be passed (e.g. one per sldl run) - rows are
-    merged with the most recent winning on collision.
+    "Complete title" guard rails to avoid false rejects :
+      - "(Original Mix)" / "(Main)" / "(Album Version)" == original (empty version).
+      - feat. / ft. / featuring tails are dropped (guest artist, never "extra").
+      - format / year / label / catalogue / web tokens are treated as noise.
 
 .PARAMETER StagingDir
     Directory containing the downloaded audio files.
@@ -32,19 +45,35 @@
     Where to write the audit (default: outputs\staging_audit.csv).
 
 .PARAMETER OkThreshold
-    Minimum artist+title score for OK status (default 0.8).
+    Minimum artist+title recall for OK status (default 0.8).
 
 .PARAMETER PartialThreshold
-    Minimum artist+title score for PARTIAL status (default 0.5). Below this = SUSPECT.
+    Minimum artist+title recall for PARTIAL status (default 0.5). Below this = SUSPECT.
 
 .PARAMETER DurationTolerancePct
-    When expected length is known, allow this percent deviation (default 15).
+    When expected length is known, allow this percent deviation (default 10).
 
 .PARAMETER MinDurationOutlier
-    When no expected length, flag files shorter than this many seconds (default 60).
+    When no expected length, flag files shorter than this many seconds (default 90).
 
 .PARAMETER MaxDurationOutlier
-    When no expected length, flag files longer than this many seconds (default 900).
+    When no expected length, flag files longer than this many seconds (default 720).
+
+.PARAMETER TagMismatchThreshold
+    Embedded tags below this coverage on both axes => tag_mismatch (default 0.3).
+
+.PARAMETER MaxExtraWords
+    Number of unexpected significant words in the file's title that triggers
+    SUSPECT (default 1 = strict: even one extra real word is a different title).
+
+.PARAMETER NoPrecisionCheck
+    Disable the extra-words / precision check.
+
+.PARAMETER NoVersionCheck
+    Disable the version-signature check.
+
+.PARAMETER NoShortTitleGuard
+    Disable holding short-title matches at PARTIAL when uncorroborated.
 #>
 [CmdletBinding()]
 param(
@@ -53,10 +82,14 @@ param(
     [string]$OutputCsv = '.\outputs\staging_audit.csv',
     [double]$OkThreshold = 0.8,
     [double]$PartialThreshold = 0.5,
-    [double]$DurationTolerancePct = 15,
+    [double]$DurationTolerancePct = 10,
     [int]$MinDurationOutlier = 90,
-    [int]$MaxDurationOutlier = 900,
-    [double]$TagMismatchThreshold = 0.3
+    [int]$MaxDurationOutlier = 720,
+    [double]$TagMismatchThreshold = 0.3,
+    [int]$MaxExtraWords = 1,
+    [switch]$NoPrecisionCheck,
+    [switch]$NoVersionCheck,
+    [switch]$NoShortTitleGuard
 )
 
 $ErrorActionPreference = 'Stop'
@@ -79,15 +112,55 @@ foreach ($idx in $IndexFiles) {
     }
 }
 
+# Structural / version words removed before recall+precision token matching.
+# (Version identity is handled separately by Get-VersionKey, which does NOT
+#  use this list - it must still see 'remix', 'edit', etc.)
 $stopWords = @('the','and','feat','with','mix','remix','edit','club','original',
                'extended','vocal','version','live','premiere','featuring','main',
                'dub','long','short','radio','pres','presents','rmx','ver','vol')
 
+# Benign tokens that should never count as "extra" words in a title.
+$noiseWords = @('flac','wav','aiff','aif','mp3','aac','ogg','m4a',
+                'web','vinyl','cd','cdr','cdq','ep','lp','single','va',
+                'kbps','khz','hz','bit','hq','lossless','master','remaster','remastered',
+                'www','com','net','org','rip','scene','promo','digital')
+
+# Distinctive version qualifiers : two titles whose distinctive set differs are
+# different versions. Neutral words (original/main/album/version/mix/remaster) are
+# deliberately ABSENT here, so they normalise to "the original" (empty key).
+$distinctiveVer = @('remix','rmx','rework','rwk','edit','reedit','redit','refix','flip',
+                    'extended','radio','club','dub','vocal','instrumental','inst',
+                    'acapella','acappella','acoustic','live','bootleg','boot',
+                    'mashup','vip','demo')
+$verCanon = @{
+    'rmx'='remix'; 'rework'='remix'; 'rwk'='remix';
+    'reedit'='edit'; 'redit'='edit'; 'refix'='edit';
+    'inst'='instrumental'; 'acappella'='acapella'; 'boot'='bootleg'
+}
+
+function Remove-Diacritics {
+    # "Andre" from "Andre" (fold combining marks) without literal accented chars.
+    param([string]$s)
+    if (-not $s) { return '' }
+    $norm = $s.Normalize([System.Text.NormalizationForm]::FormD)
+    $sb = New-Object System.Text.StringBuilder
+    foreach ($c in $norm.ToCharArray()) {
+        $cat = [System.Globalization.CharUnicodeInfo]::GetUnicodeCategory($c)
+        if ($cat -ne [System.Globalization.UnicodeCategory]::NonSpacingMark) {
+            [void]$sb.Append($c)
+        }
+    }
+    return $sb.ToString().Normalize([System.Text.NormalizationForm]::FormC)
+}
+
 function Get-Tokens {
     param([string]$s, [int]$MinLen = 3)
-    if (-not $s) { return @() }
+    if (-not $s) { return ,@() }
+    $s = Remove-Diacritics $s
     $clean = ($s.ToLower() -replace '[^a-z0-9\s]', ' ' -replace '\s+', ' ').Trim()
-    return @($clean -split '\s+' | Where-Object { $_.Length -ge $MinLen -and $_ -notin $stopWords })
+    # Leading comma stops PowerShell from unwrapping a single-element result into
+    # a scalar on return (which would break array concatenation at the call site).
+    return ,@($clean -split '\s+' | Where-Object { $_.Length -ge $MinLen -and $_ -notin $stopWords })
 }
 
 function Get-TokenCoverage {
@@ -100,6 +173,61 @@ function Get-TokenCoverage {
         if ($file -contains $w) { $matched++ }
     }
     return [math]::Round($matched / $req.Count, 2)
+}
+
+function Split-Name {
+    # sldl writes "{artist} - {title}". Split on the FIRST ' - ' so a title that
+    # itself contains ' - ' stays intact in the title portion.
+    param([string]$base)
+    $parts = $base -split ' - ', 2
+    if ($parts.Count -eq 2) {
+        return [pscustomobject]@{ Artist = $parts[0].Trim(); Title = $parts[1].Trim(); Split = $true }
+    }
+    return [pscustomobject]@{ Artist = ''; Title = $base.Trim(); Split = $false }
+}
+
+function Remove-FeatTail {
+    # Drop "feat. X" / "ft X" / "featuring X" to the end (guest artist).
+    param([string]$s)
+    if (-not $s) { return '' }
+    return ($s -replace '(?i)\s*[\(\[]?\b(feat\.?|ft\.?|featuring)\b.*$', '')
+}
+
+function Test-NoiseToken {
+    param([string]$w)
+    if ($w -match '^\d+$') { return $true }                              # pure digits / years / track no
+    if (($w -match '\d') -and ($w -match '[a-z]') -and ($w.Length -le 8)) { return $true } # catalogue-ish (cat123, mp3, 320k)
+    if ($w -in $noiseWords) { return $true }
+    return $false
+}
+
+function Get-ExtraWords {
+    # File-title tokens that we did NOT ask for and that are not benign noise.
+    param([string[]]$fileTitleTokens, [string[]]$allowed)
+    $extra = New-Object System.Collections.Generic.List[string]
+    foreach ($w in $fileTitleTokens) {
+        if ($allowed -contains $w) { continue }
+        if (Test-NoiseToken $w)    { continue }
+        $extra.Add($w)
+    }
+    return @($extra)
+}
+
+function Get-VersionKey {
+    # Normalised, sorted set of DISTINCTIVE version qualifiers in a title.
+    # "" == original. Does not use $stopWords (must still see remix/edit/...).
+    param([string]$title)
+    if (-not $title) { return '' }
+    $t = (Remove-Diacritics $title).ToLower() -replace '[^a-z0-9\s]', ' '
+    $keys = New-Object System.Collections.Generic.HashSet[string]
+    foreach ($w in ($t -split '\s+')) {
+        if (-not $w) { continue }
+        if ($distinctiveVer -contains $w) {
+            $c = if ($verCanon.ContainsKey($w)) { $verCanon[$w] } else { $w }
+            [void]$keys.Add($c)
+        }
+    }
+    return (($keys | Sort-Object) -join '+')
 }
 
 function Get-AudioInfo {
@@ -171,6 +299,12 @@ foreach ($f in $files) {
             ExpectedDuration = -1
             TitleScore       = -1
             ArtistScore      = -1
+            TitlePrecision   = -1
+            ExtraWords       = ''
+            VersionMatch     = ''
+            ReqVersion       = ''
+            FileVersion      = ''
+            ShortTitleRisk   = $false
             TagArtist        = $audioInfo.Artist
             TagTitle         = $audioInfo.Title
             Reason           = $reason
@@ -201,6 +335,12 @@ foreach ($f in $files) {
             ExpectedDuration = $expectedDur
             TitleScore       = -1
             ArtistScore      = -1
+            TitlePrecision   = -1
+            ExtraWords       = ''
+            VersionMatch     = ''
+            ReqVersion       = ''
+            FileVersion      = ''
+            ShortTitleRisk   = $false
             TagArtist        = $audioInfo.Artist
             TagTitle         = $audioInfo.Title
             Reason           = 'index row has no meaningful tokens'
@@ -215,7 +355,25 @@ foreach ($f in $files) {
     $effectiveTitle  = if ($titleScore  -ge 0) { $titleScore  } else { 1.0 }
     $effectiveArtist = if ($artistScore -ge 0) { $artistScore } else { 1.0 }
 
-    # Duration check
+    # --- Precision : extra significant words in the file's title portion ----
+    $split = Split-Name $base
+    $fileTitleTokens = Get-Tokens -s (Remove-FeatTail $split.Title) -MinLen 3
+    $allowed = @($titleTokens) + @($artistTokens)
+    $extraWords = if ($NoPrecisionCheck) { @() } else { Get-ExtraWords -fileTitleTokens $fileTitleTokens -allowed $allowed }
+    $extraCount = @($extraWords).Count
+    $titlePrecision = if ($fileTitleTokens.Count -gt 0) {
+        [math]::Round((($fileTitleTokens.Count - $extraCount) / $fileTitleTokens.Count), 2)
+    } else { 1.0 }
+
+    # --- Version signature : must match what we asked for -------------------
+    $reqVer  = Get-VersionKey -title $idxRow.title
+    $fileVer = Get-VersionKey -title $split.Title
+    $versionMatch = if ($NoVersionCheck) { $true } else { ($reqVer -eq $fileVer) }
+
+    # Very short titles (single token both axes) are match magnets.
+    $shortTitleRisk = ($titleTokens.Count -le 1 -and $artistTokens.Count -le 1)
+
+    # --- Duration check -----------------------------------------------------
     $durationOk = $true
     $durReason = ''
     if ($duration -lt 0) {
@@ -236,10 +394,12 @@ foreach ($f in $files) {
         }
     }
 
-    # Tag cross-check : if audio tags exist and disagree strongly with the
-    # request, the file is probably the wrong audio renamed to look right.
+    # --- Tag cross-check : embedded tags from a different recording ---------
+    # Catches (a) both tags way off the request, and (b) a tag that names a
+    # DIFFERENT artist (present-but-wrong), even if the title tag happens to match.
     $tagSuspect = $false
     $tagReason = ''
+    $tagCorroborated = $false
     if ($audioInfo.Artist -or $audioInfo.Title) {
         $tagArtistTokens = Get-Tokens -s $audioInfo.Artist -MinLen 2
         $tagTitleTokens  = Get-Tokens -s $audioInfo.Title  -MinLen 3
@@ -247,32 +407,73 @@ foreach ($f in $files) {
         $tagTitleScore  = Get-TokenCoverage -req $titleTokens  -file $tagTitleTokens
         $effTagArtist = if ($tagArtistScore -ge 0) { $tagArtistScore } else { 0 }
         $effTagTitle  = if ($tagTitleScore  -ge 0) { $tagTitleScore  } else { 0 }
+
+        # (a) both axes terrible
         if (([math]::Max($effTagArtist, $effTagTitle)) -lt $TagMismatchThreshold) {
             $tagSuspect = $true
             $tagReason = ("tag_mismatch (tags='{0} - {1}')" -f $audioInfo.Artist, $audioInfo.Title)
         }
-    }
+        # (b) artist tag present but names someone else, title tag not strong
+        elseif ($audioInfo.Artist -and $tagArtistScore -eq 0 -and $effTagTitle -lt 0.8 -and $artistTokens.Count -gt 0) {
+            $tagSuspect = $true
+            $tagReason = ("tag_wrong_artist (tag artist='{0}')" -f $audioInfo.Artist)
+        }
 
-    # Aggregate
+        if ($effTagArtist -ge 0.5 -or $effTagTitle -ge 0.5) { $tagCorroborated = $true }
+    }
+    $durCorroborated = ($expectedDur -gt 0 -and $durationOk)
+    $corroborated = ($tagCorroborated -or $durCorroborated)
+
+    # --- Aggregate ----------------------------------------------------------
     $minScore = [math]::Min($effectiveTitle, $effectiveArtist)
+
+    $versionFail   = -not $versionMatch
+    $titleExtraFail = (-not $NoPrecisionCheck) -and ($extraCount -ge $MaxExtraWords)
 
     $reasons = New-Object System.Collections.Generic.List[string]
     if (-not $durationOk) { $reasons.Add($durReason) }
     if ($tagSuspect)      { $reasons.Add($tagReason) }
-    if ($effectiveArtist -lt $PartialThreshold) { $reasons.Add("artist=$effectiveArtist") }
-    if ($effectiveTitle  -lt $PartialThreshold) { $reasons.Add("title=$effectiveTitle") }
 
+    # Severity model :
+    #   SUSPECT (-> quarantine) is reserved for confident "wrong recording" :
+    #     duration outlier, tag mismatch, wrong version, or recall below Partial.
+    #   PARTIAL (-> kept in staging, never auto-deployed, for manual review) covers
+    #     ambiguous cases : extra words (often just messy album/rip naming on the
+    #     correct audio), uncorroborated short titles, mid-range recall.
     if (-not $durationOk -or $tagSuspect) {
         $status = 'SUSPECT'
-    } elseif ($effectiveArtist -ge $OkThreshold -and $effectiveTitle -ge $OkThreshold) {
-        $status = 'OK'
-    } elseif ($effectiveArtist -ge $PartialThreshold -and $effectiveTitle -ge $PartialThreshold) {
-        $status = 'PARTIAL'
-        if ($reasons.Count -eq 0) {
-            $reasons.Add("partial (a=$effectiveArtist, t=$effectiveTitle)")
-        }
-    } else {
+        if ($effectiveArtist -lt $PartialThreshold) { $reasons.Add("artist=$effectiveArtist") }
+        if ($effectiveTitle  -lt $PartialThreshold) { $reasons.Add("title=$effectiveTitle") }
+    }
+    elseif ($versionFail) {
         $status = 'SUSPECT'
+        $rv = if ($reqVer)  { $reqVer }  else { '(original)' }
+        $fv = if ($fileVer) { $fileVer } else { '(original)' }
+        $reasons.Add("version_mismatch (want '$rv' got '$fv')")
+    }
+    elseif ($effectiveArtist -ge $OkThreshold -and $effectiveTitle -ge $OkThreshold) {
+        if ($titleExtraFail) {
+            $status = 'PARTIAL'
+            $reasons.Add("extra_words ($((@($extraWords) -join ',')))")
+        }
+        elseif ((-not $NoShortTitleGuard) -and $shortTitleRisk -and -not $corroborated) {
+            $status = 'PARTIAL'
+            $reasons.Add('short_title_unverified (no tag/duration corroboration)')
+        } else {
+            $status = 'OK'
+        }
+    }
+    elseif ($effectiveArtist -ge $PartialThreshold -and $effectiveTitle -ge $PartialThreshold) {
+        $status = 'PARTIAL'
+        if ($effectiveArtist -lt $OkThreshold) { $reasons.Add("artist=$effectiveArtist") }
+        if ($effectiveTitle  -lt $OkThreshold) { $reasons.Add("title=$effectiveTitle") }
+        if ($titleExtraFail) { $reasons.Add("extra_words ($((@($extraWords) -join ',')))") }
+        if ($reasons.Count -eq 0) { $reasons.Add("partial (a=$effectiveArtist, t=$effectiveTitle)") }
+    }
+    else {
+        $status = 'SUSPECT'
+        if ($effectiveArtist -lt $PartialThreshold) { $reasons.Add("artist=$effectiveArtist") }
+        if ($effectiveTitle  -lt $PartialThreshold) { $reasons.Add("title=$effectiveTitle") }
     }
 
     if ($durReason -and $durationOk -and $reasons.Count -eq 0) {
@@ -290,6 +491,12 @@ foreach ($f in $files) {
         ExpectedDuration = $expectedDur
         TitleScore       = $effectiveTitle
         ArtistScore      = $effectiveArtist
+        TitlePrecision   = $titlePrecision
+        ExtraWords       = (@($extraWords) -join ',')
+        VersionMatch     = $versionMatch
+        ReqVersion       = $reqVer
+        FileVersion      = $fileVer
+        ShortTitleRisk   = $shortTitleRisk
         TagArtist        = $audioInfo.Artist
         TagTitle         = $audioInfo.Title
         Reason           = ($reasons -join '; ')
