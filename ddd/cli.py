@@ -8,6 +8,7 @@ import sys
 from pathlib import Path
 
 from . import __version__
+from . import paths
 from .core.quality import AUTHENTIC, FAKE, LOSSY, SUSPICIOUS
 from .core import audit as audit_mod
 from .core import config as config_mod
@@ -59,7 +60,7 @@ def _cmd_scan(args: argparse.Namespace) -> int:
     print(f"Scan de {folder} ...", file=sys.stderr)
     records = scan_library(folder, exclude_names=args.exclude, progress=progress)
 
-    out_csv = Path(args.out) if args.out else Path("outputs") / f"scan_{folder.name}.csv"
+    out_csv = Path(args.out) if args.out else paths.outputs_dir() / f"scan_{folder.name}.csv"
     out_json = out_csv.with_suffix(".json")
     write_csv(records, out_csv, SCAN_RECORD_FIELDS)
     write_json(records, out_json)
@@ -116,10 +117,9 @@ def _cmd_upgrade(args: argparse.Namespace) -> int:
         print(f"dossier introuvable: {folder}", file=sys.stderr)
         return 2
 
-    root = Path(__file__).resolve().parent.parent
-    staging = Path(args.staging) if args.staging else root / "staging" / "upgrade"
-    log_path = root / "logs" / "ddd_upgrade.log"
-    log_path.parent.mkdir(parents=True, exist_ok=True)
+    root = paths.resource_base()
+    staging = Path(args.staging) if args.staging else paths.staging_dir() / "upgrade"
+    log_path = paths.logs_dir() / "ddd_upgrade.log"
 
     verdicts = []
     if not args.lossy_only:
@@ -159,7 +159,7 @@ def _cmd_upgrade(args: argparse.Namespace) -> int:
         for o in replaced:
             print(f"  {o.artist} - {o.title}  cutoff {o.new_cutoff_hz:.0f} Hz")
 
-    out_csv = root / "outputs" / f"upgrade_{folder.name}.csv"
+    out_csv = paths.outputs_dir() / f"upgrade_{folder.name}.csv"
     _write_outcomes_csv(outcomes, out_csv)
     print(f"\nRapport : {out_csv}")
     if not args.apply:
@@ -204,7 +204,7 @@ def _cmd_scrape(args: argparse.Namespace) -> int:
         print(f"ERREUR: {e}", file=sys.stderr)
         return 1
 
-    out = Path(args.out) if args.out else Path("outputs") / f"{source}_{args.username}.csv"
+    out = Path(args.out) if args.out else paths.outputs_dir() / f"{source}_{args.username}.csv"
     out.parent.mkdir(parents=True, exist_ok=True)
     with open(out, "w", newline="", encoding="utf-8") as fh:
         w = csv.DictWriter(fh, fieldnames=scrapers.ROW_FIELDS)
@@ -235,10 +235,9 @@ def _cmd_acquire(args: argparse.Namespace) -> int:
         print("CSV vide", file=sys.stderr)
         return 1
 
-    root = Path(__file__).resolve().parent.parent
-    inbox = Path(args.inbox) if args.inbox else root / "staging" / "inbox"
-    log_path = root / "logs" / "ddd_acquire.log"
-    log_path.parent.mkdir(parents=True, exist_ok=True)
+    root = paths.resource_base()
+    inbox = Path(args.inbox) if args.inbox else paths.staging_dir() / "inbox"
+    log_path = paths.logs_dir() / "ddd_acquire.log"
 
     def progress(*a) -> None:
         if len(a) == 1:

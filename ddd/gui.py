@@ -20,12 +20,12 @@ from typing import List, Optional
 import flet as ft
 
 from . import __version__
+from . import paths
 from .core import config as config_mod
 from .core import quality
+from .core import soulseek
 from .core import upgrade as upgrade_mod
 from .core.scan import ScanRecord, duplicate_groups, scan_library
-
-ROOT = Path(__file__).resolve().parent.parent
 
 VERDICT_COLOR = {
     quality.FAKE: ft.Colors.RED_400,
@@ -91,6 +91,7 @@ def main(page: ft.Page) -> None:
             ft.dropdown.Option(key="all", text="Tout"),
             ft.dropdown.Option(key=quality.FAKE, text="Faux lossless"),
             ft.dropdown.Option(key=quality.LOSSY, text="Lossy"),
+            ft.dropdown.Option(key=quality.SUSPICIOUS, text="Suspect (320k)"),
             ft.dropdown.Option(key=quality.AUTHENTIC, text="Vrai lossless"),
         ])
     apply_switch = ft.Switch(label="Remplacer pour de vrai", value=False)
@@ -107,6 +108,9 @@ def main(page: ft.Page) -> None:
         upgrade_btn.disabled = b or not state.records
         browse_btn.disabled = b
         page.update()
+
+    def current_excludes() -> list:
+        return [s for s in (cfg.get("default_excludes", "") or "").split(",") if s] or ["PROD"]
 
     def render_summary() -> None:
         from collections import Counter
@@ -204,8 +208,7 @@ def main(page: ft.Page) -> None:
                     status.value = f"Scan... {i}/{total}"
                     page.update()
 
-                excludes = [s for s in (cfg.get("default_excludes", "") or "").split(",") if s] or ["PROD"]
-                state.records = scan_library(folder, exclude_names=excludes, progress=prog)
+                state.records = scan_library(folder, exclude_names=current_excludes(), progress=prog)
                 render_summary()
                 render_table()
                 n_up = sum(1 for r in state.records if r.quality.verdict in UPGRADABLE)
@@ -229,10 +232,10 @@ def main(page: ft.Page) -> None:
 
         def worker() -> None:
             set_busy(True)
+            progress.value = None  # barre indeterminee (animee) pendant le download
             try:
-                staging = ROOT / "staging" / "upgrade"
-                log_path = ROOT / "logs" / "ddd_upgrade.log"
-                log_path.parent.mkdir(parents=True, exist_ok=True)
+                staging = paths.staging_dir() / "upgrade"
+                log_path = paths.logs_dir() / "ddd_upgrade.log"
 
                 def prog(*a) -> None:
                     if len(a) == 1:
@@ -243,7 +246,7 @@ def main(page: ft.Page) -> None:
                 status.value = f"Upgrade ({mode}) de {len(chosen)} fichiers via Soulseek..."
                 page.update()
                 outcomes = upgrade_mod.run_upgrade(
-                    state.folder, root=ROOT, staging_dir=staging,
+                    state.folder, root=paths.resource_base(), staging_dir=staging,
                     apply=apply_switch.value, delete_old=delete_switch.value,
                     scan_results=chosen, progress=prog, log_path=log_path)
                 from collections import Counter
@@ -253,13 +256,37 @@ def main(page: ft.Page) -> None:
                 nf = c.get(upgrade_mod.ACT_NOT_FOUND, 0)
                 verb = "remplaces" if apply_switch.value else "trouves (dry-run)"
                 status.value = (f"Upgrade fini : {ok} {verb}, {rej} rejetes (upscale), "
-                                f"{nf} introuvables. Re-scanne pour rafraichir.")
+                                f"{nf} introuvables.")
+                # Apres un remplacement reel, re-scanner pour refleter les nouveaux verdicts
+                if apply_switch.value and ok:
+                    status.value += " Re-scan en cours..."
+                    page.update()
+                    state.selected.clear()
+                    state.records = scan_library(state.folder, exclude_names=current_excludes())
+                    render_summary()
+                    render_table()
+                    status.value = (f"Upgrade fini : {ok} {verb}, {rej} rejetes, "
+                                    f"{nf} introuvables. Table rafraichie.")
+            except soulseek.SoulseekError:
+                status.value = ("Identifiants Soulseek requis : ouvre Reglages (engrenage en "
+                                "haut a droite), saisis ton login/mot de passe, puis reessaie.")
+                settings_body.visible = True
             except Exception as ex:  # noqa: BLE001
                 status.value = f"Erreur upgrade : {ex}"
             finally:
                 set_busy(False)
 
         threading.Thread(target=worker, daemon=True).start()
+
+    def select_all_visible(_e) -> None:
+        for i, rec in enumerate(state.records):
+            if _visible(rec) and rec.quality.verdict in UPGRADABLE:
+                state.selected.add(i)
+        render_table()
+
+    def clear_selection(_e) -> None:
+        state.selected.clear()
+        render_table()
 
     # --- reglages -----------------------------------------------------------
     discogs_tok = ft.TextField(label="Token Discogs", password=True, can_reveal_password=True,
@@ -302,14 +329,24 @@ def main(page: ft.Page) -> None:
     scan_btn = ft.FilledButton(text="Scanner", icon=ft.Icons.SEARCH, on_click=do_scan)
     upgrade_btn = ft.FilledButton(text="Upgrader la selection", icon=ft.Icons.UPGRADE,
                                   on_click=do_upgrade, disabled=True)
+    settings_btn = ft.IconButton(icon=ft.Icons.SETTINGS, tooltip="Reglages (identifiants)",
+                                 on_click=toggle_settings)
+    check_all_btn = ft.TextButton(text="Tout cocher", on_click=select_all_visible)
+    uncheck_all_btn = ft.TextButton(text="Tout decocher", on_click=clear_selection)
     filter_dd.on_change = lambda _e: render_table()
+
+    # 1er lancement sans identifiants : deplie Reglages + invite (l'upgrade en a besoin)
+    if not ((cfg.get("soulseek_user") or "").strip() and (cfg.get("soulseek_pass") or "")):
+        settings_body.visible = True
+        status.value = "Astuce : renseigne tes identifiants Soulseek (engrenage) pour pouvoir upgrader."
 
     # --- layout -------------------------------------------------------------
     page.add(
         ft.Row([ft.Icon(ft.Icons.MUSIC_NOTE, color=ft.Colors.BLUE_400),
                 ft.Text("DDD - DigDigDig", size=22, weight=ft.FontWeight.BOLD),
                 ft.Text("le crate digger qui creuse trois fois", size=12,
-                        color=ft.Colors.GREY_400)],
+                        color=ft.Colors.GREY_400),
+                ft.Container(expand=True), settings_btn],
                spacing=10),
         ft.Row([folder_field, browse_btn, scan_btn]),
         progress,
@@ -317,7 +354,7 @@ def main(page: ft.Page) -> None:
         ft.Divider(),
         summary_row,
         dup_text,
-        ft.Row([filter_dd, ft.Container(expand=True),
+        ft.Row([filter_dd, check_all_btn, uncheck_all_btn, ft.Container(expand=True),
                 apply_switch, delete_switch, upgrade_btn]),
         ft.Container(table_col, expand=True, border=ft.border.all(1, ft.Colors.GREY_800),
                      border_radius=8, padding=8),

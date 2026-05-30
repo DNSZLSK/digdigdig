@@ -16,6 +16,7 @@ sys.path.insert(0, str(ROOT))
 
 from ddd.core import quality, soulseek, upgrade as up
 from ddd.core.quality import QualityResult
+from ddd.core.scan import ScanRecord
 
 
 def _qr(path, verdict, cutoff=16000.0, fclass="lossless_container"):
@@ -92,6 +93,19 @@ def main():
     assert by_action.get(up.ACT_UNPARSEABLE), "NoArtist devrait etre UNPARSEABLE"
     # Le fichier authentique deja en place ne doit PAS etre dans la want-list
     assert all(o.original != r"C:\lib\Artist D - Real.flac" for o in outcomes)
+
+    # Chemin GUI : run_upgrade doit accepter des ScanRecord (verdict/chemin dans .quality),
+    # pas seulement des QualityResult. Non-regression du crash "'ScanRecord' has no verdict".
+    scan_records = [ScanRecord(quality=q, naming=None, size_bytes=0, dup_count=1) for q in scan]
+    gui_outcomes = up.run_upgrade(
+        "C:\\lib", root=ROOT, staging_dir=tmp,
+        scan_results=scan_records, apply=False,
+    )
+    gui_actions = {o.action for o in gui_outcomes}
+    assert up.ACT_WOULD_REPLACE in gui_actions, "GUI/ScanRecord : Artist A devrait etre WOULD_REPLACE"
+    assert up.ACT_REJECTED_FAKE in gui_actions, "GUI/ScanRecord : Artist B devrait etre REJECTED_FAKE"
+    assert up.ACT_UNPARSEABLE in gui_actions, "GUI/ScanRecord : NoArtist devrait etre UNPARSEABLE"
+    print("OK - chemin GUI (ScanRecord) accepte, plus de crash sur .verdict")
 
     # cleanup
     good.unlink(); bad.unlink()

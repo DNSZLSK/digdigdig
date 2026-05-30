@@ -62,24 +62,30 @@ class UpgradePlan:
 
 
 def build_plan(scan_results, verdicts: Sequence[str] = ()) -> UpgradePlan:
-    """A partir des resultats de scan, construit la want-list (fichiers a upgrader)."""
+    """A partir des resultats de scan, construit la want-list (fichiers a upgrader).
+
+    Accepte indifferemment des QualityResult (chemin CLI via scan_folder) ou des
+    ScanRecord (chemin GUI via scan_library) : le ScanRecord porte verdict/chemin/duree
+    dans .quality, on normalise donc chaque element avant lecture.
+    """
     wanted = set(verdicts) if verdicts else UPGRADE_VERDICTS
     plan = UpgradePlan()
     for r in scan_results:
-        if r.verdict not in wanted:
+        q = getattr(r, "quality", r)   # ScanRecord -> .quality ; QualityResult -> lui-meme
+        if q.verdict not in wanted:
             continue
-        parsed = parse_filename(r.path)
+        parsed = parse_filename(q.path)
         if not parsed.parseable:
             plan.unparseable.append(UpgradeOutcome(
                 action=ACT_UNPARSEABLE, artist=parsed.artist, title=parsed.title,
-                original=r.path, note="nom sans 'Artiste - Titre' exploitable",
+                original=q.path, note="nom sans 'Artiste - Titre' exploitable",
             ))
             continue
-        length = int(r.duration_s) if getattr(r, "duration_s", 0) else None
+        length = int(q.duration_s) if getattr(q, "duration_s", 0) else None
         key = match_key(parsed.artist, parsed.title)
         # premiere occurrence gagne (evite d'ecraser la cible en cas de doublon de nom)
-        plan.origin_by_key.setdefault(key, r.path)
-        plan.items.append(WantItem(parsed.artist, parsed.title, length, r.path))
+        plan.origin_by_key.setdefault(key, q.path)
+        plan.items.append(WantItem(parsed.artist, parsed.title, length, q.path))
     return plan
 
 
