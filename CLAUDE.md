@@ -149,13 +149,19 @@ $env:DISCOGS_TOKEN = "ton_token"
   qu'on a demandé). Garde-fous anti-faux-rejet : `(Original Mix)`≡original, `feat.`
   ignoré, bruit (format/année/label/catalogue) ignoré.
   - **Sévérité** : `SUSPECT` (= mauvais enregistrement : mauvaise version, durée
-    aberrante, tag mismatch, rappel trop bas) → **quarantaine** `staging/_rejected/`
-    (réversible). `PARTIAL` (= rappel complet mais mots en trop / titre court / rappel
-    moyen) → **gardé** en staging pour revue, jamais déployé.
+    aberrante, tag mismatch, rappel trop bas, **marqueur compilation/megamix**, ou
+    **≥3 mots en trop**) → **quarantaine** `staging/_rejected/` (réversible).
+    `PARTIAL` (= rappel complet mais 1-2 mots en trop = souvent bon audio mal nommé
+    type `Album - 02 Track`, ou titre court) → **gardé** en staging pour revue, jamais déployé.
   - **Garde au deploy** : `route-files.ps1` ne copie QUE les `Status=OK` (via
     `staging_audit.csv`). PARTIAL/SUSPECT n'atteignent jamais la cible.
-  - Knobs audit : `-MaxExtraWords`, `-NoVersionCheck`, `-NoPrecisionCheck`,
-    `-NoShortTitleGuard`, `-DurationTolerancePct` (10), `-MaxDurationOutlier` (720).
+  - **Durée à la source** : les scrapers émettent une colonne `Length` (s) — Discogs
+    convertit `m:ss`, Bandcamp prend `trackinfo.duration`. sldl auto-détecte `Length`
+    → filtre `length-tol` (15 s) au download + écrit la durée demandée dans
+    `_index.csv`, que l'audit lit pour le check ±10 %. (Vider `inputs/.bandcamp-cache/`
+    une fois pour backfiller les durées des albums déjà en cache.)
+  - Knobs audit : `-MaxExtraWords` (1), `-SuspectExtraWords` (3), `-NoVersionCheck`,
+    `-NoPrecisionCheck`, `-NoShortTitleGuard`, `-DurationTolerancePct` (10), `-MaxDurationOutlier` (720).
 
 ### Risques connus
 - Soulseek refus si ratio compte bas → slskd peut auto-partager le `staging/` (déjà configuré dans slskd.yml)

@@ -23,7 +23,10 @@ How it works :
   4. Dedupe by (artist + " - " + title) lowercased.
 
 Output : same CSV format as the Discogs scraper, so the pipeline can ingest
-either source identically (Artist;Title;Album;Year;Source;SourceUrl).
+either source identically (Artist;Title;Album;Length;Year;Source;SourceUrl).
+Length is the track duration in seconds (from TralbumData.trackinfo[].duration,
+empty when unavailable) so sldl can length-tol filter and the audit can do a
++/-10% duration check.
 """
 
 from __future__ import annotations
@@ -51,6 +54,15 @@ USER_AGENT = (
 
 # Regex to find TralbumData in album pages (set as a JS variable)
 TRALBUM_RE = re.compile(r"var\s+TralbumData\s*=\s*(\{.*?\});", re.DOTALL)
+
+
+def secs(x: Any) -> int | str:
+    """Bandcamp durations are float seconds. Return rounded int, or "" if absent/0."""
+    try:
+        n = float(x)
+    except (TypeError, ValueError):
+        return ""
+    return int(round(n)) if n > 0 else ""
 
 
 def get_session() -> requests.Session:
@@ -163,6 +175,7 @@ def fetch_album_tracklist(session: requests.Session, album_url: str, cache_dir: 
             "Artist": artist,
             "Title": title,
             "Album": album,
+            "Length": secs(tr.get("duration")),
             "Year": year,
             "SourceUrl": album_url,
         })
@@ -182,6 +195,7 @@ def item_to_track_row(item: dict) -> dict | None:
         "Artist": artist,
         "Title": title,
         "Album": item.get("album_title") or "",
+        "Length": secs(item.get("item_duration")),  # usually absent on wishlist items -> ""
         "Year": "",
         "SourceUrl": item.get("item_url") or item.get("tralbum_url") or "",
     }
@@ -258,7 +272,7 @@ def main():
         print("No tracks to write", file=sys.stderr)
         sys.exit(1)
 
-    fields = ["Artist", "Title", "Album", "Year", "Source", "SourceUrl"]
+    fields = ["Artist", "Title", "Album", "Length", "Year", "Source", "SourceUrl"]
     with out_path.open("w", encoding="utf-8", newline="") as f:
         w = csv.DictWriter(f, fieldnames=fields)
         w.writeheader()

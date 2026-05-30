@@ -63,8 +63,14 @@
     Embedded tags below this coverage on both axes => tag_mismatch (default 0.3).
 
 .PARAMETER MaxExtraWords
-    Number of unexpected significant words in the file's title that triggers
-    SUSPECT (default 1 = strict: even one extra real word is a different title).
+    Unexpected significant words in the file's title at/above which the precision
+    check fires (default 1). On its own it downgrades a full-recall match to
+    PARTIAL (review) - see SuspectExtraWords for when it escalates to SUSPECT.
+
+.PARAMETER SuspectExtraWords
+    Extra-word count at/above which the file is treated as a different object
+    (compilation / megamix) -> SUSPECT instead of PARTIAL (default 3). A
+    compilation/mix marker word in the title also forces SUSPECT.
 
 .PARAMETER NoPrecisionCheck
     Disable the extra-words / precision check.
@@ -87,6 +93,7 @@ param(
     [int]$MaxDurationOutlier = 720,
     [double]$TagMismatchThreshold = 0.3,
     [int]$MaxExtraWords = 1,
+    [int]$SuspectExtraWords = 3,
     [switch]$NoPrecisionCheck,
     [switch]$NoVersionCheck,
     [switch]$NoShortTitleGuard
@@ -137,6 +144,11 @@ $verCanon = @{
     'reedit'='edit'; 'redit'='edit'; 'refix'='edit';
     'inst'='instrumental'; 'acappella'='acapella'; 'boot'='bootleg'
 }
+
+# Title markers that mean "this is a bigger aggregate, not the single track asked
+# for" (continuous DJ mix, compilation, megamix...). When the file title carries
+# extra words AND one of these, escalate from PARTIAL to SUSPECT.
+$mixMarkerRe = '\b(megamix|mega mix|continuous|dj ?mix|mixtape|non ?stop|sampler|compilation|full album|b2b|back to back|live set|essential mix|versus|podcast)\b'
 
 function Remove-Diacritics {
     # "Andre" from "Andre" (fold combining marks) without literal accented chars.
@@ -305,6 +317,7 @@ foreach ($f in $files) {
             ReqVersion       = ''
             FileVersion      = ''
             ShortTitleRisk   = $false
+            MixMarker        = $false
             TagArtist        = $audioInfo.Artist
             TagTitle         = $audioInfo.Title
             Reason           = $reason
@@ -341,6 +354,7 @@ foreach ($f in $files) {
             ReqVersion       = ''
             FileVersion      = ''
             ShortTitleRisk   = $false
+            MixMarker        = $false
             TagArtist        = $audioInfo.Artist
             TagTitle         = $audioInfo.Title
             Reason           = 'index row has no meaningful tokens'
@@ -364,6 +378,8 @@ foreach ($f in $files) {
     $titlePrecision = if ($fileTitleTokens.Count -gt 0) {
         [math]::Round((($fileTitleTokens.Count - $extraCount) / $fileTitleTokens.Count), 2)
     } else { 1.0 }
+    # Compilation / continuous-mix marker in the file title (escalates extra-words).
+    $mixMarkerHit = (-not $NoPrecisionCheck) -and (((Remove-Diacritics $split.Title).ToLower()) -match $mixMarkerRe)
 
     # --- Version signature : must match what we asked for -------------------
     $reqVer  = Get-VersionKey -title $idxRow.title
@@ -453,8 +469,17 @@ foreach ($f in $files) {
     }
     elseif ($effectiveArtist -ge $OkThreshold -and $effectiveTitle -ge $OkThreshold) {
         if ($titleExtraFail) {
-            $status = 'PARTIAL'
-            $reasons.Add("extra_words ($((@($extraWords) -join ',')))")
+            $ew = (@($extraWords) -join ',')
+            if ($mixMarkerHit) {
+                $status = 'SUSPECT'
+                $reasons.Add("mix_marker + extra_words ($ew)")
+            } elseif ($extraCount -ge $SuspectExtraWords) {
+                $status = 'SUSPECT'
+                $reasons.Add("many_extra_words ($ew)")
+            } else {
+                $status = 'PARTIAL'
+                $reasons.Add("extra_words ($ew)")
+            }
         }
         elseif ((-not $NoShortTitleGuard) -and $shortTitleRisk -and -not $corroborated) {
             $status = 'PARTIAL'
@@ -497,6 +522,7 @@ foreach ($f in $files) {
         ReqVersion       = $reqVer
         FileVersion      = $fileVer
         ShortTitleRisk   = $shortTitleRisk
+        MixMarker        = $mixMarkerHit
         TagArtist        = $audioInfo.Artist
         TagTitle         = $audioInfo.Title
         Reason           = ($reasons -join '; ')

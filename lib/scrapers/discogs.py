@@ -8,8 +8,11 @@ Token : create one at https://www.discogs.com/settings/developers
         (free, no app registration needed for personal use)
         Pass via --token or set $env:DISCOGS_TOKEN
 
-Output : CSV with columns Artist;Title;Album;Year;Source;SourceUrl
-         Compatible with sldl --input-type csv (uses Artist + Title cols).
+Output : CSV with columns Artist;Title;Album;Length;Year;Source;SourceUrl
+         Compatible with sldl --input-type csv (uses Artist + Title + Length).
+         Length is the track duration in seconds (from the Discogs tracklist,
+         empty when Discogs has no duration), so sldl can length-tol filter and
+         the audit can do a +/-10% duration check.
 
 Notes :
   - Wantlist is paginated (100 per page).
@@ -75,6 +78,23 @@ def fetch_release(release_id: int, headers: dict, cache_dir: Path) -> dict:
     return data
 
 
+def dur_to_secs(s: str) -> int | str:
+    """Convert a Discogs duration ('m:ss' or 'h:m:ss') to integer seconds.
+
+    Returns "" when empty or unparsable, so the CSV cell is blank and sldl /
+    the audit simply skip the length check for that track.
+    """
+    if not s:
+        return ""
+    parts = str(s).strip().split(":")
+    if not all(p.isdigit() for p in parts):
+        return ""
+    secs = 0
+    for p in parts:
+        secs = secs * 60 + int(p)
+    return secs if secs > 0 else ""
+
+
 def join_artists(artists: list[dict]) -> str:
     """Discogs artists have name + join (e.g. 'feat.', '&'). Reconstruct cleanly."""
     parts = []
@@ -112,6 +132,7 @@ def expand_tracklist(release: dict, source_url: str) -> list[dict]:
             "Artist": artist,
             "Title": title,
             "Album": album,
+            "Length": dur_to_secs(tr.get("duration")),
             "Year": year,
             "Source": "discogs:wantlist",
             "SourceUrl": source_url,
