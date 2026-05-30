@@ -5,13 +5,21 @@
 <h1 align="center">DigDigDig</h1>
 
 <p align="center">
+  <a href="https://github.com/DNSZLSK/digdigdig/releases/latest/download/DDD-windows.zip">
+    <img src="https://img.shields.io/badge/T%C3%89L%C3%89CHARGE--MOI-Windows%20.exe-1DB954?style=for-the-badge&logo=windows&logoColor=white" alt="Télécharge DDD pour Windows">
+  </a>
+  <br>
+  <sub><a href="https://dnszlsk.github.io/digdigdig/">Page de présentation</a> · double-clic, aucune install</sub>
+</p>
+
+<p align="center">
   <em>Le crate digger qui creuse trois fois.</em><br>
   Dig tes sources → Dig Soulseek → Dig le spectre du fichier.
 </p>
 
 ---
 
-**Pourquoi DDD ?** Parce que je suis feignant, pauvre, et que j'aime le bon son. Combinaison redoutable.
+**Pourquoi DDD ?** Parce que je suis feignant et que j'aime le bon son. Combinaison redoutable.
 
 Maintenir une bibliothèque DJ en **vrai lossless** à la main, c'est des heures perdues :
 vérifier la source de chaque track, retracker les fichiers foireux, jongler entre les
@@ -138,18 +146,3 @@ upscales (un MP3 320 réencodé en FLAC) ; le ré-audit, si.
 Sortie : `dist\DDD\DDD.exe`. Double-clic = la fenêtre s'ouvre, **sans installer Python**.
 sldl, les profils, le client graphique et le décodage audio (libsndfile) sont embarqués -
 **pas besoin de ffmpeg**. Détails et build Mac/Linux : `packaging/README.md`.
-
-## Roadmap
-
-- [x] Pipeline complet : scrape → sldl → audit titre-complet → flac-detective → deploy configurable
-- [x] Scrapers Discogs (wantlist/collection) + Bandcamp (wishlist)
-- [x] Audit durci : précision + version + durée, quarantaine + garde au deploy `Status=OK`
-- [x] Coeur Python `ddd` : scan qualité index-free (tous formats, WAV inclus) + audit nom/tags + doublons
-- [x] Boucle upgrade Soulseek avec ré-audit anti-upscale (n'accepte que le vrai lossless)
-- [x] Fenêtre native (Flet) + `.exe` une-touche (PyInstaller), multiplateforme
-- [ ] Scraper SoundCloud likes (yt-dlp)
-- [ ] Fallback multi-provider quand Soulseek miss (Bandcamp pay, Beatport, Tidal, Qobuz)
-- [ ] DB SQLite (historique d'acquisition, stats)
-- [ ] Dashboard web
-- [ ] Mode service Windows (poll des wishlists, rebuild incrémental)
-- [ ] Auto-tagging MusicBrainz/Discogs + génération de playlists Rekordbox/Serato
