@@ -7,10 +7,16 @@ bin/*.zip
 __pycache__/
 *.pyc
 
+# PyInstaller build artifacts
+build/
+dist/
+*.spec.bak
+
 # Runtime data
 staging/
 logs/
 inputs/*.csv
+inputs/*.json
 outputs/*.csv
 outputs/*.json
 

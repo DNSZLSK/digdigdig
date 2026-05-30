@@ -1,0 +1,36 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "ddd-digdigdig"
+version = "0.1.0"
+description = "DDD - DigDigDig : scan qualite lossless + upgrade Soulseek"
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+    "numpy>=1.24",
+    "scipy>=1.10",
+    "soundfile>=0.12",
+    "mutagen>=1.46",
+    "flac-detective>=0.9.6",
+    "requests>=2.28",
+    "cloudscraper>=1.2.71",
+    "beautifulsoup4>=4.11",
+]
+
+[project.optional-dependencies]
+# Phase 4 (GUI + packaging) - non requis pour le coeur CLI.
+# Pin sur la ligne stable 0.28.x : la 0.85+ ("Flet 1.0", alpha) a des constructeurs
+# incompatibles (TextField sans label, boutons sans label positionnel).
+gui = ["flet>=0.24,<0.30"]
+build = ["pyinstaller>=6.0"]
+
+[project.scripts]
+ddd = "ddd.cli:main"
+
+[project.gui-scripts]
+ddd-gui = "ddd.gui:run"
+
+[tool.setuptools.packages.find]
+include = ["ddd*"]

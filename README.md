@@ -97,11 +97,56 @@ $env:DISCOGS_TOKEN = "ton_token"
 **Switches utiles** : `-Limit N` (smoke test), `-OnlyTier N`, `-DoRetry` (retry des misses),
 `-AutoClean` (audit + clean auto), `-DeleteOld` (avec `-DoDeploy`, supprime les vieux fichiers remplacés).
 
+## L'app `ddd` (coeur Python portable + fenêtre native)
+
+Le pipeline PowerShell ci-dessus reste dispo, mais le projet est désormais aussi un
+**vrai logiciel** : un coeur Python portable (Windows / Mac / Linux) avec une fenêtre
+native, qui scanne **n'importe quel dossier existant** (pas besoin d'être passé par le
+pipeline) et sait upgrader les fichiers tout seul.
+
+```powershell
+# Scanner un dossier : vrai lossless ou faux ? bien nommé ? doublons ?
+.\.venv\Scripts\python.exe -m ddd scan "C:\chemin\vers\Musique"
+
+# Chercher un vrai lossless sur Soulseek pour les fichiers flaggés
+#   (dry-run par défaut : télécharge + ré-audite, ne touche à rien)
+.\.venv\Scripts\python.exe -m ddd upgrade "C:\chemin\vers\Musique"
+#   --apply pour remplacer réellement, --delete-old pour virer l'original
+
+# Scraper tes favoris -> want-list, puis télécharger en vrai lossless
+.\.venv\Scripts\python.exe -m ddd scrape bandcamp <user>
+.\.venv\Scripts\python.exe -m ddd acquire outputs\bandcamp_<user>.csv
+
+# Réglages (token Discogs, login Soulseek) persistés dans %APPDATA%\ddd
+.\.venv\Scripts\python.exe -m ddd config set discogs_token <token>
+
+# La fenêtre native (installer flet : pip install -e ".[gui]")
+.\.venv\Scripts\python.exe -m ddd gui
+```
+
+**Le filet de sécurité clé** : un fichier téléchargé n'est accepté que s'il repasse le
+détecteur spectral en **vrai lossless**. Les filtres de Soulseek ne détectent pas les
+upscales (un MP3 320 réencodé en FLAC) ; le ré-audit, si.
+
+### Le `.exe` pour tout le monde
+
+```powershell
+.\.venv\Scripts\python.exe -m pip install -e ".[gui,build]"
+.\packaging\build.ps1
+```
+
+Sortie : `dist\DDD\DDD.exe`. Double-clic = la fenêtre s'ouvre, **sans installer Python**.
+sldl, les profils, le client graphique et le décodage audio (libsndfile) sont embarqués -
+**pas besoin de ffmpeg**. Détails et build Mac/Linux : `packaging/README.md`.
+
 ## Roadmap
 
 - [x] Pipeline complet : scrape → sldl → audit titre-complet → flac-detective → deploy configurable
 - [x] Scrapers Discogs (wantlist/collection) + Bandcamp (wishlist)
 - [x] Audit durci : précision + version + durée, quarantaine + garde au deploy `Status=OK`
+- [x] Coeur Python `ddd` : scan qualité index-free (tous formats, WAV inclus) + audit nom/tags + doublons
+- [x] Boucle upgrade Soulseek avec ré-audit anti-upscale (n'accepte que le vrai lossless)
+- [x] Fenêtre native (Flet) + `.exe` une-touche (PyInstaller), multiplateforme
 - [ ] Scraper SoundCloud likes (yt-dlp)
 - [ ] Fallback multi-provider quand Soulseek miss (Bandcamp pay, Beatport, Tidal, Qobuz)
 - [ ] DB SQLite (historique d'acquisition, stats)
