@@ -2,6 +2,10 @@
 bin/sldl/
 bin/*.zip
 
+# PyInstaller build artifacts
+build/
+dist/
+
 # Python venv
 .venv/
 __pycache__/
