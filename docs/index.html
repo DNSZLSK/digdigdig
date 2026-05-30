@@ -1,0 +1,207 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>DigDigDig - le crate digger qui creuse trois fois</title>
+<meta name="description" content="DDD scanne ta bibliotheque, demasque les faux lossless et va chercher le vrai sur Soulseek. Telecharge l'app Windows.">
+<meta property="og:title" content="DigDigDig">
+<meta property="og:description" content="Le crate digger qui creuse trois fois. Vrai lossless ou rien.">
+<meta property="og:image" content="logo.png">
+<style>
+  :root {
+    --bg: #0d0f12;
+    --panel: #15181d;
+    --panel2: #1b1f26;
+    --txt: #e8eaed;
+    --muted: #9aa0a8;
+    --line: #262b33;
+    --accent: #1DB954;
+    --red: #ff5b5b;
+    --amber: #ffb340;
+    --blue: #4aa3ff;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html { scroll-behavior: smooth; }
+  body {
+    background: var(--bg);
+    color: var(--txt);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    line-height: 1.6;
+    -webkit-font-smoothing: antialiased;
+  }
+  a { color: var(--accent); text-decoration: none; }
+  a:hover { text-decoration: underline; }
+  .wrap { max-width: 880px; margin: 0 auto; padding: 0 24px; }
+
+  /* Hero */
+  .hero {
+    text-align: center;
+    padding: 72px 24px 48px;
+    background: radial-gradient(900px 400px at 50% -120px, rgba(29,185,84,0.12), transparent 70%);
+  }
+  .hero img.logo { width: 100%; max-width: 480px; height: auto; }
+  .tagline { font-size: 1.25rem; color: var(--txt); margin-top: 20px; font-style: italic; }
+  .sub { color: var(--muted); margin-top: 8px; font-size: 1rem; }
+  .three { color: var(--muted); margin-top: 6px; font-size: 0.95rem; }
+  .three b { color: var(--txt); font-weight: 600; }
+
+  /* Download */
+  .cta { margin-top: 36px; }
+  .btn {
+    display: inline-block;
+    background: var(--accent);
+    color: #06210f;
+    font-weight: 800;
+    font-size: 1.15rem;
+    letter-spacing: 0.3px;
+    padding: 16px 34px;
+    border-radius: 12px;
+    box-shadow: 0 6px 24px rgba(29,185,84,0.28);
+    transition: transform .08s ease, box-shadow .2s ease;
+  }
+  .btn:hover { transform: translateY(-2px); text-decoration: none; box-shadow: 0 10px 30px rgba(29,185,84,0.42); }
+  .cta .meta { color: var(--muted); font-size: 0.85rem; margin-top: 12px; }
+
+  /* Sections */
+  section { padding: 48px 0; border-top: 1px solid var(--line); }
+  h2 { font-size: 1.5rem; margin-bottom: 6px; }
+  h2 .accent { color: var(--accent); }
+  .lead { color: var(--muted); margin-bottom: 26px; }
+
+  /* 3 D cards */
+  .cards { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; }
+  .card {
+    background: var(--panel);
+    border: 1px solid var(--line);
+    border-radius: 14px;
+    padding: 22px;
+  }
+  .card .num { font-size: 0.8rem; font-weight: 700; letter-spacing: 2px; color: var(--accent); }
+  .card h3 { font-size: 1.1rem; margin: 6px 0 8px; }
+  .card p { color: var(--muted); font-size: 0.92rem; }
+
+  /* Highlight box */
+  .highlight {
+    background: linear-gradient(180deg, var(--panel2), var(--panel));
+    border: 1px solid var(--line);
+    border-left: 3px solid var(--accent);
+    border-radius: 12px;
+    padding: 24px 26px;
+  }
+  .highlight h2 { margin-bottom: 10px; }
+  .highlight p { color: var(--txt); }
+  .highlight .pts { margin-top: 16px; display: flex; flex-wrap: wrap; gap: 10px; }
+  .tag { font-size: 0.82rem; padding: 5px 12px; border-radius: 20px; font-weight: 600; }
+  .tag.ok { background: rgba(29,185,84,0.15); color: var(--accent); }
+  .tag.fake { background: rgba(255,91,91,0.15); color: var(--red); }
+  .tag.susp { background: rgba(255,179,64,0.15); color: var(--amber); }
+
+  /* Steps */
+  ol.steps { list-style: none; counter-reset: s; }
+  ol.steps li { counter-increment: s; padding: 12px 0 12px 44px; position: relative; color: var(--muted); }
+  ol.steps li::before {
+    content: counter(s);
+    position: absolute; left: 0; top: 10px;
+    width: 28px; height: 28px; border-radius: 50%;
+    background: var(--panel2); border: 1px solid var(--line);
+    color: var(--accent); font-weight: 700; text-align: center; line-height: 28px; font-size: 0.85rem;
+  }
+  ol.steps li b { color: var(--txt); }
+  code { background: var(--panel2); padding: 2px 7px; border-radius: 6px; font-size: 0.88em; color: #cdd3da; }
+
+  footer { text-align: center; padding: 40px 24px 60px; color: var(--muted); font-size: 0.88rem; border-top: 1px solid var(--line); }
+
+  @media (max-width: 680px) {
+    .cards { grid-template-columns: 1fr; }
+    .hero { padding-top: 48px; }
+    .tagline { font-size: 1.1rem; }
+  }
+</style>
+</head>
+<body>
+
+  <header class="hero">
+    <div class="wrap">
+      <img class="logo" src="logo.png" alt="DigDigDig">
+      <p class="tagline">Le crate digger qui creuse trois fois.</p>
+      <p class="three">Dig tes <b>sources</b> &nbsp;→&nbsp; Dig <b>Soulseek</b> &nbsp;→&nbsp; Dig le <b>spectre</b> du fichier.</p>
+      <div class="cta">
+        <a class="btn" href="https://github.com/DNSZLSK/digdigdig/releases/latest/download/DDD-windows.zip">⬇ Télécharge-moi (Windows)</a>
+        <p class="meta">Double-clic, aucune installation. Pas besoin de Python ni de ffmpeg.</p>
+      </div>
+    </div>
+  </header>
+
+  <main class="wrap">
+
+    <section>
+      <h2>C'est quoi&nbsp;?</h2>
+      <p class="lead">
+        Maintenir une bibliothèque DJ en <b>vrai lossless</b> à la main, c'est des heures perdues :
+        vérifier la source de chaque track, retracker les fichiers foireux, refaire la même
+        recherche pour la 4e fois. DDD le fait à ta place.
+      </p>
+      <div class="cards">
+        <div class="card">
+          <div class="num">1 · DIG</div>
+          <h3>Tes sources</h3>
+          <p>Scrape tes favoris Discogs et Bandcamp, ou scanne n'importe quel dossier déjà sur ton disque.</p>
+        </div>
+        <div class="card">
+          <div class="num">2 · DIG</div>
+          <h3>Soulseek</h3>
+          <p>Va chercher le vrai lossless en match strict, avec retry automatique sur les ratés.</p>
+        </div>
+        <div class="card">
+          <div class="num">3 · DIG</div>
+          <h3>Le spectre</h3>
+          <p>Analyse FFT de chaque fichier pour démasquer les faux lossless (un MP3 déguisé en FLAC/WAV).</p>
+        </div>
+      </div>
+    </section>
+
+    <section>
+      <div class="highlight">
+        <h2>Le truc qui change tout&nbsp;: <span class="accent">l'anti-upscale</span></h2>
+        <p>
+          Un MP3 320 réencodé en FLAC reste un MP3. Les filtres de Soulseek ne le voient pas -
+          le conteneur affiche fièrement « 1411 kbps ». DDD, lui, regarde le <b>spectre réel</b> :
+          un mur de fréquences à 16 kHz trahit la source lossy. Chaque fichier téléchargé est
+          <b>ré-audité</b>, et n'entre dans ta bibliothèque que s'il est <b>vraiment</b> lossless.
+        </p>
+        <div class="pts">
+          <span class="tag ok">✓ Vrai lossless → gardé</span>
+          <span class="tag susp">~ Suspect (320k) → revue</span>
+          <span class="tag fake">✗ Faux lossless → rejeté</span>
+        </div>
+      </div>
+    </section>
+
+    <section>
+      <h2>Comment ça marche</h2>
+      <p class="lead">Trois clics dans la fenêtre, ou en ligne de commande.</p>
+      <ol class="steps">
+        <li><b>Choisis un dossier</b> de musique (ou colle ta wishlist).</li>
+        <li><b>Scanne</b> : DDD classe chaque fichier (vrai lossless, faux, lossy) et repère les doublons.</li>
+        <li><b>Upgrade</b> : pour les fichiers flaggés, il télécharge le vrai lossless et remplace - seulement si l'audio passe le contrôle.</li>
+      </ol>
+      <p class="lead" style="margin-top:18px">
+        Aussi dispo en CLI : <code>ddd scan</code>, <code>ddd upgrade</code>, <code>ddd scrape</code>,
+        <code>ddd gui</code>. Coeur Python portable (Windows / Mac / Linux).
+      </p>
+    </section>
+
+  </main>
+
+  <footer>
+    <p>
+      <a href="https://github.com/DNSZLSK/digdigdig/releases/latest/download/DDD-windows.zip">Télécharger</a>
+      &nbsp;·&nbsp;
+      <a href="https://github.com/DNSZLSK/digdigdig">Code source sur GitHub</a>
+    </p>
+    <p style="margin-top:10px">DDD - DigDigDig · vrai lossless ou rien.</p>
+  </footer>
+
+</body>
+</html>

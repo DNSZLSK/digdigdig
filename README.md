@@ -2,7 +2,7 @@
   <img src="docs/logo.png" alt="DDD - DigDigDig" width="400">
 </p>
 
-<h1 align="center">DDD - DigDigDig</h1>
+<h1 align="center">DigDigDig</h1>
 
 <p align="center">
   <em>Le crate digger qui creuse trois fois.</em><br>
