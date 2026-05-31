@@ -101,6 +101,18 @@ def _set_window_size(page, w: int, h: int) -> None:
         pass
 
 
+def _set_window_icon(page, ico) -> None:
+    """Icone de la fenetre (logo DDD), API recente (page.window.icon) ou ancienne."""
+    try:
+        win = getattr(page, "window", None)
+        if win is not None and hasattr(win, "icon"):
+            win.icon = str(ico)
+        else:
+            page.window_icon = str(ico)
+    except Exception:  # noqa: BLE001
+        pass
+
+
 class AppState:
     def __init__(self) -> None:
         self.folder: Optional[str] = None
@@ -121,6 +133,9 @@ def main(page: ft.Page) -> None:
 
     page.title = f"DDD - DigDigDig  v{__version__}"
     _set_window_size(page, 1100, 760)
+    _icon = paths.app_icon()
+    if _icon.exists():
+        _set_window_icon(page, _icon)
     page.theme_mode = ft.ThemeMode.DARK
     page.theme = ft.Theme(color_scheme_seed=ACCENT)
     page.bgcolor = BG

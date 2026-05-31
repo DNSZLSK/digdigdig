@@ -50,6 +50,11 @@ def sldl_config() -> Path:
     return resource_base() / "config" / "sldl.conf"
 
 
+def app_icon() -> Path:
+    """Icone DDD (.ico) pour la fenetre + l'exe (embarquee, frozen-aware)."""
+    return resource_base() / "ddd" / "assets" / "ddd.ico"
+
+
 def _ensure(p: Path) -> Path:
     p.mkdir(parents=True, exist_ok=True)
     return p

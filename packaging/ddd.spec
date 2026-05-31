@@ -20,10 +20,13 @@ from PyInstaller.utils.hooks import collect_all
 SPECPATH_ = Path(SPECPATH)            # packaging/
 ROOT = SPECPATH_.parent               # racine du repo
 
-# Ressources embarquees (lecture seule) : sldl + profils + licence
+ICON = ROOT / "ddd" / "assets" / "ddd.ico"
+
+# Ressources embarquees (lecture seule) : sldl + profils + icone (pour la fenetre Flet)
 datas = [
     (str(ROOT / "bin" / "sldl"), "bin/sldl"),
     (str(ROOT / "config"), "config"),
+    (str(ROOT / "ddd" / "assets"), "ddd/assets"),
 ]
 binaries = []
 hiddenimports = ["ddd", "ddd.gui", "ddd.cli"]
@@ -60,7 +63,7 @@ exe = EXE(
     strip=False,
     upx=False,
     console=False,                    # appli fenetre (pas de console)
-    icon=None,
+    icon=str(ICON) if ICON.exists() else None,
 )
 
 coll = COLLECT(
