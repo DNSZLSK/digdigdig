@@ -19,7 +19,7 @@
 
 ---
 
-**Pourquoi DDD ?** Parce que je suis feignant, pauvre, et que j'aime le bon son. Combinaison redoutable.
+**Pourquoi DDD ?** Parce que je suis feignant, et que j'aime le bon son. Combinaison redoutable.
 
 Maintenir une bibliothèque DJ en **vrai lossless** à la main, c'est des heures perdues :
 vérifier la source de chaque track, retracker les fichiers foireux, jongler entre les
