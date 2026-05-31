@@ -9,121 +9,114 @@
 <meta property="og:description" content="Le crate digger qui creuse trois fois. Vrai lossless ou rien.">
 <meta property="og:image" content="logo.png">
 <style>
+  /* Palette = celle de l'app (gui.py) : charbon sobre, accent slate, badges desatures */
   :root {
-    --bg: #0d0f12;
-    --panel: #15181d;
-    --panel2: #1b1f26;
-    --txt: #e8eaed;
-    --muted: #9aa0a8;
-    --line: #262b33;
-    --accent: #1DB954;
-    --red: #ff5b5b;
-    --amber: #ffb340;
-    --blue: #4aa3ff;
+    --bg: #1E1E1E;
+    --panel: #252525;
+    --panel2: #2b2b2b;
+    --txt: #D0D0D0;
+    --muted: #9A9A9A;
+    --line: #3A3A3A;
+    --accent: #5C6B7A;       /* slate (seed de l'app) */
+    --link: #8FA3B3;         /* slate clair, lisible */
+    --olive: #6E7F5B;        /* vrai lossless */
+    --brown: #8C5A5A;        /* faux lossless */
+    --taupe: #8C7A5A;        /* suspect 320k */
   }
   * { box-sizing: border-box; margin: 0; padding: 0; }
   html { scroll-behavior: smooth; }
   body {
     background: var(--bg);
     color: var(--txt);
-    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    font-family: "Segoe UI", -apple-system, BlinkMacSystemFont, Roboto, Helvetica, Arial, sans-serif;
     line-height: 1.6;
     -webkit-font-smoothing: antialiased;
   }
-  a { color: var(--accent); text-decoration: none; }
+  a { color: var(--link); text-decoration: none; }
   a:hover { text-decoration: underline; }
   .wrap { max-width: 980px; margin: 0 auto; padding: 0 24px; }
+  .mono { font-family: "Consolas", "SF Mono", Menlo, monospace; }
 
-  /* Hero */
-  .hero {
-    text-align: center;
-    padding: 72px 24px 48px;
-    background: radial-gradient(900px 400px at 50% -120px, rgba(29,185,84,0.12), transparent 70%);
-  }
-  .hero img.logo { width: 100%; max-width: 480px; height: auto; }
-  .tagline { font-size: 1.25rem; color: var(--txt); margin-top: 20px; font-style: italic; }
-  .three { color: var(--muted); margin-top: 6px; font-size: 0.95rem; }
+  /* Hero - sobre, pas de glow */
+  .hero { text-align: center; padding: 64px 24px 44px; }
+  .hero img.logo { width: 100%; max-width: 440px; height: auto; }
+  .tagline { font-size: 1.2rem; color: var(--txt); margin-top: 18px; font-style: italic; }
+  .three { color: var(--muted); margin-top: 6px; font-size: 0.92rem; letter-spacing: 0.2px; }
   .three b { color: var(--txt); font-weight: 600; }
 
-  /* Download */
-  .cta { margin-top: 36px; }
+  /* Download - bouton plat type app (FilledButton slate), discret */
+  .cta { margin-top: 30px; }
   .btn {
     display: inline-block;
     background: var(--accent);
-    color: #06210f;
-    font-weight: 800;
-    font-size: 1.15rem;
-    letter-spacing: 0.3px;
-    padding: 16px 34px;
-    border-radius: 12px;
-    box-shadow: 0 6px 24px rgba(29,185,84,0.28);
-    transition: transform .08s ease, box-shadow .2s ease;
+    color: #ECEFF2;
+    font-weight: 600;
+    font-size: 1rem;
+    padding: 12px 26px;
+    border-radius: 8px;
+    border: 1px solid #6c7c8c;
   }
-  .btn:hover { transform: translateY(-2px); text-decoration: none; box-shadow: 0 10px 30px rgba(29,185,84,0.42); }
-  .cta .meta { color: var(--muted); font-size: 0.85rem; margin-top: 12px; }
+  .btn:hover { background: #6a7c8d; text-decoration: none; }
+  .cta .meta { color: var(--muted); font-size: 0.84rem; margin-top: 12px; }
 
   /* Sections */
-  section { padding: 48px 0; border-top: 1px solid var(--line); }
-  h2 { font-size: 1.5rem; margin-bottom: 6px; }
-  h2 .accent { color: var(--accent); }
-  .lead { color: var(--muted); margin-bottom: 26px; }
+  section { padding: 44px 0; border-top: 1px solid var(--line); }
+  h2 { font-size: 1.25rem; margin-bottom: 6px; font-weight: 600; letter-spacing: 0.2px; }
+  h2 .accent { color: var(--link); }
+  .lead { color: var(--muted); margin-bottom: 24px; }
 
-  /* Screenshots */
-  .shots { display: grid; gap: 28px; }
+  /* Captures - cadre plat comme les conteneurs de l'app */
+  .shots { display: grid; gap: 24px; }
   .shot img {
     width: 100%; height: auto; display: block;
-    border: 1px solid var(--line); border-radius: 12px;
-    box-shadow: 0 10px 34px rgba(0,0,0,0.45);
+    border: 1px solid var(--line); border-radius: 8px;
   }
-  .shot figcaption { color: var(--muted); font-size: 0.9rem; margin-top: 10px; text-align: center; }
+  .shot figcaption { color: var(--muted); font-size: 0.88rem; margin-top: 10px; text-align: center; }
 
-  /* 3 D cards */
-  .cards { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; }
-  .card {
+  /* 3 D - panneaux plats */
+  .cards { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; }
+  .card { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 20px; }
+  .card .num { font-size: 0.72rem; font-weight: 700; letter-spacing: 2px; color: var(--muted); }
+  .card h3 { font-size: 1.02rem; margin: 6px 0 8px; font-weight: 600; }
+  .card p { color: var(--muted); font-size: 0.9rem; }
+
+  /* Encart */
+  .highlight {
     background: var(--panel);
     border: 1px solid var(--line);
-    border-radius: 14px;
-    padding: 22px;
-  }
-  .card .num { font-size: 0.8rem; font-weight: 700; letter-spacing: 2px; color: var(--accent); }
-  .card h3 { font-size: 1.1rem; margin: 6px 0 8px; }
-  .card p { color: var(--muted); font-size: 0.92rem; }
-
-  /* Highlight box */
-  .highlight {
-    background: linear-gradient(180deg, var(--panel2), var(--panel));
-    border: 1px solid var(--line);
     border-left: 3px solid var(--accent);
-    border-radius: 12px;
-    padding: 24px 26px;
+    border-radius: 8px;
+    padding: 22px 24px;
   }
   .highlight h2 { margin-bottom: 10px; }
   .highlight p { color: var(--txt); }
   .highlight .pts { margin-top: 16px; display: flex; flex-wrap: wrap; gap: 10px; }
-  .tag { font-size: 0.82rem; padding: 5px 12px; border-radius: 20px; font-weight: 600; }
-  .tag.ok { background: rgba(29,185,84,0.15); color: var(--accent); }
-  .tag.fake { background: rgba(255,91,91,0.15); color: var(--red); }
-  .tag.susp { background: rgba(255,179,64,0.15); color: var(--amber); }
+  /* Pills = badges de verdict de l'app (fond plein desature, texte clair) */
+  .tag { font-size: 0.8rem; padding: 4px 11px; border-radius: 10px; font-weight: 600; color: #E8EAED; }
+  .tag.ok { background: var(--olive); }
+  .tag.fake { background: var(--brown); }
+  .tag.susp { background: var(--taupe); }
 
-  /* Steps */
+  /* Etapes */
   ol.steps { list-style: none; counter-reset: s; }
-  ol.steps li { counter-increment: s; padding: 12px 0 12px 44px; position: relative; color: var(--muted); }
+  ol.steps li { counter-increment: s; padding: 11px 0 11px 42px; position: relative; color: var(--muted); }
   ol.steps li::before {
     content: counter(s);
-    position: absolute; left: 0; top: 10px;
-    width: 28px; height: 28px; border-radius: 50%;
+    position: absolute; left: 0; top: 9px;
+    width: 26px; height: 26px; border-radius: 6px;
     background: var(--panel2); border: 1px solid var(--line);
-    color: var(--accent); font-weight: 700; text-align: center; line-height: 28px; font-size: 0.85rem;
+    color: var(--link); font-weight: 700; text-align: center; line-height: 26px; font-size: 0.82rem;
   }
   ol.steps li b { color: var(--txt); }
-  code { background: var(--panel2); padding: 2px 7px; border-radius: 6px; font-size: 0.88em; color: #cdd3da; }
+  code { background: var(--panel2); padding: 2px 7px; border-radius: 6px; font-size: 0.86em; color: #cdd3da;
+         font-family: "Consolas", "SF Mono", Menlo, monospace; }
 
-  footer { text-align: center; padding: 40px 24px 60px; color: var(--muted); font-size: 0.88rem; border-top: 1px solid var(--line); }
+  footer { text-align: center; padding: 38px 24px 56px; color: var(--muted); font-size: 0.86rem; border-top: 1px solid var(--line); }
 
   @media (max-width: 680px) {
     .cards { grid-template-columns: 1fr; }
-    .hero { padding-top: 48px; }
-    .tagline { font-size: 1.1rem; }
+    .hero { padding-top: 44px; }
+    .tagline { font-size: 1.05rem; }
   }
 </style>
 </head>
@@ -133,9 +126,9 @@
     <div class="wrap">
       <img class="logo" src="logo.png" alt="DigDigDig">
       <p class="tagline">Le crate digger qui creuse trois fois.</p>
-      <p class="three">Dig tes <b>sources</b> &nbsp;→&nbsp; Dig <b>Soulseek</b> &nbsp;→&nbsp; Dig le <b>spectre</b> du fichier.</p>
+      <p class="three mono">Dig tes <b>sources</b> &nbsp;-&gt;&nbsp; Dig <b>Soulseek</b> &nbsp;-&gt;&nbsp; Dig le <b>spectre</b></p>
       <div class="cta">
-        <a class="btn" href="https://github.com/DNSZLSK/digdigdig/releases/latest/download/DDD-windows.zip">⬇ Télécharge-moi (Windows)</a>
+        <a class="btn" href="https://github.com/DNSZLSK/digdigdig/releases/latest/download/DDD-windows.zip">Telecharger pour Windows</a>
         <p class="meta">Double-clic, aucune installation. Pas besoin de Python ni de ffmpeg.</p>
       </div>
     </div>
@@ -196,9 +189,9 @@
           que s'il est <b>vraiment</b> le bon morceau en lossless. Le reste part à la corbeille.
         </p>
         <div class="pts">
-          <span class="tag ok">✓ Vrai lossless → bibliothèque</span>
-          <span class="tag susp">~ Suspect (320k) → revue</span>
-          <span class="tag fake">✗ Faux / mauvais match → corbeille</span>
+          <span class="tag ok">Vrai lossless -&gt; bibliotheque</span>
+          <span class="tag susp">Suspect (320k) -&gt; revue</span>
+          <span class="tag fake">Faux / mauvais match -&gt; corbeille</span>
         </div>
       </div>
     </section>
