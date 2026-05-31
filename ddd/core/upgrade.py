@@ -20,7 +20,7 @@ from typing import Callable, Dict, List, Optional, Sequence
 from . import quality
 from .naming import match_key, parse_filename
 from .scan import scan_folder, AUDIO_EXTS
-from .tokenize import get_tokens, token_coverage
+from .tokenize import get_tokens, token_coverage, core_title_tokens
 from . import soulseek
 from .soulseek import WantItem
 
@@ -41,10 +41,10 @@ ACT_TOO_SHORT = "TOO_SHORT"             # download trop court (preview/sample) -
 ACT_WRONG_MATCH = "WRONG_MATCH"         # mauvais titre/artiste (match fuzzy foireux) -> jete
 ACT_DUPLICATE = "DUPLICATE"             # deja present (dans la liste ou deja dans l'inbox) -> saute
 
-# Garde-fous post-download (en plus du strict-title/artist sldl et du re-audit spectral)
-MIN_DURATION_S = 90       # < 90 s = quasi sûr un extrait / preview Soulseek
-MIN_TITLE_COVERAGE = 0.6  # le nom du fichier recu doit couvrir >=60% des tokens demandes
-CHUNK_SIZE = 25           # taille des lots sldl : feedback par piste periodique sur gros batch
+# Garde-fous post-download (sldl tourne en fuzzy ; c'est DDD qui filtre intelligemment)
+MIN_DURATION_S = 90        # < 90 s = quasi sûr un extrait / preview Soulseek
+MIN_TITLE_COVERAGE = 0.6   # le fichier recu doit couvrir >=60% des tokens du titre (noyau)
+CHUNK_SIZE = 25            # taille des lots sldl : feedback par piste periodique sur gros batch
 
 
 def _chunks(seq, n: int):
@@ -74,17 +74,26 @@ def _reject_reason(it, dl, q):
 
     Ordre : trop court (preview) -> mauvais match (titre/artiste) -> non-authentique
     (upscale/lossy). Le re-audit spectral ne verifie QUE l'authenticite, pas l'identite
-    ni la duree : ces deux gardes attrapent les extraits de 1 min et les faux matchs
-    fuzzy de Soulseek qui passent quand meme le strict-title de sldl.
+    ni la duree.
+
+    Identite : le TITRE est le discriminant principal -> couverture du noyau du titre
+    (sans (Original Mix)/feat) >= 60% ; ca reconnait "Andre Kraml - Safari" pour la requete
+    "Andre Kraml Feat ... - Safari (Original Mix)" et rejette "Aladdin's Other Lamp".
+    L'ARTISTE n'est qu'un garde-fou (eviter le meme titre par un autre artiste = reprise) :
+    on exige juste qu'AU MOINS un des artistes demandes (n'importe quel collaborateur)
+    soit present dans le nom -> tolere les collabs nommees par l'autre membre.
     """
     dur = getattr(q, "duration_s", 0) or 0
     if 0 < dur < MIN_DURATION_S:
         return ACT_TOO_SHORT, f"trop court ({dur:.0f}s < {MIN_DURATION_S}s) : preview/sample probable"
 
-    requested = get_tokens(f"{it.artist} {it.title}")
-    cov = token_coverage(requested, get_tokens(Path(dl.filepath).stem))
-    if 0 <= cov < MIN_TITLE_COVERAGE:   # cov == -1 -> rien de demandable, on ne juge pas
-        return ACT_WRONG_MATCH, f"mauvais match (couverture titre {cov:.0%}) : {Path(dl.filepath).name}"
+    found = set(get_tokens(Path(dl.filepath).stem))
+    t_cov = token_coverage(core_title_tokens(it.title), found)    # -1 = titre non jugeable
+    artist_req = get_tokens(it.artist)   # tous les collaborateurs (presence, pas couverture)
+    artist_ok = (not artist_req) or any(tok in found for tok in artist_req)
+    if (0 <= t_cov < MIN_TITLE_COVERAGE) or not artist_ok:
+        return ACT_WRONG_MATCH, (f"mauvais match (titre {t_cov:.0%}, artiste "
+                                 f"{'ok' if artist_ok else 'absent'}) : {Path(dl.filepath).name}")
 
     if q.verdict != quality.AUTHENTIC:
         return ACT_REJECTED_FAKE, (f"download non-authentique ({q.verdict}, "

@@ -168,7 +168,20 @@ def main():
         "61s -> trop court"
     assert up._reject_reason(itm, _dl("Adventureland Bazaar - Aladdins Other Lamp"), q_ok)[0] \
         == up.ACT_WRONG_MATCH, "nom sans rapport -> mauvais match"
-    print("OK - _reject_reason : trop court + mauvais match")
+    # vrai resultat juste renomme : requete verbeuse (feat + artistes secondaires +
+    # (Original Mix)) vs fichier partage simple -> doit etre GARDE grace au noyau normalise
+    kraml = WantItem("Andre Kraml Feat Schad Privat & Schad Privat", "Safari (Original Mix)",
+                     None, "")
+    assert up._reject_reason(kraml, _dl("Andre Kraml - Safari"), q_ok) is None, \
+        "vrai track renomme (noyau artiste+titre couvert) -> garde"
+    # meme artiste, autre titre -> doit etre rejete (le titre porte la decision)
+    assert up._reject_reason(kraml, _dl("Andre Kraml - Different Song"), q_ok)[0] \
+        == up.ACT_WRONG_MATCH, "meme artiste mais autre titre -> mauvais match"
+    # collab nommee par l'AUTRE membre : un seul artiste present suffit
+    collab = WantItem("Daft Punk vs Stardust", "Music Sounds Better", None, "")
+    assert up._reject_reason(collab, _dl("Stardust - Music Sounds Better With You"), q_ok) is None, \
+        "collab nommee par l'autre artiste -> garde (titre couvert + 1 artiste present)"
+    print("OK - _reject_reason : trop court + mauvais match + vrai renomme + collab")
 
     # --- acquire dedup : doublon dans la liste saute (par match_key) ---
     dup_events = []

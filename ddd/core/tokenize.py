@@ -45,6 +45,11 @@ MIX_MARKER_RE = re.compile(
 _NON_ALNUM = re.compile(r"[^a-z0-9\s]")
 _WS = re.compile(r"\s+")
 _FEAT_TAIL = re.compile(r"(?i)\s*[\(\[]?\b(feat\.?|ft\.?|featuring)\b.*$")
+# Separateurs d'artistes (collab) : on ne garde que le 1er pour l'identite
+_ARTIST_SPLIT = re.compile(
+    r"(?i)\s*(?:,|&|/|\+|\bfeat\.?\b|\bft\.?\b|\bfeaturing\b|\bvs\.?\b|\bx\b|\bwith\b|\bpres\.?\b)\s*")
+# Parentheses/crochets (souvent un qualificatif de version : (Original Mix), [Label001])
+_PAREN = re.compile(r"[\(\[\{].*?[\)\]\}]")
 
 
 def remove_diacritics(s: str) -> str:
@@ -77,6 +82,25 @@ def remove_feat_tail(s: str) -> str:
     if not s:
         return ""
     return _FEAT_TAIL.sub("", s).strip()
+
+
+def primary_artist(artist: str) -> str:
+    """Premier artiste avant tout separateur de collab (feat / & / , / x / vs / +)."""
+    if not artist:
+        return ""
+    return _ARTIST_SPLIT.split(artist, maxsplit=1)[0].strip()
+
+
+def core_artist_tokens(artist: str) -> List[str]:
+    """Tokens identite de l'artiste : l'artiste principal seul (sans les feats)."""
+    return get_tokens(primary_artist(artist))
+
+
+def core_title_tokens(title: str) -> List[str]:
+    """Tokens identite du titre : titre de base sans feat ni parenthese de version
+    ((Original Mix), [Label001], (X Remix)...). Permet de reconnaitre un meme titre
+    malgre les variantes de nommage entre la requete et le fichier partage."""
+    return get_tokens(_PAREN.sub(" ", remove_feat_tail(title or "")))
 
 
 def is_noise_token(tok: str) -> bool:
