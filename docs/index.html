@@ -32,7 +32,7 @@
   }
   a { color: var(--accent); text-decoration: none; }
   a:hover { text-decoration: underline; }
-  .wrap { max-width: 880px; margin: 0 auto; padding: 0 24px; }
+  .wrap { max-width: 980px; margin: 0 auto; padding: 0 24px; }
 
   /* Hero */
   .hero {
@@ -42,7 +42,6 @@
   }
   .hero img.logo { width: 100%; max-width: 480px; height: auto; }
   .tagline { font-size: 1.25rem; color: var(--txt); margin-top: 20px; font-style: italic; }
-  .sub { color: var(--muted); margin-top: 8px; font-size: 1rem; }
   .three { color: var(--muted); margin-top: 6px; font-size: 0.95rem; }
   .three b { color: var(--txt); font-weight: 600; }
 
@@ -68,6 +67,15 @@
   h2 { font-size: 1.5rem; margin-bottom: 6px; }
   h2 .accent { color: var(--accent); }
   .lead { color: var(--muted); margin-bottom: 26px; }
+
+  /* Screenshots */
+  .shots { display: grid; gap: 28px; }
+  .shot img {
+    width: 100%; height: auto; display: block;
+    border: 1px solid var(--line); border-radius: 12px;
+    box-shadow: 0 10px 34px rgba(0,0,0,0.45);
+  }
+  .shot figcaption { color: var(--muted); font-size: 0.9rem; margin-top: 10px; text-align: center; }
 
   /* 3 D cards */
   .cards { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; }
@@ -138,26 +146,42 @@
     <section>
       <h2>C'est quoi&nbsp;?</h2>
       <p class="lead">
-        Maintenir une bibliothèque DJ en <b>vrai lossless</b> à la main, c'est des heures perdues :
-        vérifier la source de chaque track, retracker les fichiers foireux, refaire la même
-        recherche pour la 4e fois. DDD le fait à ta place.
+        DDD nettoie ta bibliothèque musicale et la passe en <b>vrai lossless</b>, tout seul.
+        Il démasque les faux FLAC (des MP3 déguisés), va chercher la vraie version sur Soulseek,
+        vérifie au spectre qu'elle est authentique, et la range dans une bibliothèque propre.
+        Pas besoin d'être développeur&nbsp;: c'est une fenêtre.
       </p>
       <div class="cards">
         <div class="card">
           <div class="num">1 · DIG</div>
           <h3>Tes sources</h3>
-          <p>Scrape tes favoris Discogs et Bandcamp, ou scanne n'importe quel dossier déjà sur ton disque.</p>
+          <p>Scanne n'importe quel dossier de ton disque, ou récupère tes favoris Discogs et Bandcamp.</p>
         </div>
         <div class="card">
-          <div class="num">2 · DIG</div>
+          <div class="num">2 · DOWNLOAD</div>
           <h3>Soulseek</h3>
-          <p>Va chercher le vrai lossless en match strict, avec retry automatique sur les ratés.</p>
+          <p>Va chercher le vrai lossless, avec un statut live par piste et reprise automatique.</p>
         </div>
         <div class="card">
-          <div class="num">3 · DIG</div>
+          <div class="num">3 · DETECT</div>
           <h3>Le spectre</h3>
-          <p>Analyse FFT de chaque fichier pour démasquer les faux lossless (un MP3 déguisé en FLAC/WAV).</p>
+          <p>Analyse FFT + contrôle de la durée et de l'identité&nbsp;: seul le bon morceau, vraiment lossless, est gardé.</p>
         </div>
+      </div>
+    </section>
+
+    <section>
+      <h2>À quoi ça ressemble</h2>
+      <p class="lead">Deux onglets, une fenêtre native. Pas de terminal.</p>
+      <div class="shots">
+        <figure class="shot">
+          <img src="screenshot-bibliotheque.png" alt="Onglet Bibliotheque : scan qualite et upgrade">
+          <figcaption>Scanner un dossier&nbsp;: vrai lossless ou faux&nbsp;? Et upgrade avec statut live par piste.</figcaption>
+        </figure>
+        <figure class="shot">
+          <img src="screenshot-favoris.png" alt="Onglet Recuperer favoris : Discogs et Bandcamp">
+          <figcaption>Récupérer tes favoris Discogs / Bandcamp directement en lossless.</figcaption>
+        </figure>
       </div>
     </section>
 
@@ -165,30 +189,32 @@
       <div class="highlight">
         <h2>Le truc qui change tout&nbsp;: <span class="accent">l'anti-upscale</span></h2>
         <p>
-          Un MP3 320 réencodé en FLAC reste un MP3. Les filtres de Soulseek ne le voient pas -
-          le conteneur affiche fièrement « 1411 kbps ». DDD, lui, regarde le <b>spectre réel</b> :
+          Un MP3 320 réencodé en FLAC reste un MP3. Les filtres de Soulseek ne le voient pas&nbsp;:
+          le conteneur affiche fièrement « 1411 kbps ». DDD, lui, regarde le <b>spectre réel</b>&nbsp;:
           un mur de fréquences à 16 kHz trahit la source lossy. Chaque fichier téléchargé est
-          <b>ré-audité</b>, et n'entre dans ta bibliothèque que s'il est <b>vraiment</b> lossless.
+          <b>ré-audité</b> (spectre + durée + identité titre/artiste), et n'entre dans ta bibliothèque
+          que s'il est <b>vraiment</b> le bon morceau en lossless. Le reste part à la corbeille.
         </p>
         <div class="pts">
-          <span class="tag ok">✓ Vrai lossless → gardé</span>
+          <span class="tag ok">✓ Vrai lossless → bibliothèque</span>
           <span class="tag susp">~ Suspect (320k) → revue</span>
-          <span class="tag fake">✗ Faux lossless → rejeté</span>
+          <span class="tag fake">✗ Faux / mauvais match → corbeille</span>
         </div>
       </div>
     </section>
 
     <section>
       <h2>Comment ça marche</h2>
-      <p class="lead">Trois clics dans la fenêtre, ou en ligne de commande.</p>
+      <p class="lead">Trois clics dans la fenêtre.</p>
       <ol class="steps">
-        <li><b>Choisis un dossier</b> de musique (ou colle ta wishlist).</li>
-        <li><b>Scanne</b> : DDD classe chaque fichier (vrai lossless, faux, lossy) et repère les doublons.</li>
-        <li><b>Upgrade</b> : pour les fichiers flaggés, il télécharge le vrai lossless et remplace - seulement si l'audio passe le contrôle.</li>
+        <li><b>Renseigne tes accès</b> (Réglages)&nbsp;: login Soulseek, token Discogs, et le dossier bibliothèque.</li>
+        <li><b>Scanne un dossier</b> (ou récupère tes favoris)&nbsp;: DDD classe chaque fichier et repère les doublons.</li>
+        <li><b>Upgrade</b>&nbsp;: les vrais lossless atterrissent dans ta bibliothèque, les faux partent à la corbeille. Une seule bibliothèque propre, dédoublonnée.</li>
       </ol>
       <p class="lead" style="margin-top:18px">
-        Aussi dispo en CLI : <code>ddd scan</code>, <code>ddd upgrade</code>, <code>ddd scrape</code>,
-        <code>ddd gui</code>. Coeur Python portable (Windows / Mac / Linux).
+        Aussi dispo en ligne de commande&nbsp;: <code>ddd scan</code>, <code>ddd upgrade</code>,
+        <code>ddd import</code>, <code>ddd scrape</code>, <code>ddd gui</code>. Coeur Python portable
+        (Windows / Mac / Linux).
       </p>
     </section>
 
