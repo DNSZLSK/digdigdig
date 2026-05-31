@@ -74,9 +74,19 @@ ACTION_LABEL = {
     upgrade_mod.ACT_KEPT_BESIDE: ("Garde a cote ✓", "#6E7F5B", False),
     upgrade_mod.ACT_ACQUIRED: ("Gardee en inbox ✓", "#6E7F5B", False),
     upgrade_mod.ACT_REJECTED_FAKE: ("Upscale rejete ✗", "#A0785A", False),
+    upgrade_mod.ACT_TOO_SHORT: ("Trop court ✗", "#A0785A", False),
+    upgrade_mod.ACT_WRONG_MATCH: ("Mauvais match ✗", "#A0785A", False),
     upgrade_mod.ACT_NOT_FOUND: ("Introuvable ✗", "#7A7A7A", False),
     upgrade_mod.ACT_UNPARSEABLE: ("Nom illisible", "#7A7A7A", False),
+    upgrade_mod.ACT_DUPLICATE: ("Deja present", "#7A7A7A", False),
 }
+
+
+def _count_rejected(counter) -> int:
+    """Total des downloads jetes a la verif (upscale + trop court + mauvais match)."""
+    return (counter.get(upgrade_mod.ACT_REJECTED_FAKE, 0)
+            + counter.get(upgrade_mod.ACT_TOO_SHORT, 0)
+            + counter.get(upgrade_mod.ACT_WRONG_MATCH, 0))
 
 
 def _set_window_size(page, w: int, h: int) -> None:
@@ -367,7 +377,7 @@ def main(page: ft.Page) -> None:
                 c = Counter(o.action for o in outcomes)
                 ok = (c.get(upgrade_mod.ACT_REPLACED, 0) + c.get(upgrade_mod.ACT_WOULD_REPLACE, 0)
                       + c.get(upgrade_mod.ACT_KEPT_BESIDE, 0))
-                rej = c.get(upgrade_mod.ACT_REJECTED_FAKE, 0)
+                rej = _count_rejected(c)
                 nf = c.get(upgrade_mod.ACT_NOT_FOUND, 0)
                 if state.cancel_requested:
                     for rec in chosen:   # lignes jamais finies (ring encore actif) -> Annule
@@ -377,8 +387,8 @@ def main(page: ft.Page) -> None:
                     summary = (f"Upgrade annule : {ok} remplaces, {rej} rejetes, "
                                f"{nf} introuvables (partiel).")
                 else:
-                    summary = (f"Upgrade fini : {ok} remplaces, {rej} rejetes (upscale), "
-                               f"{nf} introuvables.")
+                    summary = (f"Upgrade fini : {ok} remplaces, {rej} rejetes "
+                               f"(upscale/court/mauvais match), {nf} introuvables.")
                 status.value = summary
                 _banner(summary, bool(ok) and not state.cancel_requested)
                 # Re-scanner pour refleter les nouveaux verdicts
@@ -536,17 +546,19 @@ def main(page: ft.Page) -> None:
                 from collections import Counter
                 c = Counter(o.action for o in outcomes)
                 acq = c.get(upgrade_mod.ACT_ACQUIRED, 0)
-                rej = c.get(upgrade_mod.ACT_REJECTED_FAKE, 0)
+                rej = _count_rejected(c)
                 nf = c.get(upgrade_mod.ACT_NOT_FOUND, 0)
+                dup = c.get(upgrade_mod.ACT_DUPLICATE, 0)
+                dup_txt = f", {dup} doublons sautes" if dup else ""
                 if state.cancel_requested:
                     for cell in state.acquire_row_status.values():
                         if cell[0].visible:
                             cell[1].value, cell[1].color, cell[0].visible = "Annule", TXT_DIM, False
                     summary = (f"Recuperation annulee : {acq} gardees, {rej} rejetees, "
-                               f"{nf} introuvables (partiel).")
+                               f"{nf} introuvables{dup_txt} (partiel).")
                 else:
                     summary = (f"Recuperation finie : {acq} gardees en inbox, {rej} rejetees "
-                               f"(upscale), {nf} introuvables.")
+                               f"(upscale/court/mauvais match), {nf} introuvables{dup_txt}.")
                 status.value = summary
                 _banner(summary, bool(acq) and not state.cancel_requested)
             except ValueError as ex:  # token Discogs manquant, etc.

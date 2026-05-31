@@ -126,6 +126,8 @@ def main():
 
     # --- acquire_rows : meme feedback par piste, cle = match_key(artist, titre) ---
     from ddd.core.naming import match_key
+    inbox = tmp / "_inbox"   # inbox VIDE (sinon le dedup verrait good/bad deja dans tmp)
+    inbox.mkdir(exist_ok=True)
     acq_events = []
     acq_rows = [
         {"Artist": "Artist A", "Title": "Good"},      # -> ACQUIRED
@@ -133,7 +135,7 @@ def main():
         {"Artist": "Artist C", "Title": "Rare"},      # -> NOT_FOUND
     ]
     acq_out = up.acquire_rows(
-        acq_rows, root=ROOT, inbox_dir=tmp,
+        acq_rows, root=ROOT, inbox_dir=inbox,
         on_item=lambda k, ph, d="": acq_events.append((k, ph, d)),
     )
     acq_by_action = {o.action: o for o in acq_out}
@@ -149,6 +151,42 @@ def main():
     assert acq_searching == {match_key("Artist A", "Good"), match_key("Artist B", "Upscale"),
                              match_key("Artist C", "Rare")}
     print("OK - acquire_rows emet on_item par piste, keye par match_key")
+
+    # --- gardes post-download : trop court / mauvais match (reutilise tokenize) ---
+    from ddd.core.soulseek import WantItem, DownloadResult
+    itm = WantItem("Daft Punk", "Around the World", None, "")
+
+    def _dl(name):  # DownloadResult dont seul le nom de fichier compte ici
+        return DownloadResult("x", "y", str(tmp / f"{name}.flac"), 300, "1", "0")
+
+    q_ok = _qr(str(tmp / "x.flac"), quality.AUTHENTIC, cutoff=22050.0)  # duration_s=300
+    assert up._reject_reason(itm, _dl("Daft Punk - Around the World"), q_ok) is None, \
+        "bon match, long, authentique -> garde"
+    q_short = _qr(str(tmp / "x.flac"), quality.AUTHENTIC, cutoff=22050.0)
+    q_short.duration_s = 61
+    assert up._reject_reason(itm, _dl("Daft Punk - Around the World"), q_short)[0] == up.ACT_TOO_SHORT, \
+        "61s -> trop court"
+    assert up._reject_reason(itm, _dl("Adventureland Bazaar - Aladdins Other Lamp"), q_ok)[0] \
+        == up.ACT_WRONG_MATCH, "nom sans rapport -> mauvais match"
+    print("OK - _reject_reason : trop court + mauvais match")
+
+    # --- acquire dedup : doublon dans la liste saute (par match_key) ---
+    dup_events = []
+    dup_rows = [
+        {"Artist": "Artist A", "Title": "Good"},   # 1er -> traite
+        {"Artist": "artist a", "Title": "GOOD"},   # meme match_key -> DUPLICATE saute
+        {"Artist": "Artist C", "Title": "Rare"},   # -> NOT_FOUND
+    ]
+    dup_out = up.acquire_rows(
+        dup_rows, root=ROOT, inbox_dir=inbox,
+        on_item=lambda k, ph, d="": dup_events.append((k, ph, d)),
+    )
+    dup_actions = [o.action for o in dup_out]
+    assert dup_actions.count(up.ACT_DUPLICATE) == 1, f"un seul doublon attendu : {dup_actions}"
+    # le doublon ne doit PAS avoir ete telecharge (pas de searching pour la 2e occurrence)
+    assert sum(1 for (_k, ph, _d) in dup_events if ph == "searching") == 2, \
+        "seuls les 2 items uniques doivent passer en recherche"
+    print("OK - acquire dedup : doublon de la liste saute, pas re-telecharge")
 
     # --- double-negation 'Garder les originaux' : sens de delete_old explicitement teste ---
     # GUI : keep_switch ON  -> delete_old=False -> l'original RESTE
@@ -178,10 +216,11 @@ def main():
             f.unlink()
         except OSError:
             pass
-    try:
-        dl_dir.rmdir()
-    except OSError:
-        pass
+    for d in (dl_dir, inbox):
+        try:
+            d.rmdir()
+        except OSError:
+            pass
     try:
         tmp.rmdir()
     except OSError:

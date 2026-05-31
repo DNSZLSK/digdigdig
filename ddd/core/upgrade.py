@@ -19,7 +19,8 @@ from typing import Callable, Dict, List, Optional, Sequence
 
 from . import quality
 from .naming import match_key, parse_filename
-from .scan import scan_folder
+from .scan import scan_folder, AUDIO_EXTS
+from .tokenize import get_tokens, token_coverage
 from . import soulseek
 from .soulseek import WantItem
 
@@ -36,6 +37,59 @@ ACT_REJECTED_FAKE = "REJECTED_FAKE"     # sldl a ramene un upscale -> jete
 ACT_NOT_FOUND = "NOT_FOUND"             # sldl n'a rien trouve
 ACT_UNPARSEABLE = "UNPARSEABLE"         # nom de fichier sans artist/title exploitable
 ACT_ACQUIRED = "ACQUIRED"               # nouvelle piste authentique gardee en inbox (acquire)
+ACT_TOO_SHORT = "TOO_SHORT"             # download trop court (preview/sample) -> jete
+ACT_WRONG_MATCH = "WRONG_MATCH"         # mauvais titre/artiste (match fuzzy foireux) -> jete
+ACT_DUPLICATE = "DUPLICATE"             # deja present (dans la liste ou deja dans l'inbox) -> saute
+
+# Garde-fous post-download (en plus du strict-title/artist sldl et du re-audit spectral)
+MIN_DURATION_S = 90       # < 90 s = quasi sûr un extrait / preview Soulseek
+MIN_TITLE_COVERAGE = 0.6  # le nom du fichier recu doit couvrir >=60% des tokens demandes
+CHUNK_SIZE = 25           # taille des lots sldl : feedback par piste periodique sur gros batch
+
+
+def _chunks(seq, n: int):
+    for i in range(0, len(seq), n):
+        yield seq[i:i + n]
+
+
+def _existing_keys(folder) -> set:
+    """match_key des pistes deja presentes (comme fichiers audio) dans un dossier.
+
+    Sert a ne PAS re-telecharger ce qu'on a deja (acquire relance / inbox rempli).
+    """
+    folder = Path(folder)
+    keys = set()
+    if not folder.exists():
+        return keys
+    for p in folder.rglob("*"):
+        if p.is_file() and p.suffix.lower() in AUDIO_EXTS:
+            parsed = parse_filename(str(p))
+            if parsed.parseable:
+                keys.add(match_key(parsed.artist, parsed.title))
+    return keys
+
+
+def _reject_reason(it, dl, q):
+    """Raison de rejet d'un download (action, note) ou None s'il est bon.
+
+    Ordre : trop court (preview) -> mauvais match (titre/artiste) -> non-authentique
+    (upscale/lossy). Le re-audit spectral ne verifie QUE l'authenticite, pas l'identite
+    ni la duree : ces deux gardes attrapent les extraits de 1 min et les faux matchs
+    fuzzy de Soulseek qui passent quand meme le strict-title de sldl.
+    """
+    dur = getattr(q, "duration_s", 0) or 0
+    if 0 < dur < MIN_DURATION_S:
+        return ACT_TOO_SHORT, f"trop court ({dur:.0f}s < {MIN_DURATION_S}s) : preview/sample probable"
+
+    requested = get_tokens(f"{it.artist} {it.title}")
+    cov = token_coverage(requested, get_tokens(Path(dl.filepath).stem))
+    if 0 <= cov < MIN_TITLE_COVERAGE:   # cov == -1 -> rien de demandable, on ne juge pas
+        return ACT_WRONG_MATCH, f"mauvais match (couverture titre {cov:.0%}) : {Path(dl.filepath).name}"
+
+    if q.verdict != quality.AUTHENTIC:
+        return ACT_REJECTED_FAKE, (f"download non-authentique ({q.verdict}, "
+                                   f"cutoff {q.cutoff_hz:.0f} Hz) : {q.reason}")
+    return None
 
 
 def _item_id(it) -> str:
@@ -170,43 +224,48 @@ def run_upgrade(
         logger.info("aucun fichier a upgrader")
         return outcomes
 
-    # download + re-audit (boucle factorisee, partagee avec acquire_rows)
-    results = download_and_audit(
-        plan.items, root=root, staging_dir=staging_dir, profile=profile,
-        limit=limit, progress=progress, on_item=on_item, on_proc=on_proc,
-        cancel=cancel, log_path=log_path,
-    )
+    # Lot par lot (CHUNK_SIZE) : feedback par piste periodique sur gros batch.
+    # On tronque a `limit` en amont pour que le plafond reste global, pas par lot.
+    items = plan.items[:limit] if limit > 0 else plan.items
+    for chunk in _chunks(items, CHUNK_SIZE):
+        if cancel and cancel():
+            break
+        results = download_and_audit(
+            chunk, root=root, staging_dir=staging_dir, profile=profile,
+            progress=progress, on_item=on_item, on_proc=on_proc,
+            cancel=cancel, log_path=log_path,
+        )
+        for it, dl, q in results:
+            base = UpgradeOutcome(action="", artist=it.artist, title=it.title,
+                                  original=it.origin_path)
+            if dl is None or not dl.downloaded:
+                base.action = ACT_NOT_FOUND
+                base.note = "sldl n'a ramene aucun fichier"
+                outcomes.append(base)
+                if on_item:
+                    on_item(_item_id(it), "done", base.action)
+                continue
 
-    for it, dl, q in results:
-        base = UpgradeOutcome(action="", artist=it.artist, title=it.title, original=it.origin_path)
+            base.new_file = dl.filepath
+            base.new_verdict = q.verdict
+            base.new_cutoff_hz = q.cutoff_hz
 
-        if dl is None or not dl.downloaded:
-            base.action = ACT_NOT_FOUND
-            base.note = "sldl n'a ramene aucun fichier"
-            outcomes.append(base)
+            # re-audit spectral + garde duree/identite (sldl ne detecte ni upscale,
+            # ni preview, ni mauvais match)
+            rej = _reject_reason(it, dl, q)
+            if rej:
+                base.action, base.note = rej
+                outcomes.append(base)
+                if on_item:
+                    on_item(_item_id(it), "done", base.action)
+                continue
+
+            res = _replace_in_place(it.origin_path, dl.filepath, apply, delete_old)
+            res.artist, res.title = it.artist, it.title
+            res.new_verdict, res.new_cutoff_hz = q.verdict, q.cutoff_hz
+            outcomes.append(res)
             if on_item:
-                on_item(_item_id(it), "done", base.action)
-            continue
-
-        base.new_file = dl.filepath
-        base.new_verdict = q.verdict
-        base.new_cutoff_hz = q.cutoff_hz
-
-        # LE point clef : re-auditer le download (sldl ne detecte pas les upscales)
-        if q.verdict != quality.AUTHENTIC:
-            base.action = ACT_REJECTED_FAKE
-            base.note = f"download non-authentique ({q.verdict}, cutoff {q.cutoff_hz:.0f} Hz) : {q.reason}"
-            outcomes.append(base)
-            if on_item:
-                on_item(_item_id(it), "done", base.action)
-            continue
-
-        res = _replace_in_place(it.origin_path, dl.filepath, apply, delete_old)
-        res.artist, res.title = it.artist, it.title
-        res.new_verdict, res.new_cutoff_hz = q.verdict, q.cutoff_hz
-        outcomes.append(res)
-        if on_item:
-            on_item(_item_id(it), "done", res.action)
+                on_item(_item_id(it), "done", res.action)
 
     return outcomes
 
@@ -286,12 +345,24 @@ def acquire_rows(
     Acquisition de NOUVELLES pistes (pas de remplacement) : on garde seulement les
     downloads AUTHENTIC, les autres sont signales mais laisses de cote.
     """
+    outcomes: List[UpgradeOutcome] = []
+    existing = _existing_keys(inbox_dir)   # deja telecharge auparavant -> on saute
+    seen: set = set()                      # doublons a l'interieur de la want-list
     items: List[WantItem] = []
     for r in rows:
         artist = (r.get("Artist") or "").strip()
         title = (r.get("Title") or "").strip()
         if not artist or not title:
             continue
+        key = match_key(artist, title)
+        if key in existing or key in seen:
+            note = "deja present dans l'inbox" if key in existing else "doublon dans la liste"
+            outcomes.append(UpgradeOutcome(action=ACT_DUPLICATE, artist=artist, title=title,
+                                           original="", note=note))
+            if on_item:
+                on_item(key, "done", ACT_DUPLICATE)
+            continue
+        seen.add(key)
         length = None
         raw = r.get("Length")
         if raw not in (None, ""):
@@ -304,29 +375,32 @@ def acquire_rows(
     if limit > 0:
         items = items[:limit]
 
-    outcomes: List[UpgradeOutcome] = []
     if not items:
         return outcomes
 
-    results = download_and_audit(
-        items, root=root, staging_dir=inbox_dir, profile=profile,
-        limit=0, csv_name="ddd_acquire.csv", progress=progress,
-        on_item=on_item, on_proc=on_proc, cancel=cancel, log_path=log_path,
-    )
-    for it, dl, q in results:
-        base = UpgradeOutcome(action="", artist=it.artist, title=it.title, original="")
-        if dl is None or not dl.downloaded:
-            base.action = ACT_NOT_FOUND
-            base.note = "sldl n'a ramene aucun fichier"
-        elif q.verdict != quality.AUTHENTIC:
-            base.action = ACT_REJECTED_FAKE
-            base.new_file, base.new_verdict, base.new_cutoff_hz = dl.filepath, q.verdict, q.cutoff_hz
-            base.note = f"non-authentique ({q.verdict}, cutoff {q.cutoff_hz:.0f} Hz)"
-        else:
-            base.action = ACT_ACQUIRED
-            base.new_file, base.new_verdict, base.new_cutoff_hz = dl.filepath, q.verdict, q.cutoff_hz
-            base.note = f"garde en inbox: {dl.filepath}"
-        outcomes.append(base)
-        if on_item:
-            on_item(_item_id(it), "done", base.action)
+    for chunk in _chunks(items, CHUNK_SIZE):
+        if cancel and cancel():
+            break
+        results = download_and_audit(
+            chunk, root=root, staging_dir=inbox_dir, profile=profile,
+            limit=0, csv_name="ddd_acquire.csv", progress=progress,
+            on_item=on_item, on_proc=on_proc, cancel=cancel, log_path=log_path,
+        )
+        for it, dl, q in results:
+            base = UpgradeOutcome(action="", artist=it.artist, title=it.title, original="")
+            if dl is None or not dl.downloaded:
+                base.action = ACT_NOT_FOUND
+                base.note = "sldl n'a ramene aucun fichier"
+            else:
+                base.new_file, base.new_verdict, base.new_cutoff_hz = (
+                    dl.filepath, q.verdict, q.cutoff_hz)
+                rej = _reject_reason(it, dl, q)
+                if rej:
+                    base.action, base.note = rej
+                else:
+                    base.action = ACT_ACQUIRED
+                    base.note = f"garde en inbox: {dl.filepath}"
+            outcomes.append(base)
+            if on_item:
+                on_item(_item_id(it), "done", base.action)
     return outcomes
