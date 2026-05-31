@@ -48,27 +48,37 @@ ddd/
 ├── README.md
 ├── CLAUDE.md                   # ce fichier
 ├── .gitignore
-├── pipeline.ps1                # entrypoint
-├── docs/
-│   └── logo.png                # le triple D
-├── lib/
-│   ├── convert-csv.ps1         # audit CSV (FR) -> sldl CSV
-│   ├── audit-staging.ps1       # match titre COMPLET (rappel + precision + version)
-│   ├── clean-staging.ps1       # quarantaine SUSPECT -> _rejected/ + rename misnamed
-│   ├── retry-fakes.ps1         # query variants pour misses
-│   ├── route-files.ps1         # deploy (garde Status=OK only) FLAC -> USB
-│   └── scrapers/
-│       ├── discogs.py          # wantlist + collection (API officielle)
-│       └── bandcamp.py         # wishlist (cloudscraper + fancollection API)
-├── config/
-│   └── sldl.conf               # profiles lossless / lossless-strict / mp3-fallback
-├── bin/
-│   └── sldl/                   # sldl.exe (binary self-contained, .NET inclus)
-├── inputs/                     # CSV inputs + caches scraper (gitignored)
-├── outputs/                    # rapports CSV/JSON (gitignored)
-├── staging/                    # DL temporaires avant validation (gitignored)
-├── logs/                       # logs sldl + pipeline (gitignored)
-├── tools/                      # scripts utilitaires (audit FFT historique)
+├── pyproject.toml              # package `ddd` (entry points ddd / ddd-gui ; extras gui,build)
+│
+├── ddd/                        # >>> LE COEUR ACTUEL : package Python portable <<<
+│   ├── __main__.py             # `python -m ddd ...`
+│   ├── cli.py                  # CLI : scan | upgrade | scrape | acquire | config | gui
+│   ├── gui.py                  # fenetre native Flet (0.28.x)
+│   ├── paths.py                # chemins frozen-aware (dev vs .exe PyInstaller)
+│   └── core/
+│       ├── quality.py          # detecteur lossless universel (WAV/FLAC/AIFF/MP3, cutoff spectral)
+│       ├── scan.py             # scan index-free d'un dossier -> rapport (qualite+nom+doublons)
+│       ├── tokenize.py         # tokens/recall/precision/version (port de audit-staging.ps1)
+│       ├── audit.py            # audit nom<->tags ID3 (mutagen), sans _index.csv
+│       ├── naming.py           # parse "Artiste - Titre" depuis un nom de fichier
+│       ├── soulseek.py         # wrapper sldl (creds, run, lecture _index.csv)
+│       ├── upgrade.py          # boucle upgrade + RE-AUDIT anti-upscale ; acquire_rows()
+│       ├── config.py           # creds/reglages user -> %APPDATA%\ddd\config.json
+│       └── scrapers/           # discogs.py + bandcamp.py (importables)
+│
+├── packaging/                  # build du .exe
+│   ├── ddd.spec                # PyInstaller (bundle sldl + config + Flet + libsndfile)
+│   ├── entry.py  build.ps1  README.md
+│
+├── tests/                      # test_quality/scan_merge/upgrade_logic/gui_build
+│
+├── pipeline.ps1                # ANCIEN orchestrateur PowerShell (toujours dispo)
+├── lib/                        # ANCIENS scripts PS (convert/audit/clean/retry/route + scrapers/)
+├── config/sldl.conf            # profils lossless / lossless-strict / mp3-fallback
+├── bin/sldl/                   # sldl.exe (gitignored)
+├── docs/                       # logo.png + index.html (page GitHub Pages)
+├── inputs/ outputs/ staging/ logs/   # runtime (gitignored)
+├── dist/ build/                # artefacts PyInstaller (gitignored)
 └── .venv/                      # Python venv (gitignored)
 ```
 
@@ -105,38 +115,51 @@ $env:DISCOGS_TOKEN = "ton_token"
 
 ---
 
-## État au moment du rename (2026-05-23)
+## État actuel (2026-05-30) : productisé en logiciel `ddd`
 
-### Ce qui marche
-- ✅ **Audit FFT** d'origine : a diagnostiqué 315 faux WAVs sur la clé `D:\2023 Playlist Ultime`. Liste tier-isée dans `D:\2023 Playlist Ultime\to_replace.csv`.
-- ✅ **sldl run 1** (fuzzy) : 101/329 trouvés, beaucoup de mismatches → audit a viré 14 mauvais DLs
-- ✅ **sldl run 2** (strict mode `strict-title` + `strict-artist`) : **57% terminé** (27 OK / 131 fails) **- interrompu pour le rename, à relancer**
-- ✅ **Discogs scraper** : 136 tracks scrapées du wantlist `dnszlsk`
-- ✅ **Bandcamp scraper** : **1228 tracks** scrapées du wishlist `gamolka` (279 items, beaucoup d'albums dépliés)
-- ✅ Pipeline complet (`pipeline.ps1`) avec convert + sldl + audit + clean + verify + retry + deploy
-- ✅ Routing via `_index.csv` de sldl (zero unmapped sur le test précédent)
+Le projet n'est plus seulement un pipeline PowerShell : c'est maintenant un **vrai
+logiciel** (coeur Python portable + fenêtre native + `.exe` une-touche). L'ancien
+pipeline PowerShell reste présent et fonctionnel ; le nouveau coeur `ddd/` est ce
+sur quoi on construit désormais.
 
-### Ce qui reste à faire (par ordre de priorité)
-1. **Finir le rename** : `searchseek/` → `ddd/` (bloqué par VSCode lock, à faire après close)
-2. **Relancer sldl run 2** (strict mode) sur les 248 tracks pas encore traités
-3. **Lancer Discogs en run 3** sur `outputs/discogs_wantlist.csv` (136 tracks)
-4. **Lancer Bandcamp en run 4** sur `outputs/bandcamp_wishlist.csv` (1228 tracks)
-5. **Merger / dédupliquer** entre les sources (Discogs ∩ Bandcamp ∩ to_replace)
-6. **flac-detective verify** sur tout le staging final
-7. **Phase F deploy** vers la clé USB en utilisant la structure de dossiers d'origine pour `to_replace`, et un `inbox/` pour Discogs+Bandcamp (pas de mapping vers les dossiers existants)
-8. **Optionnel** : scraper SoundCloud (mais user a dit "caca", à voir)
+### Décisions de productisation (validées par l'user)
+- **Coeur d'abord**, puis packaging. **Multiplateforme** (Windows/Mac/Linux) → coeur 100% Python.
+- **GUI native** (pas dashboard web). Toolkit : **Flet**, épinglé `>=0.24,<0.30`
+  (la 0.85+ "Flet 1.0" alpha casse l'API : boutons en `text=` kwarg, pas d'`ExpansionTile`).
+- Cible de sortie toujours **configurable** (ne jamais la décrire comme "la clé USB").
 
-### Données qui existent déjà
-- `staging/` : 87 FLACs/WAVs auditées et clean (Run 1 + début Run 2)
-- `inputs/sldl_input.csv` : 275 rows (audit `to_replace.csv` filtré sans-artiste)
-- `inputs/sldl_input_map.json` : routing key → dossier USB
-- `outputs/discogs_wantlist.csv` : 136 tracks
-- `outputs/bandcamp_wishlist.csv` : 1228 tracks
-- `outputs/staging_audit.csv` : dernier audit similarity
-- `logs/sldl_index_run1_pre-strict.csv` : archive du run 1 (pour routing)
-- `staging/sldl_input/_index.csv` : index live du run 2 (interrompu)
+### Ce qui marche (coeur `ddd/`)
+- ✅ **`ddd scan <dossier>`** : détecteur lossless universel (WAV/FLAC/AIFF/MP3) par
+  cutoff spectral (réutilise la math de flac-detective) + audit nom/tags ID3 + doublons.
+  Index-free : marche sur n'importe quel dossier, pas besoin du pipeline. Verdicts
+  AUTHENTIC / SUSPICIOUS / FAKE_LOSSLESS / LOSSY.
+- ✅ **`ddd upgrade <dossier>`** : cherche un vrai lossless sur Soulseek pour les
+  fichiers flaggés, **re-audite chaque download** et n'accepte que l'AUTHENTIC
+  (les filtres sldl ne détectent PAS les upscales - le re-audit, si). Dry-run par
+  défaut ; `--apply` remplace, `--delete-old` supprime l'original. **Prouvé en réel**
+  sur GAMOLKA\Soa Spirit : 3 vrais FLAC posés, 2 upscales (320k déguisés en .flac) rejetés.
+- ✅ **`ddd scrape discogs|bandcamp`** + **`ddd acquire <csv>`** (télécharge une
+  want-list en vrai lossless vers un inbox).
+- ✅ **`ddd config show|set`** : creds/réglages user dans `%APPDATA%\ddd\config.json`.
+- ✅ **`ddd gui`** : fenêtre native Flet (dossier, scan, tableau filtrable, upgrade, réglages).
+- ✅ **`.exe` autonome** : `packaging/build.ps1` → `dist/DDD/DDD.exe` (255 Mo, embarque
+  sldl + profils + client Flet + libsndfile ; **pas de ffmpeg requis**). Lancé et vérifié.
+- ✅ Tests : `tests/test_quality.py`, `test_scan_merge.py`, `test_upgrade_logic.py`, `test_gui_build.py`.
 
-### Décisions actées
+### Distribution
+- Repo : **github.com/DNSZLSK/digdigdig** (branche `master`).
+- **Release v0.1.0** avec asset `DDD-windows.zip` ; lien stable
+  `https://github.com/DNSZLSK/digdigdig/releases/latest/download/DDD-windows.zip`.
+- **GitHub Pages** depuis `docs/` : `https://dnszlsk.github.io/digdigdig/` (page `docs/index.html`).
+- README : badge "TÉLÉCHARGE-MOI" en tête.
+
+### Reste à faire / idées
+- **Revoir l'UX/UI du `.exe`** (demandé explicitement par l'user, pour plus tard).
+- Builds Mac/Linux (même `packaging/ddd.spec` sur la plateforme cible + binaire sldl natif).
+- `deploy.py` (port de `route-files.ps1`) pas encore fait - `upgrade.py` remplace en place.
+- Anciennes idées hors-scope : SoundCloud, multi-provider fallback, DB SQLite, auto-tagging.
+
+### Décisions actées (pipeline PowerShell d'origine, toujours valides)
 - **Nom** : `DDD` (court) / `DigDigDig` (long). Triple D = trois étapes de digging.
 - **Strict-mode sldl par défaut** (sinon fuzzy match de merde - testé, prouvé)
 - **Filtrer les CSV rows sans artiste** avant sldl (sinon random match assuré)
@@ -207,6 +230,15 @@ Ces creds sont dans la conversation et utilisables localement. À régénérer s
 - **Bandcamp** : pas d'auth, scrape public via cloudscraper (username `gamolka`)
 - **slskd web UI** : login `DNSZLSK` / pwd same (port 5030)
 - **slskd API key** : dans `C:\slskd\.apikey`
+- **Creds de l'app `ddd`** : login Soulseek + token Discogs saisis dans la GUI (Réglages)
+  ou `ddd config set`, stockés dans `%APPDATA%\ddd\config.json`. `soulseek.py` lit dans
+  l'ordre : env `DDD_SOULSEEK_USER/PASS` → config ddd → `slskd.yml`.
+
+### Identité git (important)
+Les commits doivent être **DNSZLSK** (`155122610+DNSZLSK@users.noreply.github.com`), pas
+`kposz` (nom du compte Windows). Ce repo avait un override **local** dans `.git/config`
+qui forçait `kposz` ; il a été retiré (le repo hérite maintenant du global, correct).
+Pas de mention "Co-Authored-By" ni IA dans les commits/PR.
 
 ---
 

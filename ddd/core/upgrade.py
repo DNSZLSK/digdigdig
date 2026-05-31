@@ -38,6 +38,16 @@ ACT_UNPARSEABLE = "UNPARSEABLE"         # nom de fichier sans artist/title explo
 ACT_ACQUIRED = "ACQUIRED"               # nouvelle piste authentique gardee en inbox (acquire)
 
 
+def _item_id(it) -> str:
+    """Identifiant stable d'un WantItem pour le statut par ligne de la GUI.
+
+    Upgrade : le fichier d'origine (origin_path, == ScanRecord.quality.path).
+    Acquire : pas d'origine -> cle artiste/titre normalisee. La GUI DOIT construire
+    ses cles de ligne avec exactement match_key(artist, title) pour que ca matche.
+    """
+    return it.origin_path or match_key(it.artist, it.title)
+
+
 @dataclass
 class UpgradeOutcome:
     action: str
@@ -134,6 +144,9 @@ def run_upgrade(
     profile: str = "lossless-strict",
     scan_results=None,
     progress: Optional[Callable] = None,
+    on_item: Optional[Callable] = None,
+    on_proc: Optional[Callable] = None,
+    cancel: Optional[Callable] = None,
     log_path=None,
 ) -> List[UpgradeOutcome]:
     """Pipeline complet d'upgrade. Retourne la liste des issues par fichier.
@@ -149,6 +162,9 @@ def run_upgrade(
 
     plan = build_plan(scan_results, verdicts)
     outcomes: List[UpgradeOutcome] = list(plan.unparseable)
+    if on_item:   # statut final immediat pour les noms illisibles (jamais telecharges)
+        for o in plan.unparseable:
+            on_item(o.original, "done", o.action)
 
     if not plan.items:
         logger.info("aucun fichier a upgrader")
@@ -157,7 +173,8 @@ def run_upgrade(
     # download + re-audit (boucle factorisee, partagee avec acquire_rows)
     results = download_and_audit(
         plan.items, root=root, staging_dir=staging_dir, profile=profile,
-        limit=limit, progress=progress, log_path=log_path,
+        limit=limit, progress=progress, on_item=on_item, on_proc=on_proc,
+        cancel=cancel, log_path=log_path,
     )
 
     for it, dl, q in results:
@@ -167,6 +184,8 @@ def run_upgrade(
             base.action = ACT_NOT_FOUND
             base.note = "sldl n'a ramene aucun fichier"
             outcomes.append(base)
+            if on_item:
+                on_item(_item_id(it), "done", base.action)
             continue
 
         base.new_file = dl.filepath
@@ -178,12 +197,16 @@ def run_upgrade(
             base.action = ACT_REJECTED_FAKE
             base.note = f"download non-authentique ({q.verdict}, cutoff {q.cutoff_hz:.0f} Hz) : {q.reason}"
             outcomes.append(base)
+            if on_item:
+                on_item(_item_id(it), "done", base.action)
             continue
 
         res = _replace_in_place(it.origin_path, dl.filepath, apply, delete_old)
         res.artist, res.title = it.artist, it.title
         res.new_verdict, res.new_cutoff_hz = q.verdict, q.cutoff_hz
         outcomes.append(res)
+        if on_item:
+            on_item(_item_id(it), "done", res.action)
 
     return outcomes
 
@@ -198,6 +221,9 @@ def download_and_audit(
     creds: Optional[Dict] = None,
     csv_name: str = "ddd_upgrade.csv",
     progress: Optional[Callable] = None,
+    on_item: Optional[Callable] = None,
+    on_proc: Optional[Callable] = None,
+    cancel: Optional[Callable] = None,
     log_path=None,
 ):
     """Telecharge des WantItems via sldl puis re-audite chaque download.
@@ -214,9 +240,15 @@ def download_and_audit(
 
     soulseek.stop_slskd()
     creds = creds or soulseek.read_soulseek_creds()
+
+    if on_item:
+        for it in items:
+            on_item(_item_id(it), "searching")
+
     code = soulseek.run_sldl(
         input_csv, staging_dir, root=root, profile=profile, creds=creds,
         limit=limit, log_path=log_path, on_line=(progress if progress else None),
+        on_proc=on_proc,
     )
     logger.info("sldl exit code: %s", code)
 
@@ -225,7 +257,12 @@ def download_and_audit(
 
     out = []
     for it in items:
+        if cancel and cancel():            # annule : on n'audite pas le reste
+            out.append((it, None, None))
+            continue
         dl = by_key.get(match_key(it.artist, it.title))
+        if on_item and dl and dl.downloaded:
+            on_item(_item_id(it), "auditing")
         q = quality.analyze_file(dl.filepath) if (dl and dl.downloaded) else None
         out.append((it, dl, q))
     return out
@@ -239,6 +276,9 @@ def acquire_rows(
     limit: int = 0,
     profile: str = "lossless-strict",
     progress: Optional[Callable] = None,
+    on_item: Optional[Callable] = None,
+    on_proc: Optional[Callable] = None,
+    cancel: Optional[Callable] = None,
     log_path=None,
 ) -> List[UpgradeOutcome]:
     """Telecharge une want-list scrapee (dicts Artist/Title/Length) vers un inbox.
@@ -270,7 +310,8 @@ def acquire_rows(
 
     results = download_and_audit(
         items, root=root, staging_dir=inbox_dir, profile=profile,
-        limit=0, csv_name="ddd_acquire.csv", progress=progress, log_path=log_path,
+        limit=0, csv_name="ddd_acquire.csv", progress=progress,
+        on_item=on_item, on_proc=on_proc, cancel=cancel, log_path=log_path,
     )
     for it, dl, q in results:
         base = UpgradeOutcome(action="", artist=it.artist, title=it.title, original="")
@@ -286,4 +327,6 @@ def acquire_rows(
             base.new_file, base.new_verdict, base.new_cutoff_hz = dl.filepath, q.verdict, q.cutoff_hz
             base.note = f"garde en inbox: {dl.filepath}"
         outcomes.append(base)
+        if on_item:
+            on_item(_item_id(it), "done", base.action)
     return outcomes

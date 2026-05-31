@@ -41,7 +41,7 @@ def main():
 
     assert page.controls, "aucun controle ajoute a la page"
     assert page.title and "DDD" in page.title
-    assert len(page.overlay) == 1, "le FilePicker doit etre dans overlay"
+    assert len(page.overlay) == 2, "les 2 FilePicker (dossier + inbox) doivent etre dans overlay"
     assert callable(gui.run)
 
     print(f"OK - GUI construite : {len(page.controls)} controles racine, "

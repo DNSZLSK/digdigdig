@@ -24,6 +24,17 @@ logger = logging.getLogger(__name__)
 INPUT_FIELDS = ["Artist", "Title", "Length"]
 
 
+def _no_window_kwargs() -> dict:
+    """kwargs Popen/run pour ne PAS faire surgir de console noire sous Windows.
+
+    sldl et taskkill sont des process console : sans ce flag ils heritent (ou
+    ouvrent) une fenetre cmd qui clignote devant la GUI. Sur Mac/Linux : no-op.
+    """
+    if platform.system() == "Windows":
+        return {"creationflags": subprocess.CREATE_NO_WINDOW}
+    return {}
+
+
 @dataclass
 class WantItem:
     artist: str
@@ -107,7 +118,7 @@ def stop_slskd() -> bool:
     try:
         if platform.system() == "Windows":
             r = subprocess.run(["taskkill", "/IM", "slskd.exe", "/F"],
-                               capture_output=True, text=True)
+                               capture_output=True, text=True, **_no_window_kwargs())
             return r.returncode == 0
         r = subprocess.run(["pkill", "-f", "slskd"], capture_output=True, text=True)
         return r.returncode == 0
@@ -143,6 +154,7 @@ def run_sldl(
     config_path: Optional[Path] = None,
     log_path: Optional[Path] = None,
     on_line=None,
+    on_proc=None,
 ) -> int:
     """Lance sldl en mode batch CSV. Retourne le code de sortie.
 
@@ -177,7 +189,10 @@ def run_sldl(
     log_fh = open(log_path, "a", encoding="utf-8") if log_path else None
     try:
         proc = subprocess.Popen(args, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
-                                text=True, encoding="utf-8", errors="replace")
+                                text=True, encoding="utf-8", errors="replace",
+                                **_no_window_kwargs())
+        if on_proc:
+            on_proc(proc)   # remet le handle a l'appelant (bouton Annuler -> proc.terminate())
         for line in proc.stdout:
             line = line.rstrip("\n")
             if on_line:
