@@ -27,6 +27,7 @@ KNOWN_KEYS = (
     "default_excludes",   # liste de sous-dossiers a ignorer au scan
     "download_dir",       # bibliotheque lossless verifiee (upgrade + acquire deposent ici)
     "last_inbox",         # (legacy) ancien dossier de destination acquire
+    "quality_preset",     # seuil qualite : dj_club (defaut) | audiophile | puriste
 )
 
 

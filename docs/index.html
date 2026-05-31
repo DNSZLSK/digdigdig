@@ -6,7 +6,7 @@
 <title>DigDigDig - le crate digger qui creuse trois fois</title>
 <meta name="description" content="DDD scanne ta bibliotheque, demasque les faux lossless et va chercher le vrai sur Soulseek. Telecharge l'app Windows.">
 <meta property="og:title" content="DigDigDig">
-<meta property="og:description" content="Le crate digger qui creuse trois fois. Vrai lossless ou rien.">
+<meta property="og:description" content="Le crate digger qui creuse trois fois. Qualite jouable en club, verifiee au spectre.">
 <meta property="og:image" content="logo.png">
 <style>
   /* Palette = celle de l'app (gui.py) : charbon sobre, accent slate, badges desatures */
@@ -19,9 +19,10 @@
     --line: #3A3A3A;
     --accent: #5C6B7A;       /* slate (seed de l'app) */
     --link: #8FA3B3;         /* slate clair, lisible */
-    --olive: #6E7F5B;        /* vrai lossless */
-    --brown: #8C5A5A;        /* faux lossless */
-    --taupe: #8C7A5A;        /* suspect 320k */
+    --olive: #6E7F5B;        /* Lossless (vert) */
+    --slateband: #5C7A8C;    /* HQ (bleu) */
+    --taupe: #8C7A5A;        /* Douteux (jaune) */
+    --brown: #8C5A5A;        /* Mauvais (rouge) */
   }
   * { box-sizing: border-box; margin: 0; padding: 0; }
   html { scroll-behavior: smooth; }
@@ -94,8 +95,9 @@
   /* Pills = badges de verdict de l'app (fond plein desature, texte clair) */
   .tag { font-size: 0.8rem; padding: 4px 11px; border-radius: 10px; font-weight: 600; color: #E8EAED; }
   .tag.ok { background: var(--olive); }
-  .tag.fake { background: var(--brown); }
+  .tag.hq { background: var(--slateband); }
   .tag.susp { background: var(--taupe); }
+  .tag.fake { background: var(--brown); }
 
   /* Etapes */
   ol.steps { list-style: none; counter-reset: s; }
@@ -139,9 +141,9 @@
     <section>
       <h2>C'est quoi&nbsp;?</h2>
       <p class="lead">
-        DDD nettoie ta bibliothèque musicale et la passe en <b>vrai lossless</b>, tout seul.
-        Il démasque les faux FLAC (des MP3 déguisés), va chercher la vraie version sur Soulseek,
-        vérifie au spectre qu'elle est authentique, et la range dans une bibliothèque propre.
+        DDD nettoie ta bibliothèque musicale et la passe en <b>qualité jouable en club</b>, tout seul.
+        Il démasque les faux lossless (des MP3 déguisés en .flac/.wav), va chercher une vraie version sur Soulseek
+        (FLAC, WAV ou AIFF, avec repli MP3 320 automatique), vérifie chaque fichier au spectre, et le range dans une bibliothèque propre.
         Pas besoin d'être développeur&nbsp;: c'est une fenêtre.
       </p>
       <div class="cards">
@@ -153,12 +155,12 @@
         <div class="card">
           <div class="num">2 · DOWNLOAD</div>
           <h3>Soulseek</h3>
-          <p>Va chercher le vrai lossless, avec un statut live par piste et reprise automatique.</p>
+          <p>Cherche FLAC / WAV / AIFF, avec repli MP3 320 automatique, un statut live par piste et reprise automatique.</p>
         </div>
         <div class="card">
           <div class="num">3 · DETECT</div>
           <h3>Le spectre</h3>
-          <p>Analyse FFT + contrôle de la durée et de l'identité&nbsp;: seul le bon morceau, vraiment lossless, est gardé.</p>
+          <p>Analyse FFT&nbsp;: classe en Lossless / HQ / Douteux / Mauvais, + contrôle durée et identité. Seul le bon morceau, au-dessus de ton seuil, est gardé.</p>
         </div>
       </div>
     </section>
@@ -169,29 +171,34 @@
       <div class="shots">
         <figure class="shot">
           <img src="screenshot-bibliotheque.png" alt="Onglet Bibliotheque : scan qualite et upgrade">
-          <figcaption>Scanner un dossier&nbsp;: vrai lossless ou faux&nbsp;? Et upgrade avec statut live par piste.</figcaption>
+          <figcaption>Scanner un dossier&nbsp;: Lossless, HQ, Douteux ou Mauvais&nbsp;? Et upgrade avec statut live par piste.</figcaption>
         </figure>
         <figure class="shot">
           <img src="screenshot-favoris.png" alt="Onglet Recuperer favoris : Discogs et Bandcamp">
-          <figcaption>Récupérer tes favoris Discogs / Bandcamp directement en lossless.</figcaption>
+          <figcaption>Récupérer tes favoris Discogs / Bandcamp directement dans ta bibliothèque.</figcaption>
         </figure>
       </div>
     </section>
 
     <section>
       <div class="highlight">
-        <h2>Le truc qui change tout&nbsp;: <span class="accent">l'anti-upscale</span></h2>
+        <h2>Le truc qui change tout&nbsp;: <span class="accent">le spectre fait loi</span></h2>
         <p>
           Un MP3 320 réencodé en FLAC reste un MP3. Les filtres de Soulseek ne le voient pas&nbsp;:
           le conteneur affiche fièrement « 1411 kbps ». DDD, lui, regarde le <b>spectre réel</b>&nbsp;:
-          un mur de fréquences à 16 kHz trahit la source lossy. Chaque fichier téléchargé est
-          <b>ré-audité</b> (spectre + durée + identité titre/artiste), et n'entre dans ta bibliothèque
-          que s'il est <b>vraiment</b> le bon morceau en lossless. Le reste part à la corbeille.
+          un mur de fréquences à 16 kHz trahit la source lossy. <b>Le format et le bitrate déclarés
+          ne servent qu'à la recherche Soulseek, jamais à la décision de garder ou rejeter.</b>
+          Le spectre ne ment pas, les tags si&nbsp;: c'est ce qui distingue un vrai 320 / lossless d'un upscale.
+          Chaque fichier téléchargé est <b>ré-audité</b> (spectre + durée + identité titre/artiste) et classé
+          par son cutoff réel. Tu choisis le seuil minimum à garder via trois presets&nbsp;:
+          <b>DJ Club</b> (&gt;= 18 kHz, défaut, MP3 320 inclus), <b>Audiophile</b> (&gt;= 20 kHz) ou
+          <b>Puriste</b> (lossless pur). Les MP3 sous 320 kbps sont bannis quoi qu'il arrive&nbsp;; le reste part à la corbeille.
         </p>
         <div class="pts">
-          <span class="tag ok">Vrai lossless -&gt; bibliotheque</span>
-          <span class="tag susp">Suspect (320k) -&gt; revue</span>
-          <span class="tag fake">Faux / mauvais match -&gt; corbeille</span>
+          <span class="tag ok">Lossless</span>
+          <span class="tag hq">HQ &gt;= 18 kHz</span>
+          <span class="tag susp">Douteux 16-18 kHz</span>
+          <span class="tag fake">Mauvais &lt; 16 kHz</span>
         </div>
       </div>
     </section>
@@ -202,7 +209,7 @@
       <ol class="steps">
         <li><b>Renseigne tes accès</b> (Réglages)&nbsp;: login Soulseek, token Discogs, et le dossier bibliothèque.</li>
         <li><b>Scanne un dossier</b> (ou récupère tes favoris)&nbsp;: DDD classe chaque fichier et repère les doublons.</li>
-        <li><b>Upgrade</b>&nbsp;: les vrais lossless atterrissent dans ta bibliothèque, les faux partent à la corbeille. Une seule bibliothèque propre, dédoublonnée.</li>
+        <li><b>Upgrade</b>&nbsp;: ce qui passe ton seuil atterrit dans ta bibliothèque, le reste part à la corbeille. Une seule bibliothèque propre, dédoublonnée.</li>
       </ol>
       <p class="lead" style="margin-top:18px">
         Aussi dispo en ligne de commande&nbsp;: <code>ddd scan</code>, <code>ddd upgrade</code>,
@@ -219,7 +226,7 @@
       &nbsp;·&nbsp;
       <a href="https://github.com/DNSZLSK/digdigdig">Code source sur GitHub</a>
     </p>
-    <p style="margin-top:10px">DDD - DigDigDig · vrai lossless ou rien.</p>
+    <p style="margin-top:10px">DDD - DigDigDig · le spectre fait loi.</p>
   </footer>
 
 </body>

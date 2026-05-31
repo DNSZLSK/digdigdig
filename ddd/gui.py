@@ -43,22 +43,25 @@ ACCENT = "#5C6B7A"      # accent slate desature (boutons natifs via seed)
 SPIN = "#A0A0A0"        # spinners / progress, gris neutre
 
 VERDICT_COLOR = {
-    quality.FAKE: "#8C5A5A",         # brun-rouge eteint
-    quality.SUSPICIOUS: "#8C7A5A",   # taupe
-    quality.LOSSY: "#86727A",        # gris-rose
-    quality.AUTHENTIC: "#6E7F5B",    # olive
+    quality.LOSSLESS: "#6E7F5B",   # olive/vert - vrai lossless
+    quality.HQ: "#5A7A8C",         # bleu sobre - jouable club
+    quality.DOUTEUX: "#8C7A5A",    # taupe/jaune - limite
+    quality.MAUVAIS: "#8C5A5A",    # brun-rouge - bouillie
     "ERROR": "#6E6E6E",
     "SKIPPED": "#6E6E6E",
 }
 VERDICT_LABEL = {
-    quality.FAKE: "Faux lossless",
-    quality.SUSPICIOUS: "Suspect (320k)",
-    quality.LOSSY: "Lossy",
-    quality.AUTHENTIC: "Vrai lossless",
+    quality.LOSSLESS: "Lossless",
+    quality.HQ: "HQ",
+    quality.DOUTEUX: "Douteux",
+    quality.MAUVAIS: "Mauvais",
     "ERROR": "Erreur",
     "SKIPPED": "Ignore",
 }
-UPGRADABLE = {quality.FAKE, quality.LOSSY, quality.SUSPICIOUS}
+
+
+def _is_upgradable(qr, preset):
+    return qr.verdict not in (quality.SKIPPED, quality.ERROR) and not quality.is_accepted(qr, preset)
 
 # Statut live par ligne. Tuple = (libelle, couleur, ring_anime).
 # ring_anime=True -> petit spinner visible (phase en cours) ; False -> etat final fige.
@@ -130,6 +133,9 @@ class AppState:
 def main(page: ft.Page) -> None:
     state = AppState()
     cfg = config_mod.load()
+
+    def _preset() -> str:
+        return config_mod.load().get("quality_preset", quality.DEFAULT_PRESET)
 
     page.title = f"DDD - DigDigDig  v{__version__}"
     _set_window_size(page, 1100, 760)
@@ -231,12 +237,12 @@ def main(page: ft.Page) -> None:
     filter_dd = ft.Dropdown(
         label="Filtre", width=240, value="upgradable",
         options=[
-            ft.dropdown.Option(key="upgradable", text="A upgrader (fake/lossy/suspect)"),
+            ft.dropdown.Option(key="upgradable", text="A upgrader (sous le seuil)"),
             ft.dropdown.Option(key="all", text="Tout"),
-            ft.dropdown.Option(key=quality.FAKE, text="Faux lossless"),
-            ft.dropdown.Option(key=quality.LOSSY, text="Lossy"),
-            ft.dropdown.Option(key=quality.SUSPICIOUS, text="Suspect (320k)"),
-            ft.dropdown.Option(key=quality.AUTHENTIC, text="Vrai lossless"),
+            ft.dropdown.Option(key=quality.LOSSLESS, text="Lossless"),
+            ft.dropdown.Option(key=quality.HQ, text="HQ"),
+            ft.dropdown.Option(key=quality.DOUTEUX, text="Douteux"),
+            ft.dropdown.Option(key=quality.MAUVAIS, text="Mauvais"),
         ])
 
     def render_summary() -> None:
@@ -265,7 +271,7 @@ def main(page: ft.Page) -> None:
         if f == "all":
             return True
         if f == "upgradable":
-            return v in UPGRADABLE
+            return _is_upgradable(rec.quality, _preset())
         return v == f
 
     def _on_check(e) -> None:
@@ -286,7 +292,7 @@ def main(page: ft.Page) -> None:
         for idx, rec in shown:
             q = rec.quality
             checkbox = ft.Checkbox(value=idx in state.selected,
-                                   disabled=q.verdict not in UPGRADABLE,
+                                   disabled=not _is_upgradable(q, _preset()),
                                    data=idx, on_change=_on_check)
             badge = ft.Container(
                 content=ft.Text(VERDICT_LABEL.get(q.verdict, q.verdict), size=11, color=TXT),
@@ -340,7 +346,7 @@ def main(page: ft.Page) -> None:
                 state.records = scan_library(folder, exclude_names=current_excludes(), progress=prog)
                 render_summary()
                 render_table()
-                n_up = sum(1 for r in state.records if r.quality.verdict in UPGRADABLE)
+                n_up = sum(1 for r in state.records if _is_upgradable(r.quality, _preset()))
                 status.value = f"{len(state.records)} fichiers analyses - {n_up} a upgrader."
             except Exception as ex:  # noqa: BLE001
                 status.value = f"Erreur scan : {ex}"
@@ -353,7 +359,7 @@ def main(page: ft.Page) -> None:
         if state.busy or not state.records:
             return
         chosen = [state.records[i] for i in sorted(state.selected)] if state.selected else \
-                 [r for r in state.records if r.quality.verdict in UPGRADABLE]
+                 [r for r in state.records if _is_upgradable(r.quality, _preset())]
         if not chosen:
             status.value = "Rien a upgrader (coche des fichiers ou change le filtre)."
             page.update()
@@ -429,7 +435,7 @@ def main(page: ft.Page) -> None:
 
     def select_all_visible(_e) -> None:
         for i, rec in enumerate(state.records):
-            if _visible(rec) and rec.quality.verdict in UPGRADABLE:
+            if _visible(rec) and _is_upgradable(rec.quality, _preset()):
                 state.selected.add(i)
         render_table()
 
@@ -607,6 +613,14 @@ def main(page: ft.Page) -> None:
         dl_picker.get_directory_path(dialog_title="Dossier bibliotheque (lossless verifie)")
 
     dl_browse_btn = ft.FilledButton(text="Parcourir", icon=ft.Icons.FOLDER_OPEN, on_click=browse_dl)
+    preset_dd = ft.Dropdown(
+        label="Qualite minimale", width=320,
+        value=cfg.get("quality_preset", "dj_club"),
+        options=[
+            ft.dropdown.Option(key="dj_club", text="DJ Club (>=18 kHz, MP3 320 inclus)"),
+            ft.dropdown.Option(key="audiophile", text="Audiophile (>=20 kHz)"),
+            ft.dropdown.Option(key="puriste", text="Puriste (lossless pur)"),
+        ])
 
     def save_settings(_e) -> None:
         vals = {
@@ -616,6 +630,7 @@ def main(page: ft.Page) -> None:
             "discogs_token": discogs_tok.value.strip(),
             "bandcamp_username": bandcamp_user.value.strip(),
             "download_dir": (dl_dir_field.value or "").strip(),
+            "quality_preset": preset_dd.value,
         }
         config_mod.set_many(vals)
         cfg.update(vals)   # garde le cache en memoire frais (relu aussi a chaud par do_acquire)
@@ -632,6 +647,9 @@ def main(page: ft.Page) -> None:
         ft.Text("Tout ce que DDD valide (upgrade + favoris) est depose ici ; les faux/rejets "
                 "vont a la corbeille.", size=12, color=TXT_DIM),
         ft.Row([dl_dir_field, dl_browse_btn]),
+        ft.Text("Seuil de qualite : en dessous, un fichier est candidat a l'upgrade.",
+                size=12, color=TXT_DIM),
+        ft.Row([preset_dd], wrap=True),
         ft.FilledButton(text="Sauvegarder", on_click=save_settings),
     ], spacing=10)
 

@@ -35,19 +35,34 @@ LOSSLESS_EXTS = {".flac", ".wav", ".wave", ".aif", ".aiff", ".aifc"}
 # Formats ouvertement lossy (candidats upgrade par definition)
 LOSSY_EXTS = {".mp3", ".m4a", ".aac", ".ogg", ".oga", ".opus", ".wma"}
 
-# Verdicts
-AUTHENTIC = "AUTHENTIC"          # vrai lossless plein spectre
-SUSPICIOUS = "SUSPICIOUS"        # cutoff ~320 kbps : upscale probable ou rolloff naturel -> revue
-FAKE = "FAKE_LOSSLESS"           # conteneur lossless mais source clairement lossy
-LOSSY = "LOSSY"                  # format lossy assume -> candidat upgrade
-SKIPPED = "SKIPPED"              # pas un fichier audio qu'on analyse
-ERROR = "ERROR"                  # echec de lecture/analyse
+# Verdicts : 4 bandes orientees "jouable en club", classees par le cutoff spectral
+# mesure. La math reste celle de flac-detective (detect_cutoff/estimate_mp3_bitrate) ;
+# on ne change QUE la facon de nommer/grouper le resultat.
+LOSSLESS = "LOSSLESS"            # plein spectre (estimate_mp3_bitrate == 0) - vrai lossless
+HQ = "HQ"                        # cutoff >= 18 kHz - jouable club (inclut le MP3 320)
+DOUTEUX = "DOUTEUX"              # 16-18 kHz - audible sur bon systeme, a revoir
+MAUVAIS = "MAUVAIS"              # < 16 kHz - bouillie / MP3 bas debit
+SKIPPED = "SKIPPED"             # pas un fichier audio qu'on analyse
+ERROR = "ERROR"                 # echec de lecture/analyse
 
 SAMPLE_WINDOW_S = 30.0
 LONG_FILE_S = 90.0
 # Un FLAC dont le bitrate conteneur est sous ce seuil vient quasi surement d'un MP3.
 # (Ne s'applique pas au WAV : le WAV non compresse est toujours ~1411 kbps.)
 FLAC_BITRATE_RED_FLAG = 160
+
+# Frontieres de bande (Hz) sur le cutoff mesure
+HQ_CUTOFF_HZ = 18000            # >= 18 kHz : jouable sur un gros systeme
+DOUTEUX_CUTOFF_HZ = 16000       # 16-18 kHz : limite
+AUDIOPHILE_CUTOFF_HZ = 20000    # seuil du preset "audiophile"
+# Un fichier ouvertement lossy (MP3/AAC/...) sous ce bitrate conteneur est banni
+# partout, quel que soit le preset (un MP3 < 320 ne rentre jamais dans la bibliotheque).
+MIN_LOSSY_BITRATE = 310
+
+# Presets de qualite : cutoff minimum (Hz) pour ACCEPTER un fichier.
+# "puriste" = None -> on exige le plein spectre (verdict LOSSLESS, = l'ancien AUTHENTIC).
+QUALITY_PRESETS = {"dj_club": HQ_CUTOFF_HZ, "audiophile": AUDIOPHILE_CUTOFF_HZ, "puriste": None}
+DEFAULT_PRESET = "dj_club"
 
 
 @dataclass
@@ -133,17 +148,27 @@ def _spectral(path: Path, info: "sf._SoundFileInfo") -> Optional[Tuple[float, fl
     return cutoff_min, cutoff_std, min(hfs)
 
 
+def _band(cutoff: float, est: int) -> Tuple[str, str, str]:
+    """Bande de qualite a partir du cutoff mesure (verdict, confidence, reason).
+
+    LOSSLESS = plein spectre (pas de signature MP3). Sinon on classe par la
+    position du mur : >=18 kHz jouable (HQ), 16-18 limite (DOUTEUX), <16 bouillie.
+    """
+    if est == 0:
+        return LOSSLESS, "high", f"spectre plein, cutoff {cutoff:.0f} Hz"
+    if cutoff >= HQ_CUTOFF_HZ:
+        return HQ, "medium", f"cutoff {cutoff:.0f} Hz (~{est} kbps) - jouable club"
+    if cutoff >= DOUTEUX_CUTOFF_HZ:
+        return DOUTEUX, "medium", f"cutoff {cutoff:.0f} Hz (~{est} kbps) - limite, a revoir"
+    return MAUVAIS, "high", f"cutoff {cutoff:.0f} Hz (~{est} kbps) - source lossy bas debit"
+
+
 def _classify_lossless(cutoff: float, container_bitrate: int, ext: str) -> Tuple[str, str, str]:
     est = estimate_mp3_bitrate(cutoff)
     if ext == ".flac" and 0 < container_bitrate < FLAC_BITRATE_RED_FLAG:
-        return (FAKE, "high",
+        return (MAUVAIS, "high",
                 f"bitrate conteneur FLAC {container_bitrate} kbps < {FLAC_BITRATE_RED_FLAG} (source lossy)")
-    if est == 0:
-        return AUTHENTIC, "high", f"spectre plein, cutoff {cutoff:.0f} Hz"
-    if est >= 320:
-        return (SUSPICIOUS, "medium",
-                f"cutoff {cutoff:.0f} Hz ~ source 320 kbps (upscale probable ou rolloff naturel)")
-    return FAKE, "high", f"cutoff {cutoff:.0f} Hz ~ source lossy {est} kbps"
+    return _band(cutoff, est)
 
 
 def _error(p: Path, ext: str, fclass: str, msg: str) -> QualityResult:
@@ -178,8 +203,13 @@ def analyze_file(path) -> QualityResult:
     est = estimate_mp3_bitrate(cutoff)
 
     if fclass == "lossy":
-        verdict, conf = LOSSY, "high"
-        reason = f"format lossy {ext[1:]} (spectre ~ {est or 320}+ kbps) - candidat upgrade"
+        # MP3/AAC/... : banni d'office sous 320 kbps (container_bitrate ~ debit reel),
+        # sinon bande par le cutoff comme un conteneur lossless.
+        if 0 < container_bitrate < MIN_LOSSY_BITRATE:
+            verdict, conf = MAUVAIS, "high"
+            reason = f"{ext[1:]} {container_bitrate} kbps < 320 - banni"
+        else:
+            verdict, conf, reason = _band(cutoff, est)
     else:
         verdict, conf, reason = _classify_lossless(cutoff, container_bitrate, ext)
 
@@ -200,6 +230,35 @@ def analyze_file(path) -> QualityResult:
         confidence=conf,
         reason=reason,
     )
+
+
+def preset_from_config(default: str = DEFAULT_PRESET) -> str:
+    """Preset de qualite courant (config 'quality_preset'), valide, defaut dj_club."""
+    try:
+        from .. import config as _config
+        val = _config.get("quality_preset")
+    except Exception:  # noqa: BLE001
+        val = None
+    return val if val in QUALITY_PRESETS else default
+
+
+def is_accepted(qr: "QualityResult", preset: str = DEFAULT_PRESET) -> bool:
+    """Le fichier passe-t-il la porte du preset ? (a garder vs a upgrader)
+
+    - puriste : seulement le plein spectre (verdict LOSSLESS).
+    - dj_club / audiophile : cutoff >= seuil du preset.
+    Dans tous les cas un MP3 (conteneur lossy) sous 320 kbps est refuse.
+    """
+    if qr.verdict in (SKIPPED, ERROR):
+        return False
+    if qr.ext in LOSSY_EXTS and 0 < qr.container_bitrate < MIN_LOSSY_BITRATE:
+        return False
+    if preset not in QUALITY_PRESETS:
+        preset = DEFAULT_PRESET
+    floor = QUALITY_PRESETS[preset]
+    if floor is None:                      # puriste
+        return qr.verdict == LOSSLESS
+    return qr.verdict == LOSSLESS or qr.cutoff_hz >= floor
 
 
 # Champs CSV stables (ordre)

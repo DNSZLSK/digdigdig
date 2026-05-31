@@ -9,7 +9,8 @@ from pathlib import Path
 
 from . import __version__
 from . import paths
-from .core.quality import AUTHENTIC, FAKE, LOSSY, SUSPICIOUS
+from .core import quality as quality_mod
+from .core.quality import LOSSLESS, HQ, DOUTEUX, MAUVAIS
 from .core import audit as audit_mod
 from .core import config as config_mod
 from .core.scan import (
@@ -18,12 +19,12 @@ from .core.scan import (
 from .core import upgrade as upgrade_mod
 
 # Ordre d'affichage du resume (du plus actionnable au moins)
-VERDICT_ORDER = [FAKE, SUSPICIOUS, LOSSY, AUTHENTIC, "ERROR", "SKIPPED"]
+VERDICT_ORDER = [LOSSLESS, HQ, DOUTEUX, MAUVAIS, "ERROR", "SKIPPED"]
 VERDICT_LABEL = {
-    FAKE: "faux lossless (source lossy)",
-    SUSPICIOUS: "suspect (320 kbps probable)",
-    LOSSY: "lossy (candidat upgrade)",
-    AUTHENTIC: "vrai lossless",
+    LOSSLESS: "lossless (plein spectre)",
+    HQ: "HQ (jouable club, >=18 kHz)",
+    DOUTEUX: "douteux (16-18 kHz)",
+    MAUVAIS: "mauvais (<16 kHz)",
     "ERROR": "erreur d'analyse",
     "SKIPPED": "ignore",
 }
@@ -100,7 +101,9 @@ def _cmd_scan(args: argparse.Namespace) -> int:
             print(f"  ... +{len(dup_groups) - 10} autres groupes (voir le CSV)")
 
     # Detail qualite a problemes (faux lossless en tete)
-    flagged = [r for r in records if r.quality.verdict in (FAKE, SUSPICIOUS)]
+    preset = quality_mod.preset_from_config()
+    flagged = [r for r in records if r.quality.verdict not in ("SKIPPED", "ERROR")
+               and not quality_mod.is_accepted(r.quality, preset)]
     if flagged:
         print(f"\n  --- {len(flagged)} a verifier/remplacer ---")
         for r in sorted(flagged, key=lambda r: (r.quality.verdict, r.quality.cutoff_hz)):
@@ -122,12 +125,7 @@ def _cmd_upgrade(args: argparse.Namespace) -> int:
     dl_dir = Path(args.download_dir) if args.download_dir else paths.download_dir(config_mod.load())
     log_path = paths.logs_dir() / "ddd_upgrade.log"
 
-    verdicts = []
-    if not args.lossy_only:
-        verdicts.append(FAKE)
-    verdicts.append(LOSSY) if not args.fake_only else None
-    if args.include_suspicious:
-        verdicts.append(SUSPICIOUS)
+    preset = args.preset if getattr(args, "preset", None) else quality_mod.preset_from_config()
 
     def progress(*a) -> None:
         if len(a) == 3 and not args.verbose:
@@ -144,7 +142,7 @@ def _cmd_upgrade(args: argparse.Namespace) -> int:
           file=sys.stderr)
     outcomes = upgrade_mod.run_upgrade(
         folder, root=root, staging_dir=staging, download_dir=dl_dir,
-        verdicts=verdicts, exclude_names=args.exclude,
+        preset=preset, exclude_names=args.exclude,
         limit=args.limit, profile=args.profile, progress=progress, log_path=log_path,
     )
 
@@ -260,7 +258,7 @@ def _cmd_acquire(args: argparse.Namespace) -> int:
 
 
 def _cmd_import(args: argparse.Namespace) -> int:
-    """Migre un dossier dans la bibliotheque : AUTHENTIC -> download_dir, reste -> corbeille."""
+    """Migre un dossier dans la bibliotheque : lossless -> download_dir, reste -> corbeille."""
     src = Path(args.folder)
     if not src.exists():
         print(f"dossier introuvable: {src}", file=sys.stderr)
@@ -323,10 +321,8 @@ def build_parser() -> argparse.ArgumentParser:
     p_up.add_argument("--download-dir", help="bibliotheque lossless cible (defaut: config / ~/Music/DDD)")
     p_up.add_argument("-x", "--exclude", action="append", default=["PROD"],
                       metavar="NOM", help="sous-dossier a ignorer (defaut: PROD). Repetable.")
-    p_up.add_argument("--fake-only", action="store_true", help="n'upgrader que les FAKE_LOSSLESS")
-    p_up.add_argument("--lossy-only", action="store_true", help="n'upgrader que les LOSSY")
-    p_up.add_argument("--include-suspicious", action="store_true",
-                      help="inclure aussi les SUSPICIOUS (320 kbps probable)")
+    p_up.add_argument("--preset", choices=["dj_club", "audiophile", "puriste"],
+                      help="seuil qualite (defaut: config, dj_club)")
     p_up.add_argument("-n", "--limit", type=int, default=0,
                       help="limiter a N pistes (smoke test)")
     p_up.add_argument("--staging", help="cache transitoire de download (defaut: .cache-dl)")
@@ -353,7 +349,7 @@ def build_parser() -> argparse.ArgumentParser:
     p_ac.set_defaults(func=_cmd_acquire)
 
     p_im = sub.add_parser("import",
-                          help="migrer un dossier dans la bibliotheque (AUTHENTIC garde, reste corbeille)")
+                          help="migrer un dossier dans la bibliotheque (lossless garde, reste corbeille)")
     p_im.add_argument("folder", help="dossier a importer/trier")
     p_im.add_argument("--download-dir", help="bibliotheque cible (defaut: config / ~/Music/DDD)")
     p_im.add_argument("-x", "--exclude", action="append", default=[], metavar="NOM",

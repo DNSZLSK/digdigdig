@@ -19,19 +19,19 @@
 
 ---
 
-**DDD nettoie ta bibliotheque musicale et la passe en vrai lossless, tout seul.**
+**DDD nettoie ta bibliotheque musicale et la passe en qualite jouable en club, tout seul.**
 
 Tu pointes un dossier (ou tes favoris Discogs / Bandcamp), et DDD :
-- repere les **faux FLAC** : des MP3 reencodes en .flac/.wav qui *paraissent* lossless mais ne le sont pas,
-- va chercher la **vraie version lossless** sur Soulseek,
-- verifie au **spectre** que le fichier telecharge est authentique (pas un upscale), que c'est le **bon morceau** et pas un extrait,
+- repere les **faux lossless** : des MP3 reencodes en .flac/.wav/.aiff qui *paraissent* lossless mais ne le sont pas,
+- va chercher une **vraie version** sur Soulseek (FLAC, WAV ou AIFF, avec repli MP3 320 automatique si rien en lossless),
+- verifie au **spectre** que le fichier telecharge tient la route (pas un upscale), que c'est le **bon morceau** et pas un extrait,
 - le range dans **une seule bibliotheque** propre, et jette les faux a la corbeille.
 
 Pas besoin d'etre developpeur : telecharge l'`.exe`, double-clic, c'est une fenetre.
 
 ## A quoi ca ressemble
 
-**Scanner un dossier et upgrader** (vrai lossless ou faux ? statut live par piste) :
+**Scanner un dossier et upgrader** (Lossless, HQ, Douteux ou Mauvais ? statut live par piste) :
 
 <p align="center"><img src="docs/screenshot-bibliotheque.png" alt="Onglet Bibliotheque : scan qualite + upgrade" width="900"></p>
 
@@ -41,12 +41,20 @@ Pas besoin d'etre developpeur : telecharge l'`.exe`, double-clic, c'est une fene
 
 ## Ce que ca fait
 
-- **Scan qualite** : pour chaque fichier, vrai lossless / faux lossless / suspect 320k / lossy, + doublons.
-- **Upgrade** : remplace tes faux/lossy par de vrais lossless trouves sur Soulseek.
-- **Recuperer favoris** : scrape ta wantlist Discogs / wishlist Bandcamp et la telecharge en lossless.
+- **Scan qualite** : chaque fichier est classe par son **cutoff spectral** (la frequence ou le son s'arrete) dans une des quatre bandes, + doublons :
+  - **Lossless** (vert) : plein spectre, vrai lossless.
+  - **HQ** (bleu) : >= 18 kHz, jouable sur un gros systeme (inclut le MP3 320).
+  - **Douteux** (jaune) : 16-18 kHz, limite.
+  - **Mauvais** (rouge) : < 16 kHz, bouillie.
+- **Trois presets de qualite** (seuil minimum a garder, dans les Reglages) :
+  - **DJ Club** (>= 18 kHz) - *defaut* : garde tout ce qui est jouable en club, MP3 320 inclus.
+  - **Audiophile** (>= 20 kHz) : rejette les MP3 sous 320.
+  - **Puriste** (lossless pur) : vrai lossless plein spectre uniquement.
+- **Upgrade** : remplace tes fichiers sous le seuil par mieux, trouve sur Soulseek. DDD cherche FLAC, WAV et AIFF (beaucoup de DJ partagent en WAV/AIFF), avec **repli MP3 320 automatique** pour les pistes introuvables en lossless. Les MP3 sous 320 kbps sont **bannis systematiquement**, quel que soit le preset.
+- **Recuperer favoris** : scrape ta wantlist Discogs / wishlist Bandcamp et la telecharge.
 - **Une seule bibliotheque** : tout ce qui est valide atterrit dans `~/Music/DDD` (modifiable dans les Reglages), dedoublonne. Les rejets partent a la **corbeille** (recuperables), jamais supprimes en dur.
 
-**Le filet de securite** : un fichier telecharge n'est garde que s'il passe trois controles - **spectral** (vrai lossless, pas un upscale MP3 deguise en FLAC, ce que les filtres Soulseek ne voient pas), **duree** (pas un extrait / preview), et **identite titre + artiste** (le bon morceau, pas un faux match). Sinon -> corbeille.
+**Le filet de securite : le spectre fait loi.** Chaque telechargement est re-audite au spectre (FFT) ; **le format et le bitrate declares ne servent qu'a la recherche Soulseek, jamais a la decision de garder ou rejeter.** Le spectre ne ment pas, les tags si - c'est ce qui distingue un vrai 320 / lossless d'un upscale (un MP3 128 reencode en .flac ou .wav, ce que les filtres Soulseek ne voient pas). Un fichier n'est garde que s'il passe trois controles : **spectral** (au-dessus du seuil du preset, pas un upscale), **duree** (pas un extrait / preview) et **identite titre + artiste** (le bon morceau, pas un faux match). Sinon -> corbeille.
 
 ## Demarrer (utilisateur)
 
@@ -79,7 +87,7 @@ l'`.exe` (pas besoin de Python ni de ffmpeg).
 # installer le coeur + la GUI
 .\.venv\Scripts\python.exe -m pip install -e ".[gui]"
 
-# Scanner un dossier : vrai lossless ou faux ? bien nomme ? doublons ?
+# Scanner un dossier : Lossless / HQ / Douteux / Mauvais ? bien nomme ? doublons ?
 .\.venv\Scripts\python.exe -m ddd scan "C:\chemin\vers\Musique"
 
 # Upgrader : depose les vrais lossless dans la bibliotheque, faux source -> corbeille

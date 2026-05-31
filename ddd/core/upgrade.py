@@ -1,9 +1,11 @@
 """Boucle d'upgrade : scan -> want-list -> sldl -> re-audit -> remplacement.
 
-Le coeur de la feature #3 : prendre les faux lossless / lossy d'une bibliotheque,
-chercher un vrai lossless sur Soulseek, et NE garder que ce qui passe a nouveau le
-detecteur de qualite en AUTHENTIC (les filtres min-bitrate/format de sldl ne
-detectent PAS un upscale - d'ou le re-audit obligatoire).
+Le coeur de la feature #3 : prendre tout ce qui est sous le seuil de qualite choisi
+(preset DJ Club / Audiophile / Puriste) dans une bibliotheque, chercher mieux sur
+Soulseek, et NE garder que ce qui repasse le detecteur AU-DESSUS du seuil (les
+filtres min-bitrate/format de sldl ne detectent PAS un upscale - d'ou le re-audit
+obligatoire). Si rien n'est trouve en lossless/WAV/AIFF, une 2e passe automatique
+retente en MP3 320 (jouable club), jamais sous 320.
 
 Le remplacement est opt-in (apply=True). Par defaut : telecharge en staging,
 re-audite, et rapporte ce qui SERAIT remplace, sans toucher la bibliotheque.
@@ -28,8 +30,8 @@ from .soulseek import WantItem
 
 logger = logging.getLogger(__name__)
 
-# Verdicts qui declenchent une tentative d'upgrade (par defaut)
-UPGRADE_VERDICTS = {quality.FAKE, quality.LOSSY}
+# Profil sldl de repli (2e passe) quand rien n'est trouve en lossless/WAV/AIFF.
+FALLBACK_PROFILE = "mp3-fallback"
 
 # Actions du rapport d'upgrade
 ACT_REPLACED = "REPLACED"
@@ -71,12 +73,12 @@ def _existing_keys(folder) -> set:
     return keys
 
 
-def _reject_reason(it, dl, q):
+def _reject_reason(it, dl, q, preset=quality.DEFAULT_PRESET):
     """Raison de rejet d'un download (action, note) ou None s'il est bon.
 
-    Ordre : trop court (preview) -> mauvais match (titre/artiste) -> non-authentique
-    (upscale/lossy). Le re-audit spectral ne verifie QUE l'authenticite, pas l'identite
-    ni la duree.
+    Ordre : trop court (preview) -> mauvais match (titre/artiste) -> sous le seuil
+    qualite du preset (upscale/lossy/MP3<320). Le re-audit spectral ne verifie QUE
+    la qualite, pas l'identite ni la duree.
 
     Identite : le TITRE est le discriminant principal -> couverture du noyau du titre
     (sans (Original Mix)/feat) >= 60% ; ca reconnait "Andre Kraml - Safari" pour la requete
@@ -97,9 +99,9 @@ def _reject_reason(it, dl, q):
         return ACT_WRONG_MATCH, (f"mauvais match (titre {t_cov:.0%}, artiste "
                                  f"{'ok' if artist_ok else 'absent'}) : {Path(dl.filepath).name}")
 
-    if q.verdict != quality.AUTHENTIC:
-        return ACT_REJECTED_FAKE, (f"download non-authentique ({q.verdict}, "
-                                   f"cutoff {q.cutoff_hz:.0f} Hz) : {q.reason}")
+    if not quality.is_accepted(q, preset):
+        return ACT_REJECTED_FAKE, (f"download sous le seuil ({q.verdict}, "
+                                   f"cutoff {q.cutoff_hz:.0f} Hz, preset {preset}) : {q.reason}")
     return None
 
 
@@ -136,19 +138,21 @@ class UpgradePlan:
     unparseable: List[UpgradeOutcome] = field(default_factory=list)
 
 
-def build_plan(scan_results, verdicts: Sequence[str] = ()) -> UpgradePlan:
+def build_plan(scan_results, preset: str = quality.DEFAULT_PRESET) -> UpgradePlan:
     """A partir des resultats de scan, construit la want-list (fichiers a upgrader).
 
-    Accepte indifferemment des QualityResult (chemin CLI via scan_folder) ou des
-    ScanRecord (chemin GUI via scan_library) : le ScanRecord porte verdict/chemin/duree
-    dans .quality, on normalise donc chaque element avant lecture.
+    Sont candidats tous les fichiers analysables qui NE passent PAS le seuil du
+    preset (`quality.is_accepted`). Accepte indifferemment des QualityResult (chemin
+    CLI via scan_folder) ou des ScanRecord (chemin GUI via scan_library) : le
+    ScanRecord porte verdict/chemin/duree dans .quality, on normalise avant lecture.
     """
-    wanted = set(verdicts) if verdicts else UPGRADE_VERDICTS
     plan = UpgradePlan()
     for r in scan_results:
         q = getattr(r, "quality", r)   # ScanRecord -> .quality ; QualityResult -> lui-meme
-        if q.verdict not in wanted:
-            continue
+        if q.verdict in (quality.SKIPPED, quality.ERROR):
+            continue                   # pas un fichier audio exploitable
+        if quality.is_accepted(q, preset):
+            continue                   # deja au-dessus du seuil -> rien a faire
         parsed = parse_filename(q.path)
         artist, title = normalize_artist_title(parsed.artist, parsed.title)  # VA/prefixe/dup
         if not artist:
@@ -196,16 +200,102 @@ def _deposit(src, download_dir) -> Path:
     return dest
 
 
+def _finalize_download(it, dl, q, *, preset, download_dir, existing, trash_origin):
+    """Evalue un download re-audite : depose s'il passe le seuil, sinon corbeille.
+
+    Retourne (UpgradeOutcome, deposed: bool). `trash_origin=True` (upgrade) envoie
+    aussi le fichier source a la corbeille et marque REPLACED ; sinon (acquire)
+    marque ACQUIRED. NOT_FOUND si rien n'a ete telecharge.
+    """
+    base = UpgradeOutcome(action="", artist=it.artist, title=it.title, original=it.origin_path)
+    if dl is None or not dl.downloaded:
+        base.action = ACT_NOT_FOUND
+        base.note = "sldl n'a ramene aucun fichier"
+        return base, False
+    base.new_file, base.new_verdict, base.new_cutoff_hz = dl.filepath, q.verdict, q.cutoff_hz
+    rej = _reject_reason(it, dl, q, preset)
+    if rej:
+        base.action, base.note = rej
+        trash.send_to_trash(dl.filepath)          # candidat rejete -> corbeille
+        return base, False
+    final = _deposit(dl.filepath, download_dir)
+    existing.add(match_key(it.artist, it.title))
+    base.new_file = str(final)
+    if trash_origin:
+        trash.send_to_trash(it.origin_path)       # le faux source -> corbeille
+        base.action = ACT_REPLACED
+        base.note = "depose dans la bibliotheque ; original a la corbeille"
+    else:
+        base.action = ACT_ACQUIRED
+        base.note = f"depose dans la bibliotheque: {final}"
+    return base, True
+
+
+def _download_pass(
+    items, *, root, staging_dir, download_dir, existing, preset, profile,
+    fallback_profile, trash_origin, csv_name, fallback_csv_name,
+    progress, on_item, on_proc, cancel, log_path,
+) -> List[UpgradeOutcome]:
+    """Telecharge `items` (passe 1 = profile lossless/WAV/AIFF), puis relance en
+    MP3 320 (passe 2 = fallback_profile) les introuvables. Re-audit + seuil a chaque
+    passe via _finalize_download. Retourne la liste des outcomes (un par item).
+    """
+    outcomes: List[UpgradeOutcome] = []
+    not_found: List = []
+    for chunk in _chunks(items, CHUNK_SIZE):
+        if cancel and cancel():
+            break
+        results = download_and_audit(
+            chunk, root=root, staging_dir=staging_dir, profile=profile, csv_name=csv_name,
+            progress=progress, on_item=on_item, on_proc=on_proc, cancel=cancel, log_path=log_path,
+        )
+        for it, dl, q in results:
+            outcome, _ = _finalize_download(
+                it, dl, q, preset=preset, download_dir=download_dir,
+                existing=existing, trash_origin=trash_origin)
+            if outcome.action == ACT_NOT_FOUND and fallback_profile:
+                not_found.append(it)              # 2e passe : on ne signale pas 'done' encore
+            else:
+                outcomes.append(outcome)
+                if on_item:
+                    on_item(_item_id(it), "done", outcome.action)
+
+    if not_found:
+        if fallback_profile and not (cancel and cancel()):
+            for chunk in _chunks(not_found, CHUNK_SIZE):
+                results = download_and_audit(
+                    chunk, root=root, staging_dir=staging_dir, profile=fallback_profile,
+                    csv_name=fallback_csv_name, progress=progress, on_item=on_item,
+                    on_proc=on_proc, cancel=cancel, log_path=log_path,
+                )
+                for it, dl, q in results:
+                    outcome, _ = _finalize_download(
+                        it, dl, q, preset=preset, download_dir=download_dir,
+                        existing=existing, trash_origin=trash_origin)
+                    outcomes.append(outcome)
+                    if on_item:
+                        on_item(_item_id(it), "done", outcome.action)
+        else:                                     # repli desactive ou annule -> NOT_FOUND
+            for it in not_found:
+                outcomes.append(UpgradeOutcome(
+                    action=ACT_NOT_FOUND, artist=it.artist, title=it.title,
+                    original=it.origin_path, note="sldl n'a ramene aucun fichier"))
+                if on_item:
+                    on_item(_item_id(it), "done", ACT_NOT_FOUND)
+    return outcomes
+
+
 def run_upgrade(
     folder,
     *,
     root: Path,
     staging_dir,
     download_dir,
-    verdicts: Sequence[str] = (),
+    preset: Optional[str] = None,
     exclude_names: Sequence[str] = (),
     limit: int = 0,
     profile: str = "lossless-strict",
+    fallback_profile: Optional[str] = FALLBACK_PROFILE,
     scan_results=None,
     progress: Optional[Callable] = None,
     on_item: Optional[Callable] = None,
@@ -222,11 +312,12 @@ def run_upgrade(
     staging_dir = Path(staging_dir)
     download_dir = Path(download_dir)
     download_dir.mkdir(parents=True, exist_ok=True)
+    preset = preset or quality.preset_from_config()
 
     if scan_results is None:
         scan_results = scan_folder(folder, exclude_names=exclude_names, progress=progress)
 
-    plan = build_plan(scan_results, verdicts)
+    plan = build_plan(scan_results, preset)
     outcomes: List[UpgradeOutcome] = list(plan.unparseable)
     if on_item:   # statut final immediat pour les noms illisibles (jamais telecharges)
         for o in plan.unparseable:
@@ -250,38 +341,12 @@ def run_upgrade(
     if not to_dl:
         return outcomes
 
-    for chunk in _chunks(to_dl, CHUNK_SIZE):
-        if cancel and cancel():
-            break
-        results = download_and_audit(
-            chunk, root=root, staging_dir=staging_dir, profile=profile,
-            progress=progress, on_item=on_item, on_proc=on_proc,
-            cancel=cancel, log_path=log_path,
-        )
-        for it, dl, q in results:
-            base = UpgradeOutcome(action="", artist=it.artist, title=it.title,
-                                  original=it.origin_path)
-            if dl is None or not dl.downloaded:
-                base.action = ACT_NOT_FOUND
-                base.note = "sldl n'a ramene aucun fichier"
-            else:
-                base.new_file, base.new_verdict, base.new_cutoff_hz = (
-                    dl.filepath, q.verdict, q.cutoff_hz)
-                rej = _reject_reason(it, dl, q)
-                if rej:
-                    base.action, base.note = rej
-                    trash.send_to_trash(dl.filepath)          # candidat rejete -> corbeille
-                else:
-                    final = _deposit(dl.filepath, download_dir)
-                    trash.send_to_trash(it.origin_path)       # le faux source -> corbeille
-                    existing.add(match_key(it.artist, it.title))
-                    base.action = ACT_REPLACED
-                    base.new_file = str(final)
-                    base.note = "depose dans la bibliotheque ; original (faux) a la corbeille"
-            outcomes.append(base)
-            if on_item:
-                on_item(_item_id(it), "done", base.action)
-
+    outcomes += _download_pass(
+        to_dl, root=root, staging_dir=staging_dir, download_dir=download_dir,
+        existing=existing, preset=preset, profile=profile, fallback_profile=fallback_profile,
+        trash_origin=True, csv_name="ddd_upgrade.csv", fallback_csv_name="ddd_upgrade_mp3.csv",
+        progress=progress, on_item=on_item, on_proc=on_proc, cancel=cancel, log_path=log_path,
+    )
     return outcomes
 
 
@@ -350,7 +415,9 @@ def acquire_rows(
     download_dir,
     staging_dir=None,
     limit: int = 0,
+    preset: Optional[str] = None,
     profile: str = "lossless-strict",
+    fallback_profile: Optional[str] = FALLBACK_PROFILE,
     progress: Optional[Callable] = None,
     on_item: Optional[Callable] = None,
     on_proc: Optional[Callable] = None,
@@ -365,6 +432,7 @@ def acquire_rows(
     download_dir = Path(download_dir)
     download_dir.mkdir(parents=True, exist_ok=True)
     staging_dir = Path(staging_dir) if staging_dir else (download_dir / ".cache-dl")
+    preset = preset or quality.preset_from_config()
 
     outcomes: List[UpgradeOutcome] = []
     existing = _existing_keys(download_dir)   # deja dans la bibliotheque -> on saute
@@ -398,35 +466,12 @@ def acquire_rows(
     if not items:
         return outcomes
 
-    for chunk in _chunks(items, CHUNK_SIZE):
-        if cancel and cancel():
-            break
-        results = download_and_audit(
-            chunk, root=root, staging_dir=staging_dir, profile=profile,
-            limit=0, csv_name="ddd_acquire.csv", progress=progress,
-            on_item=on_item, on_proc=on_proc, cancel=cancel, log_path=log_path,
-        )
-        for it, dl, q in results:
-            base = UpgradeOutcome(action="", artist=it.artist, title=it.title, original="")
-            if dl is None or not dl.downloaded:
-                base.action = ACT_NOT_FOUND
-                base.note = "sldl n'a ramene aucun fichier"
-            else:
-                base.new_file, base.new_verdict, base.new_cutoff_hz = (
-                    dl.filepath, q.verdict, q.cutoff_hz)
-                rej = _reject_reason(it, dl, q)
-                if rej:
-                    base.action, base.note = rej
-                    trash.send_to_trash(dl.filepath)          # candidat rejete -> corbeille
-                else:
-                    final = _deposit(dl.filepath, download_dir)
-                    existing.add(match_key(it.artist, it.title))
-                    base.action = ACT_ACQUIRED
-                    base.new_file = str(final)
-                    base.note = f"depose dans la bibliotheque: {final}"
-            outcomes.append(base)
-            if on_item:
-                on_item(_item_id(it), "done", base.action)
+    outcomes += _download_pass(
+        items, root=root, staging_dir=staging_dir, download_dir=download_dir,
+        existing=existing, preset=preset, profile=profile, fallback_profile=fallback_profile,
+        trash_origin=False, csv_name="ddd_acquire.csv", fallback_csv_name="ddd_acquire_mp3.csv",
+        progress=progress, on_item=on_item, on_proc=on_proc, cancel=cancel, log_path=log_path,
+    )
     return outcomes
 
 
@@ -434,21 +479,23 @@ def import_folder(
     src,
     download_dir,
     *,
+    preset: Optional[str] = None,
     exclude_names: Sequence[str] = (),
     progress: Optional[Callable] = None,
 ) -> Dict[str, int]:
-    """Migre un dossier existant dans la bibliotheque : scanne `src`, DEPLACE les vrais
-    lossless (AUTHENTIC, dedoublonnes par match_key) vers `download_dir`, envoie tout le
-    reste (fake/lossy/suspect) a la corbeille. Reversible. Retourne un bilan.
+    """Migre un dossier existant dans la bibliotheque : scanne `src`, DEPLACE ce qui
+    passe le seuil du preset (dedoublonne par match_key) vers `download_dir`, envoie
+    le reste (sous le seuil) a la corbeille. Reversible. Retourne un bilan.
     """
     download_dir = Path(download_dir)
     download_dir.mkdir(parents=True, exist_ok=True)
+    preset = preset or quality.preset_from_config()
     records = scan_library(src, exclude_names=exclude_names, progress=progress)
     existing = _existing_keys(download_dir)
     stats = {"total": len(records), "kept": 0, "duplicates": 0, "trashed": 0}
     for rec in records:
         q = rec.quality
-        if q.verdict == quality.AUTHENTIC:
+        if quality.is_accepted(q, preset):
             parsed = parse_filename(q.path)
             key = match_key(parsed.artist, parsed.title) if parsed.parseable else None
             if key and key in existing:

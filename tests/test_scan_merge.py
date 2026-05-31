@@ -31,9 +31,9 @@ def _rec(path, verdict, status, size):
 def main():
     # 3 fichiers : 2 partagent une taille (doublon), 1 unique
     recs = [
-        _rec(r"C:\lib\A\x.wav", quality.FAKE, audit.OK, 5_000_000),
-        _rec(r"C:\lib\B\x.wav", quality.FAKE, audit.OK, 5_000_000),   # meme taille que le 1er
-        _rec(r"C:\lib\C\y.wav", quality.AUTHENTIC, audit.OK, 7_000_000),
+        _rec(r"C:\lib\A\x.wav", quality.DOUTEUX, audit.OK, 5_000_000),
+        _rec(r"C:\lib\B\x.wav", quality.DOUTEUX, audit.OK, 5_000_000),   # meme taille que le 1er
+        _rec(r"C:\lib\C\y.wav", quality.LOSSLESS, audit.OK, 7_000_000),
     ]
     # recompute dup_count comme le fait scan_library
     from collections import Counter
@@ -51,7 +51,7 @@ def main():
     d = recs[0].as_dict()
     for field in SCAN_RECORD_FIELDS:
         assert field in d, f"champ manquant dans as_dict: {field}"
-    assert d["quality_verdict"] == quality.FAKE
+    assert d["quality_verdict"] == quality.DOUTEUX
     assert d["name_status"] == audit.OK
     assert d["dup_count"] == 2
 
