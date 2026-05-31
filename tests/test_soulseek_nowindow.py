@@ -66,6 +66,33 @@ def main():
         assert captured["kwargs"].get("creationflags") == subprocess.CREATE_NO_WINDOW, \
             "Popen doit recevoir CREATE_NO_WINDOW (pas de console noire)"
 
+    # 3. run_sldl detecte un echec fatal (port 50300 occupe par un sldl orphelin)
+    #    et leve SoulseekError au lieu de cracher la trace .NET dans le statut.
+    class _CrashProc:
+        def __init__(self):
+            self.stdout = iter([
+                "Login DNSZLSK\n",
+                "Failed to start listening on 0.0.0.0:50300; the IP and/or port may be in use\n",
+                "Unhandled exception. System.InvalidOperationException: Soulseek login failed\n",
+            ])
+            self.returncode = 1
+
+        def wait(self):
+            return 1
+
+    soulseek.subprocess.Popen = lambda args, **kw: _CrashProc()
+    raised = False
+    try:
+        soulseek.run_sldl(in_csv, tmp, root=ROOT, creds={"user": "u", "pass": "p"},
+                          sldl_exe=fake_exe, config_path=fake_cfg)
+    except soulseek.SoulseekError as e:
+        raised = True
+        assert "50300" in str(e), f"message doit pointer le port : {e}"
+    finally:
+        soulseek.subprocess.Popen = orig_popen
+    assert raised, "run_sldl doit lever SoulseekError sur un echec fatal sldl (pas crasher en silence)"
+    print("OK - run_sldl detecte l'echec fatal (port occupe) et leve un message clair")
+
     # cleanup
     for p in (fake_exe, fake_cfg, in_csv):
         p.unlink()

@@ -55,6 +55,26 @@ def _ensure(p: Path) -> Path:
     return p
 
 
+def default_download_dir() -> Path:
+    """Bibliotheque lossless par defaut : le dossier Musique de l'utilisateur courant.
+
+    Resout par utilisateur et par OS (C:\\Users\\X\\Music\\DDD sur Windows,
+    ~/Music/DDD sur Mac/Linux). Jamais de chemin en dur. Modifiable dans Reglages.
+    """
+    return Path.home() / "Music" / "DDD"
+
+
+def download_dir(cfg=None) -> Path:
+    """Dossier bibliotheque effectif (config 'download_dir' sinon defaut), cree."""
+    chosen = (cfg or {}).get("download_dir") if cfg else None
+    return _ensure(Path(chosen) if chosen else default_download_dir())
+
+
+def cache_dl_dir() -> Path:
+    """Cache transitoire ou sldl telecharge avant validation (jamais montre)."""
+    return _ensure(data_base() / ".cache-dl")
+
+
 def staging_dir() -> Path:
     return _ensure(data_base() / "staging")
 

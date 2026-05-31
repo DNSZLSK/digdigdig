@@ -18,6 +18,7 @@ dist/
 
 # Runtime data
 staging/
+.cache-dl/
 logs/
 inputs/*.csv
 inputs/*.json

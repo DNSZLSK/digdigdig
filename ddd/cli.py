@@ -118,7 +118,8 @@ def _cmd_upgrade(args: argparse.Namespace) -> int:
         return 2
 
     root = paths.resource_base()
-    staging = Path(args.staging) if args.staging else paths.staging_dir() / "upgrade"
+    staging = Path(args.staging) if args.staging else paths.cache_dl_dir()
+    dl_dir = Path(args.download_dir) if args.download_dir else paths.download_dir(config_mod.load())
     log_path = paths.logs_dir() / "ddd_upgrade.log"
 
     verdicts = []
@@ -138,12 +139,12 @@ def _cmd_upgrade(args: argparse.Namespace) -> int:
         elif args.verbose and len(a) == 3:
             print(f"  scan [{a[0]}/{a[1]}] {Path(a[2]).name}", file=sys.stderr)
 
-    mode = "APPLY (remplacement reel)" if args.apply else "DRY-RUN (aucune modif)"
-    print(f"Upgrade de {folder}  [{mode}]", file=sys.stderr)
+    print(f"Upgrade de {folder}  ->  bibliotheque {dl_dir}", file=sys.stderr)
+    print("(vrais lossless deposes dans la bibliotheque ; faux sources envoyes a la corbeille)",
+          file=sys.stderr)
     outcomes = upgrade_mod.run_upgrade(
-        folder, root=root, staging_dir=staging,
+        folder, root=root, staging_dir=staging, download_dir=dl_dir,
         verdicts=verdicts, exclude_names=args.exclude,
-        apply=args.apply, delete_old=args.delete_old,
         limit=args.limit, profile=args.profile, progress=progress, log_path=log_path,
     )
 
@@ -162,8 +163,6 @@ def _cmd_upgrade(args: argparse.Namespace) -> int:
     out_csv = paths.outputs_dir() / f"upgrade_{folder.name}.csv"
     _write_outcomes_csv(outcomes, out_csv)
     print(f"\nRapport : {out_csv}")
-    if not args.apply:
-        print("(dry-run : relance avec --apply pour remplacer reellement)")
     return 0
 
 
@@ -236,17 +235,17 @@ def _cmd_acquire(args: argparse.Namespace) -> int:
         return 1
 
     root = paths.resource_base()
-    inbox = Path(args.inbox) if args.inbox else paths.staging_dir() / "inbox"
+    dl_dir = Path(args.download_dir) if args.download_dir else paths.download_dir(config_mod.load())
     log_path = paths.logs_dir() / "ddd_acquire.log"
 
     def progress(*a) -> None:
         if len(a) == 1:
             print(a[0], file=sys.stderr)
 
-    print(f"Acquire {len(rows)} pistes -> {inbox}", file=sys.stderr)
+    print(f"Acquire {len(rows)} pistes -> bibliotheque {dl_dir}", file=sys.stderr)
     outcomes = upgrade_mod.acquire_rows(
-        rows, root=root, inbox_dir=inbox, limit=args.limit,
-        profile=args.profile, progress=progress, log_path=log_path)
+        rows, root=root, download_dir=dl_dir, staging_dir=paths.cache_dl_dir(),
+        limit=args.limit, profile=args.profile, progress=progress, log_path=log_path)
 
     counts = Counter(o.action for o in outcomes)
     print(f"\n=== Acquire: {src.name} ===")
@@ -254,9 +253,31 @@ def _cmd_acquire(args: argparse.Namespace) -> int:
         print(f"  {action:<16} {n:>5}")
     acquired = [o for o in outcomes if o.action == upgrade_mod.ACT_ACQUIRED]
     if acquired:
-        print(f"\n  --- {len(acquired)} piste(s) AUTHENTIQUE(s) en inbox ---")
+        print(f"\n  --- {len(acquired)} piste(s) AUTHENTIQUE(s) dans la bibliotheque ---")
         for o in acquired:
             print(f"  {o.artist} - {o.title}  cutoff {o.new_cutoff_hz:.0f} Hz")
+    return 0
+
+
+def _cmd_import(args: argparse.Namespace) -> int:
+    """Migre un dossier dans la bibliotheque : AUTHENTIC -> download_dir, reste -> corbeille."""
+    src = Path(args.folder)
+    if not src.exists():
+        print(f"dossier introuvable: {src}", file=sys.stderr)
+        return 2
+    dl_dir = Path(args.download_dir) if args.download_dir else paths.download_dir(config_mod.load())
+
+    def progress(i: int, total: int, f: Path) -> None:
+        if args.verbose or i == total or i % 25 == 0:
+            print(f"  [{i}/{total}] {Path(f).name}", file=sys.stderr)
+
+    print(f"Import de {src}  ->  bibliotheque {dl_dir}", file=sys.stderr)
+    stats = upgrade_mod.import_folder(src, dl_dir, exclude_names=args.exclude, progress=progress)
+    print(f"\n=== Import: {src.name} ===")
+    print(f"  {stats['kept']:>5}  vrais lossless deplaces dans la bibliotheque")
+    print(f"  {stats['duplicates']:>5}  doublons (deja dans la bibliotheque) -> corbeille")
+    print(f"  {stats['trashed']:>5}  non-lossless -> corbeille")
+    print(f"  {stats['total']:>5}  fichiers scannes au total")
     return 0
 
 
@@ -299,10 +320,7 @@ def build_parser() -> argparse.ArgumentParser:
     p_up = sub.add_parser("upgrade",
                           help="chercher un vrai lossless sur Soulseek pour les fichiers flagges")
     p_up.add_argument("folder", help="dossier a upgrader")
-    p_up.add_argument("--apply", action="store_true",
-                      help="remplacer reellement (defaut: dry-run, telecharge + re-audite seulement)")
-    p_up.add_argument("--delete-old", action="store_true",
-                      help="avec --apply, supprimer l'original une fois remplace")
+    p_up.add_argument("--download-dir", help="bibliotheque lossless cible (defaut: config / ~/Music/DDD)")
     p_up.add_argument("-x", "--exclude", action="append", default=["PROD"],
                       metavar="NOM", help="sous-dossier a ignorer (defaut: PROD). Repetable.")
     p_up.add_argument("--fake-only", action="store_true", help="n'upgrader que les FAKE_LOSSLESS")
@@ -311,7 +329,7 @@ def build_parser() -> argparse.ArgumentParser:
                       help="inclure aussi les SUSPICIOUS (320 kbps probable)")
     p_up.add_argument("-n", "--limit", type=int, default=0,
                       help="limiter a N pistes (smoke test)")
-    p_up.add_argument("--staging", help="dossier de staging (defaut: staging/upgrade)")
+    p_up.add_argument("--staging", help="cache transitoire de download (defaut: .cache-dl)")
     p_up.add_argument("--profile", default="lossless-strict",
                       help="profil sldl (defaut: lossless-strict = FLAC uniquement)")
     p_up.add_argument("-v", "--verbose", action="store_true", help="afficher chaque fichier scanne")
@@ -327,12 +345,21 @@ def build_parser() -> argparse.ArgumentParser:
     p_sc.add_argument("--no-acquire", action="store_true", help="ne pas suggerer l'etape acquire")
     p_sc.set_defaults(func=_cmd_scrape)
 
-    p_ac = sub.add_parser("acquire", help="telecharger une want-list CSV en vrai lossless (inbox)")
+    p_ac = sub.add_parser("acquire", help="telecharger une want-list CSV en vrai lossless (bibliotheque)")
     p_ac.add_argument("csv", help="CSV want-list (sortie de scrape)")
-    p_ac.add_argument("--inbox", help="dossier de destination (defaut: staging/inbox)")
+    p_ac.add_argument("--download-dir", help="bibliotheque cible (defaut: config / ~/Music/DDD)")
     p_ac.add_argument("-n", "--limit", type=int, default=0, help="limiter a N pistes")
     p_ac.add_argument("--profile", default="lossless-strict", help="profil sldl")
     p_ac.set_defaults(func=_cmd_acquire)
+
+    p_im = sub.add_parser("import",
+                          help="migrer un dossier dans la bibliotheque (AUTHENTIC garde, reste corbeille)")
+    p_im.add_argument("folder", help="dossier a importer/trier")
+    p_im.add_argument("--download-dir", help="bibliotheque cible (defaut: config / ~/Music/DDD)")
+    p_im.add_argument("-x", "--exclude", action="append", default=[], metavar="NOM",
+                      help="sous-dossier a ignorer (repetable)")
+    p_im.add_argument("-v", "--verbose", action="store_true", help="afficher chaque fichier")
+    p_im.set_defaults(func=_cmd_import)
 
     p_cfg = sub.add_parser("config", help="gerer la config (creds, cible)")
     p_cfg.add_argument("action", choices=["show", "set"])

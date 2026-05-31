@@ -61,3 +61,45 @@ def parse_filename(path) -> ParsedName:
 def match_key(artist: str, title: str) -> str:
     """Cle de correspondance stable entre la want-list et le retour sldl."""
     return f"{artist} - {title}".lower().strip()
+
+
+# Artistes "compilation" : le vrai artiste est dans le titre, pas dans ce champ.
+_VA_ARTISTS = {
+    "various artists", "various artist", "various", "va", "v/a", "v.a.", "v a",
+    "compilation", "compilations", "diverse", "verschiedene",
+}
+# Prefixe de face vinyle en tete de titre : A1, A2, B1, C12, D1... (lettre A-H + 1-2 chiffres)
+_SIDE_PREFIX = re.compile(r"^\s*[A-H][0-9]{1,2}[\s.\)\-_]+", re.IGNORECASE)
+_SEP = re.compile(r"\s[-_]\s|\s-\s")
+
+
+def _light(s: str) -> str:
+    """Strip leger (espaces + tirets/underscores de bord), sans toucher au contenu."""
+    return _WS.sub(" ", s or "").strip().strip(" -_")
+
+
+def normalize_artist_title(artist: str, title: str):
+    """Normalise (artist, title) AVANT envoi a sldl pour eviter les requetes introuvables.
+
+    1. Vire un prefixe de face vinyle en tete de titre ('A1 ildec - Voice' -> 'ildec - Voice').
+    2. Artiste 'Various Artists'/'VA'/'Compilation' : le vrai artiste est dans le titre ->
+       split sur le 1er ' - ' ('Various Artists' + 'Zumo - Iamthecomputer' -> 'Zumo' / 'Iamthecomputer').
+    3. Artiste duplique en tete du titre -> dedupliquer ('ildec' + 'ildec - Voice' -> 'Voice').
+
+    Idempotent : appliquer deux fois donne le meme resultat.
+    """
+    a = _light(artist)
+    t = _SIDE_PREFIX.sub("", _light(title)).strip()
+
+    if a.lower() in _VA_ARTISTS:
+        m = _SEP.search(t)
+        if m:
+            a = _light(t[: m.start()])
+            t = _SIDE_PREFIX.sub("", _light(t[m.end():])).strip()
+
+    if a:                                   # artiste re-colle en tete du titre -> on l'enleve
+        m = _SEP.search(t)
+        if m and _light(t[: m.start()]).lower() == a.lower():
+            t = _light(t[m.end():])
+
+    return _light(a), _light(t)

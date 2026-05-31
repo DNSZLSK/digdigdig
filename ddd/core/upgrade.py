@@ -18,10 +18,12 @@ from pathlib import Path
 from typing import Callable, Dict, List, Optional, Sequence
 
 from . import quality
-from .naming import match_key, parse_filename
-from .scan import scan_folder, AUDIO_EXTS
+from .naming import match_key, parse_filename, normalize_artist_title
+from .audit import _read_tags
+from .scan import scan_folder, scan_library, AUDIO_EXTS
 from .tokenize import get_tokens, token_coverage, core_title_tokens
 from . import soulseek
+from . import trash
 from .soulseek import WantItem
 
 logger = logging.getLogger(__name__)
@@ -148,50 +150,50 @@ def build_plan(scan_results, verdicts: Sequence[str] = ()) -> UpgradePlan:
         if q.verdict not in wanted:
             continue
         parsed = parse_filename(q.path)
-        if not parsed.parseable:
+        artist, title = normalize_artist_title(parsed.artist, parsed.title)  # VA/prefixe/dup
+        if not artist:
+            # Pas d'artiste depuis le NOM -> tags embarques (ID3/Vorbis) : bien plus precis
+            # que le titre-seul (ex: "gary-beck-get-down.mp3" -> tags "Gary Beck / Get Down").
+            tags = _read_tags(q.path)
+            t_artist = (tags.get("artist") or "").strip()
+            t_title = (tags.get("title") or "").strip()
+            if t_artist and t_title:
+                artist, title = normalize_artist_title(t_artist, t_title)
+            elif t_title:
+                title = normalize_artist_title("", t_title)[1] or title
+        if not title:
             plan.unparseable.append(UpgradeOutcome(
-                action=ACT_UNPARSEABLE, artist=parsed.artist, title=parsed.title,
-                original=q.path, note="nom sans 'Artiste - Titre' exploitable",
+                action=ACT_UNPARSEABLE, artist=artist, title=title,
+                original=q.path, note="nom de fichier vide / illisible, aucun tag",
             ))
             continue
+        # artist encore vide (ni nom ni tags) -> recherche TITRE-SEUL en dernier recours ;
+        # plus risque mais findable ; les gardes (couverture titre + duree + spectral) filtrent.
         length = int(q.duration_s) if getattr(q, "duration_s", 0) else None
-        key = match_key(parsed.artist, parsed.title)
+        key = match_key(artist, title)
         # premiere occurrence gagne (evite d'ecraser la cible en cas de doublon de nom)
         plan.origin_by_key.setdefault(key, q.path)
-        plan.items.append(WantItem(parsed.artist, parsed.title, length, q.path))
+        plan.items.append(WantItem(artist, title, length, q.path))
     return plan
 
 
-def _replace_in_place(original: str, new_file: str, apply: bool, delete_old: bool) -> UpgradeOutcome:
-    """Place le nouveau fichier a cote de l'original (meme dossier, son vrai nom sldl)."""
-    orig = Path(original)
-    src = Path(new_file)
-    dest = orig.parent / src.name
+def _deposit(src, download_dir) -> Path:
+    """Deplace un download VALIDE dans la bibliotheque downloads/ (son vrai nom sldl).
 
-    if not apply:
-        return UpgradeOutcome(
-            action=ACT_WOULD_REPLACE, artist="", title="",
-            original=original, new_file=new_file,
-            note=f"dry-run : copierait vers {dest}" + (" + supprimerait l'original" if delete_old else ""),
-        )
-
-    if dest.exists() and dest.resolve() != src.resolve():
-        return UpgradeOutcome(
-            action=ACT_KEPT_BESIDE, artist="", title="",
-            original=original, new_file=new_file,
-            note=f"destination existe deja : {dest} (rien ecrase)",
-        )
-
-    dest.parent.mkdir(parents=True, exist_ok=True)
-    shutil.copy2(src, dest)
-    note = f"copie -> {dest}"
-    if delete_old and orig.exists() and orig.resolve() != dest.resolve():
-        orig.unlink()
-        note += " ; original supprime"
-    return UpgradeOutcome(
-        action=ACT_REPLACED, artist="", title="",
-        original=original, new_file=str(dest), note=note,
-    )
+    `downloads/` ne contient donc que du lossless verifie. En cas de collision de nom
+    (rare), suffixe ' (n)'. Retourne le chemin final.
+    """
+    src = Path(src)
+    download_dir = Path(download_dir)
+    download_dir.mkdir(parents=True, exist_ok=True)
+    dest = download_dir / src.name
+    i = 1
+    while dest.exists() and dest.resolve() != src.resolve():
+        dest = download_dir / f"{src.stem} ({i}){src.suffix}"
+        i += 1
+    if dest.resolve() != src.resolve():
+        shutil.move(str(src), str(dest))
+    return dest
 
 
 def run_upgrade(
@@ -199,10 +201,9 @@ def run_upgrade(
     *,
     root: Path,
     staging_dir,
+    download_dir,
     verdicts: Sequence[str] = (),
     exclude_names: Sequence[str] = (),
-    apply: bool = False,
-    delete_old: bool = False,
     limit: int = 0,
     profile: str = "lossless-strict",
     scan_results=None,
@@ -212,13 +213,15 @@ def run_upgrade(
     cancel: Optional[Callable] = None,
     log_path=None,
 ) -> List[UpgradeOutcome]:
-    """Pipeline complet d'upgrade. Retourne la liste des issues par fichier.
-
-    apply=False (defaut) : telecharge + re-audite mais ne touche pas la bibliotheque.
-    apply=True : remplace en place les originaux par les downloads AUTHENTIC.
+    """Upgrade : pour chaque faux/lossy, telecharge un vrai lossless valide, le DEPOSE
+    dans la bibliotheque `download_dir`, et envoie le fichier source (le faux) a la
+    corbeille. Pas de remplacement en place. `staging_dir` = cache transitoire (sldl
+    telecharge la avant validation). Retourne le rapport par fichier.
     """
     root = Path(root)
     staging_dir = Path(staging_dir)
+    download_dir = Path(download_dir)
+    download_dir.mkdir(parents=True, exist_ok=True)
 
     if scan_results is None:
         scan_results = scan_folder(folder, exclude_names=exclude_names, progress=progress)
@@ -229,14 +232,25 @@ def run_upgrade(
         for o in plan.unparseable:
             on_item(o.original, "done", o.action)
 
-    if not plan.items:
-        logger.info("aucun fichier a upgrader")
+    # Dedoublonnage a l'entree : ce qui est deja dans la bibliotheque -> DUPLICATE.
+    # On ne touche PAS au source dans ce cas (pas de check de version -> jamais de
+    # suppression a l'aveugle sur un simple match de cle).
+    existing = _existing_keys(download_dir)
+    to_dl: List[WantItem] = []
+    for it in plan.items:
+        if match_key(it.artist, it.title) in existing:
+            outcomes.append(UpgradeOutcome(action=ACT_DUPLICATE, artist=it.artist, title=it.title,
+                                           original=it.origin_path, note="deja dans la bibliotheque"))
+            if on_item:
+                on_item(_item_id(it), "done", ACT_DUPLICATE)
+        else:
+            to_dl.append(it)
+    if limit > 0:
+        to_dl = to_dl[:limit]
+    if not to_dl:
         return outcomes
 
-    # Lot par lot (CHUNK_SIZE) : feedback par piste periodique sur gros batch.
-    # On tronque a `limit` en amont pour que le plafond reste global, pas par lot.
-    items = plan.items[:limit] if limit > 0 else plan.items
-    for chunk in _chunks(items, CHUNK_SIZE):
+    for chunk in _chunks(to_dl, CHUNK_SIZE):
         if cancel and cancel():
             break
         results = download_and_audit(
@@ -250,31 +264,23 @@ def run_upgrade(
             if dl is None or not dl.downloaded:
                 base.action = ACT_NOT_FOUND
                 base.note = "sldl n'a ramene aucun fichier"
-                outcomes.append(base)
-                if on_item:
-                    on_item(_item_id(it), "done", base.action)
-                continue
-
-            base.new_file = dl.filepath
-            base.new_verdict = q.verdict
-            base.new_cutoff_hz = q.cutoff_hz
-
-            # re-audit spectral + garde duree/identite (sldl ne detecte ni upscale,
-            # ni preview, ni mauvais match)
-            rej = _reject_reason(it, dl, q)
-            if rej:
-                base.action, base.note = rej
-                outcomes.append(base)
-                if on_item:
-                    on_item(_item_id(it), "done", base.action)
-                continue
-
-            res = _replace_in_place(it.origin_path, dl.filepath, apply, delete_old)
-            res.artist, res.title = it.artist, it.title
-            res.new_verdict, res.new_cutoff_hz = q.verdict, q.cutoff_hz
-            outcomes.append(res)
+            else:
+                base.new_file, base.new_verdict, base.new_cutoff_hz = (
+                    dl.filepath, q.verdict, q.cutoff_hz)
+                rej = _reject_reason(it, dl, q)
+                if rej:
+                    base.action, base.note = rej
+                    trash.send_to_trash(dl.filepath)          # candidat rejete -> corbeille
+                else:
+                    final = _deposit(dl.filepath, download_dir)
+                    trash.send_to_trash(it.origin_path)       # le faux source -> corbeille
+                    existing.add(match_key(it.artist, it.title))
+                    base.action = ACT_REPLACED
+                    base.new_file = str(final)
+                    base.note = "depose dans la bibliotheque ; original (faux) a la corbeille"
+            outcomes.append(base)
             if on_item:
-                on_item(_item_id(it), "done", res.action)
+                on_item(_item_id(it), "done", base.action)
 
     return outcomes
 
@@ -307,6 +313,7 @@ def download_and_audit(
     soulseek.write_input_csv(items, input_csv)
 
     soulseek.stop_slskd()
+    soulseek.stop_orphan_sldl()   # tue un sldl fige d'un run precedent (sinon port 50300 bloque)
     creds = creds or soulseek.read_soulseek_creds()
 
     if on_item:
@@ -340,7 +347,8 @@ def acquire_rows(
     rows: Sequence[Dict],
     *,
     root: Path,
-    inbox_dir,
+    download_dir,
+    staging_dir=None,
     limit: int = 0,
     profile: str = "lossless-strict",
     progress: Optional[Callable] = None,
@@ -349,23 +357,26 @@ def acquire_rows(
     cancel: Optional[Callable] = None,
     log_path=None,
 ) -> List[UpgradeOutcome]:
-    """Telecharge une want-list scrapee (dicts Artist/Title/Length) vers un inbox.
-
-    Acquisition de NOUVELLES pistes (pas de remplacement) : on garde seulement les
-    downloads AUTHENTIC, les autres sont signales mais laisses de cote.
+    """Telecharge une want-list scrapee (dicts Artist/Title/Length) et DEPOSE les vrais
+    lossless valides dans la bibliotheque `download_dir`. Les candidats rejetes (fake/
+    court/mauvais match) partent a la corbeille. Dedoublonne contre la bibliotheque et
+    la liste. `staging_dir` = cache transitoire (defaut: <download_dir>/.cache-dl).
     """
+    download_dir = Path(download_dir)
+    download_dir.mkdir(parents=True, exist_ok=True)
+    staging_dir = Path(staging_dir) if staging_dir else (download_dir / ".cache-dl")
+
     outcomes: List[UpgradeOutcome] = []
-    existing = _existing_keys(inbox_dir)   # deja telecharge auparavant -> on saute
-    seen: set = set()                      # doublons a l'interieur de la want-list
+    existing = _existing_keys(download_dir)   # deja dans la bibliotheque -> on saute
+    seen: set = set()                         # doublons a l'interieur de la want-list
     items: List[WantItem] = []
     for r in rows:
-        artist = (r.get("Artist") or "").strip()
-        title = (r.get("Title") or "").strip()
+        artist, title = normalize_artist_title(r.get("Artist") or "", r.get("Title") or "")
         if not artist or not title:
             continue
         key = match_key(artist, title)
         if key in existing or key in seen:
-            note = "deja present dans l'inbox" if key in existing else "doublon dans la liste"
+            note = "deja dans la bibliotheque" if key in existing else "doublon dans la liste"
             outcomes.append(UpgradeOutcome(action=ACT_DUPLICATE, artist=artist, title=title,
                                            original="", note=note))
             if on_item:
@@ -391,7 +402,7 @@ def acquire_rows(
         if cancel and cancel():
             break
         results = download_and_audit(
-            chunk, root=root, staging_dir=inbox_dir, profile=profile,
+            chunk, root=root, staging_dir=staging_dir, profile=profile,
             limit=0, csv_name="ddd_acquire.csv", progress=progress,
             on_item=on_item, on_proc=on_proc, cancel=cancel, log_path=log_path,
         )
@@ -406,10 +417,50 @@ def acquire_rows(
                 rej = _reject_reason(it, dl, q)
                 if rej:
                     base.action, base.note = rej
+                    trash.send_to_trash(dl.filepath)          # candidat rejete -> corbeille
                 else:
+                    final = _deposit(dl.filepath, download_dir)
+                    existing.add(match_key(it.artist, it.title))
                     base.action = ACT_ACQUIRED
-                    base.note = f"garde en inbox: {dl.filepath}"
+                    base.new_file = str(final)
+                    base.note = f"depose dans la bibliotheque: {final}"
             outcomes.append(base)
             if on_item:
                 on_item(_item_id(it), "done", base.action)
     return outcomes
+
+
+def import_folder(
+    src,
+    download_dir,
+    *,
+    exclude_names: Sequence[str] = (),
+    progress: Optional[Callable] = None,
+) -> Dict[str, int]:
+    """Migre un dossier existant dans la bibliotheque : scanne `src`, DEPLACE les vrais
+    lossless (AUTHENTIC, dedoublonnes par match_key) vers `download_dir`, envoie tout le
+    reste (fake/lossy/suspect) a la corbeille. Reversible. Retourne un bilan.
+    """
+    download_dir = Path(download_dir)
+    download_dir.mkdir(parents=True, exist_ok=True)
+    records = scan_library(src, exclude_names=exclude_names, progress=progress)
+    existing = _existing_keys(download_dir)
+    stats = {"total": len(records), "kept": 0, "duplicates": 0, "trashed": 0}
+    for rec in records:
+        q = rec.quality
+        if q.verdict == quality.AUTHENTIC:
+            parsed = parse_filename(q.path)
+            key = match_key(parsed.artist, parsed.title) if parsed.parseable else None
+            if key and key in existing:
+                trash.send_to_trash(q.path)        # vrai lossless mais doublon -> corbeille
+                stats["duplicates"] += 1
+            else:
+                _deposit(q.path, download_dir)
+                if key:
+                    existing.add(key)
+                stats["kept"] += 1
+        else:
+            trash.send_to_trash(q.path)            # pas un vrai lossless -> corbeille
+            stats["trashed"] += 1
+    logger.info("import_folder %s -> %s", src, stats)
+    return stats

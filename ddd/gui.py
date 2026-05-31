@@ -131,8 +131,8 @@ def main(page: ft.Page) -> None:
     progress = ft.ProgressBar(value=0, visible=False, color=SPIN)
 
     file_picker = ft.FilePicker()
-    inbox_picker = ft.FilePicker()
-    page.overlay.extend([file_picker, inbox_picker])
+    dl_picker = ft.FilePicker()   # pour choisir le dossier bibliotheque dans Reglages
+    page.overlay.extend([file_picker, dl_picker])
 
     # ====================================================================
     #  Helpers partages
@@ -141,7 +141,7 @@ def main(page: ft.Page) -> None:
         """Une seule operation a la fois : verrouille les actions des 2 onglets."""
         state.busy = b
         progress.visible = b
-        for btn in (browse_btn, scan_btn, acquire_btn, inbox_browse_btn):
+        for btn in (browse_btn, scan_btn, acquire_btn, dl_browse_btn):
             btn.disabled = b
         upgrade_btn.disabled = b or not state.records
         source_dd.disabled = b
@@ -223,7 +223,6 @@ def main(page: ft.Page) -> None:
             ft.dropdown.Option(key=quality.SUSPICIOUS, text="Suspect (320k)"),
             ft.dropdown.Option(key=quality.AUTHENTIC, text="Vrai lossless"),
         ])
-    keep_switch = ft.Switch(label="Garder les originaux", value=True)
 
     def render_summary() -> None:
         from collections import Counter
@@ -356,7 +355,8 @@ def main(page: ft.Page) -> None:
                 set_cell(state.row_status, rec.quality.path, *PHASE_LABEL["queued"])
             page.update()
             try:
-                staging = paths.staging_dir() / "upgrade"
+                staging = paths.cache_dl_dir()
+                dl_dir = paths.download_dir(config_mod.load())
                 log_path = paths.logs_dir() / "ddd_upgrade.log"
 
                 def prog(*a) -> None:
@@ -367,28 +367,28 @@ def main(page: ft.Page) -> None:
                 on_item = make_on_item(state.row_status)
                 status.value = f"Upgrade de {len(chosen)} fichiers via Soulseek..."
                 page.update()
-                # Upgrade reel, point : garde-fou = selection + re-audit spectral + Garder les originaux.
+                # Vrais lossless -> bibliotheque downloads/, faux source -> corbeille.
                 outcomes = upgrade_mod.run_upgrade(
                     state.folder, root=paths.resource_base(), staging_dir=staging,
-                    apply=True, delete_old=not keep_switch.value,
-                    scan_results=chosen, progress=prog, on_item=on_item,
+                    download_dir=dl_dir, scan_results=chosen, progress=prog, on_item=on_item,
                     on_proc=on_proc, cancel=is_cancelled, log_path=log_path)
                 from collections import Counter
                 c = Counter(o.action for o in outcomes)
-                ok = (c.get(upgrade_mod.ACT_REPLACED, 0) + c.get(upgrade_mod.ACT_WOULD_REPLACE, 0)
-                      + c.get(upgrade_mod.ACT_KEPT_BESIDE, 0))
+                ok = c.get(upgrade_mod.ACT_REPLACED, 0)
                 rej = _count_rejected(c)
                 nf = c.get(upgrade_mod.ACT_NOT_FOUND, 0)
+                dup = c.get(upgrade_mod.ACT_DUPLICATE, 0)
+                dup_txt = f", {dup} deja en bibliotheque" if dup else ""
                 if state.cancel_requested:
                     for rec in chosen:   # lignes jamais finies (ring encore actif) -> Annule
                         cell = state.row_status.get(rec.quality.path)
                         if cell and cell[0].visible:
                             set_cell(state.row_status, rec.quality.path, *PHASE_LABEL["cancelled"])
-                    summary = (f"Upgrade annule : {ok} remplaces, {rej} rejetes, "
-                               f"{nf} introuvables (partiel).")
+                    summary = (f"Upgrade annule : {ok} en bibliotheque, {rej} rejetes, "
+                               f"{nf} introuvables{dup_txt} (partiel).")
                 else:
-                    summary = (f"Upgrade fini : {ok} remplaces, {rej} rejetes "
-                               f"(upscale/court/mauvais match), {nf} introuvables.")
+                    summary = (f"Upgrade fini : {ok} deposes en bibliotheque (faux -> corbeille), "
+                               f"{rej} rejetes, {nf} introuvables{dup_txt}.")
                 status.value = summary
                 _banner(summary, bool(ok) and not state.cancel_requested)
                 # Re-scanner pour refleter les nouveaux verdicts
@@ -400,9 +400,8 @@ def main(page: ft.Page) -> None:
                     render_summary()
                     render_table()
                     status.value = summary + " Table rafraichie."
-            except soulseek.SoulseekError:
-                status.value = ("Identifiants Soulseek requis : ouvre Reglages (engrenage en "
-                                "haut a droite), saisis ton login/mot de passe, puis reessaie.")
+            except soulseek.SoulseekError as e:
+                status.value = str(e)   # message clair (creds manquants / port occupe / login refuse)
                 settings_panel.visible = True
             except Exception as ex:  # noqa: BLE001
                 status.value = f"Erreur upgrade : {ex}"
@@ -432,8 +431,6 @@ def main(page: ft.Page) -> None:
                  ft.dropdown.Option(key="bandcamp", text="Bandcamp")])
     discogs_collection_cb = ft.Checkbox(label="Inclure la collection", value=False, visible=True)
     bandcamp_expand_cb = ft.Checkbox(label="Developper les albums", value=True, visible=False)
-    inbox_field = ft.TextField(label="Dossier de destination", expand=True, read_only=True,
-                               value=cfg.get("last_inbox", "") or str(paths.staging_dir() / "inbox"))
     acquire_table_col = ft.Column(scroll=ft.ScrollMode.AUTO, expand=True, spacing=2)
 
     def on_source_change(_e) -> None:
@@ -443,17 +440,6 @@ def main(page: ft.Page) -> None:
         page.update()
 
     source_dd.on_change = on_source_change
-
-    def on_inbox_picked(e) -> None:
-        if e.path:
-            inbox_field.value = e.path
-            config_mod.set_value("last_inbox", e.path)
-            page.update()
-
-    inbox_picker.on_result = on_inbox_picked
-
-    def browse_inbox(_e) -> None:
-        inbox_picker.get_directory_path(dialog_title="Dossier de destination des telechargements")
 
     def render_acquire_table(rows) -> None:
         acquire_table_col.controls.clear()
@@ -500,7 +486,7 @@ def main(page: ft.Page) -> None:
                 settings_panel.visible = True
                 page.update()
                 return
-        dest = (inbox_field.value or "").strip() or str(paths.staging_dir() / "inbox")
+        dest = paths.download_dir(config_mod.load())   # bibliotheque (Reglages)
 
         def worker() -> None:
             set_busy(True)
@@ -513,7 +499,6 @@ def main(page: ft.Page) -> None:
             page.update()
             try:
                 from .core import scrapers
-                config_mod.set_value("last_inbox", dest)
 
                 def prog(*a) -> None:
                     if a:
@@ -540,7 +525,8 @@ def main(page: ft.Page) -> None:
 
                 on_item = make_on_item(state.acquire_row_status)
                 outcomes = upgrade_mod.acquire_rows(
-                    rows, root=paths.resource_base(), inbox_dir=Path(dest),
+                    rows, root=paths.resource_base(), download_dir=dest,
+                    staging_dir=paths.cache_dl_dir(),
                     progress=prog, on_item=on_item, on_proc=on_proc, cancel=is_cancelled,
                     log_path=paths.logs_dir() / "ddd_acquire.log")
                 from collections import Counter
@@ -557,7 +543,7 @@ def main(page: ft.Page) -> None:
                     summary = (f"Recuperation annulee : {acq} gardees, {rej} rejetees, "
                                f"{nf} introuvables{dup_txt} (partiel).")
                 else:
-                    summary = (f"Recuperation finie : {acq} gardees en inbox, {rej} rejetees "
+                    summary = (f"Recuperation finie : {acq} en bibliotheque, {rej} rejetees "
                                f"(upscale/court/mauvais match), {nf} introuvables{dup_txt}.")
                 status.value = summary
                 _banner(summary, bool(acq) and not state.cancel_requested)
@@ -565,9 +551,8 @@ def main(page: ft.Page) -> None:
                 status.value = f"Recuperation impossible : {ex}"
                 if "token" in str(ex).lower():
                     settings_panel.visible = True
-            except soulseek.SoulseekError:
-                status.value = ("Identifiants Soulseek requis : ouvre Reglages (engrenage en "
-                                "haut a droite), saisis ton login/mot de passe, puis reessaie.")
+            except soulseek.SoulseekError as e:
+                status.value = str(e)   # message clair (creds manquants / port occupe / login refuse)
                 settings_panel.visible = True
             except Exception as ex:  # noqa: BLE001
                 status.value = f"Erreur : {ex}"
@@ -590,6 +575,23 @@ def main(page: ft.Page) -> None:
                                value=cfg.get("discogs_token", ""), width=240)
     bandcamp_user = ft.TextField(label="Bandcamp username", value=cfg.get("bandcamp_username", ""),
                                  width=240)
+    dl_dir_field = ft.TextField(
+        label="Dossier bibliotheque (downloads lossless)", expand=True, read_only=True,
+        value=cfg.get("download_dir", "") or str(paths.default_download_dir()))
+
+    def on_dl_picked(e) -> None:
+        if e.path:
+            dl_dir_field.value = e.path
+            config_mod.set_value("download_dir", e.path)
+            cfg["download_dir"] = e.path
+            page.update()
+
+    dl_picker.on_result = on_dl_picked
+
+    def browse_dl(_e) -> None:
+        dl_picker.get_directory_path(dialog_title="Dossier bibliotheque (lossless verifie)")
+
+    dl_browse_btn = ft.FilledButton(text="Parcourir", icon=ft.Icons.FOLDER_OPEN, on_click=browse_dl)
 
     def save_settings(_e) -> None:
         vals = {
@@ -598,6 +600,7 @@ def main(page: ft.Page) -> None:
             "discogs_username": discogs_user.value.strip(),
             "discogs_token": discogs_tok.value.strip(),
             "bandcamp_username": bandcamp_user.value.strip(),
+            "download_dir": (dl_dir_field.value or "").strip(),
         }
         config_mod.set_many(vals)
         cfg.update(vals)   # garde le cache en memoire frais (relu aussi a chaud par do_acquire)
@@ -611,6 +614,9 @@ def main(page: ft.Page) -> None:
         ft.Row([slsk_user, slsk_pass], wrap=True),
         ft.Row([discogs_user, discogs_tok], wrap=True),
         ft.Row([bandcamp_user], wrap=True),
+        ft.Text("Tout ce que DDD valide (upgrade + favoris) est depose ici ; les faux/rejets "
+                "vont a la corbeille.", size=12, color=TXT_DIM),
+        ft.Row([dl_dir_field, dl_browse_btn]),
         ft.FilledButton(text="Sauvegarder", on_click=save_settings),
     ], spacing=10)
 
@@ -641,8 +647,6 @@ def main(page: ft.Page) -> None:
     uncheck_all_btn = ft.TextButton(text="Tout decocher", on_click=clear_selection)
     filter_dd.on_change = lambda _e: render_table()
 
-    inbox_browse_btn = ft.FilledButton(text="Parcourir", icon=ft.Icons.FOLDER_OPEN,
-                                       on_click=browse_inbox)
     acquire_btn = ft.FilledButton(text="Recuperer & telecharger", icon=ft.Icons.DOWNLOAD,
                                   on_click=do_acquire)
     acq_cancel_btn = ft.OutlinedButton(text="Annuler", icon=ft.Icons.CANCEL,
@@ -666,7 +670,6 @@ def main(page: ft.Page) -> None:
             ft.Row([filter_dd, check_all_btn, uncheck_all_btn, upgrade_btn, lib_cancel_btn],
                    wrap=True, spacing=8, run_spacing=8,
                    vertical_alignment=ft.CrossAxisAlignment.CENTER),
-            ft.Row([keep_switch], wrap=True),
             ft.Container(table_col, expand=True, border=ft.border.all(1, BORDER),
                          border_radius=8, padding=8),
         ], expand=True, spacing=10),
@@ -678,7 +681,6 @@ def main(page: ft.Page) -> None:
                    wrap=True, spacing=8, run_spacing=8,
                    vertical_alignment=ft.CrossAxisAlignment.CENTER),
             ft.Row([discogs_collection_cb, bandcamp_expand_cb], wrap=True),
-            ft.Row([inbox_field, inbox_browse_btn]),
             ft.Container(acquire_table_col, expand=True, border=ft.border.all(1, BORDER),
                          border_radius=8, padding=8),
         ], expand=True, spacing=10),

@@ -22,6 +22,8 @@ except ImportError:  # pragma: no cover
 
 from bs4 import BeautifulSoup
 
+from ..naming import normalize_artist_title
+
 BASE = "https://bandcamp.com"
 ProgressCb = Optional[Callable[[str], None]]
 
@@ -111,8 +113,11 @@ def scrape_bandcamp(
                     t_title = t.get("title", "")
                     if not t_title:
                         continue
+                    na, nt = normalize_artist_title(band, t_title)   # VA/prefixe/dup
+                    if not na or not nt:
+                        continue
                     rows.append({
-                        "Artist": band, "Title": t_title, "Album": title,
+                        "Artist": na, "Title": nt, "Album": title,
                         "Length": _secs(t.get("duration")), "Year": "",
                         "Source": "bandcamp:wishlist", "SourceUrl": item_url,
                     })
@@ -120,10 +125,12 @@ def scrape_bandcamp(
             except Exception as e:  # noqa: BLE001
                 if progress:
                     progress(f"  skip album {title}: {e}")
-        rows.append({
-            "Artist": band, "Title": title, "Album": "", "Length": "", "Year": "",
-            "Source": "bandcamp:wishlist", "SourceUrl": item_url,
-        })
+        na, nt = normalize_artist_title(band, title)
+        if na and nt:
+            rows.append({
+                "Artist": na, "Title": nt, "Album": "", "Length": "", "Year": "",
+                "Source": "bandcamp:wishlist", "SourceUrl": item_url,
+            })
 
     for item_id in sequence:
         item = wishlist.get(str(item_id))

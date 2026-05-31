@@ -112,29 +112,39 @@ Le pipeline PowerShell ci-dessus reste dispo, mais le projet est désormais auss
 native, qui scanne **n'importe quel dossier existant** (pas besoin d'être passé par le
 pipeline) et sait upgrader les fichiers tout seul.
 
+Tout ce que DDD valide finit dans **une seule bibliothèque** `downloads/` (par défaut
+`~/Music/DDD`, modifiable dans les Réglages) - alimentée aussi bien par l'upgrade que par
+la récupération de favoris, dédoublonnée à l'entrée. Ce qui est rejeté part à la **corbeille**
+(récupérable), jamais supprimé en dur.
+
 ```powershell
 # Scanner un dossier : vrai lossless ou faux ? bien nommé ? doublons ?
 .\.venv\Scripts\python.exe -m ddd scan "C:\chemin\vers\Musique"
 
-# Chercher un vrai lossless sur Soulseek pour les fichiers flaggés
-#   (dry-run par défaut : télécharge + ré-audite, ne touche à rien)
+# Upgrader : pour chaque faux/lossy, va chercher un vrai lossless sur Soulseek,
+#   le DÉPOSE dans la bibliothèque et envoie le faux source à la corbeille
 .\.venv\Scripts\python.exe -m ddd upgrade "C:\chemin\vers\Musique"
-#   --apply pour remplacer réellement, --delete-old pour virer l'original
 
-# Scraper tes favoris -> want-list, puis télécharger en vrai lossless
+# Importer un dossier existant dans la bibliothèque
+#   (vrais lossless gardés + dédoublonnés, le reste à la corbeille)
+.\.venv\Scripts\python.exe -m ddd import "C:\chemin\vers\Musique"
+
+# Scraper tes favoris -> want-list, puis télécharger en vrai lossless dans la bibliothèque
 .\.venv\Scripts\python.exe -m ddd scrape bandcamp <user>
 .\.venv\Scripts\python.exe -m ddd acquire outputs\bandcamp_<user>.csv
 
-# Réglages (token Discogs, login Soulseek) persistés dans %APPDATA%\ddd
+# Réglages (dossier bibliothèque, token Discogs, login Soulseek) persistés dans %APPDATA%\ddd
+.\.venv\Scripts\python.exe -m ddd config set download_dir "D:\Ma Bibliotheque"
 .\.venv\Scripts\python.exe -m ddd config set discogs_token <token>
 
 # La fenêtre native (installer flet : pip install -e ".[gui]")
 .\.venv\Scripts\python.exe -m ddd gui
 ```
 
-**Le filet de sécurité clé** : un fichier téléchargé n'est accepté que s'il repasse le
-détecteur spectral en **vrai lossless**. Les filtres de Soulseek ne détectent pas les
-upscales (un MP3 320 réencodé en FLAC) ; le ré-audit, si.
+**Le filet de sécurité clé** : un fichier téléchargé n'est gardé que s'il passe trois
+contrôles - **spectral** (vrai lossless, pas un upscale MP3→FLAC, que les filtres Soulseek
+ne voient pas), **durée** (pas un extrait/preview), et **identité titre+artiste** (le bon
+morceau, pas un faux match fuzzy). Sinon → corbeille.
 
 ### Le `.exe` pour tout le monde
 

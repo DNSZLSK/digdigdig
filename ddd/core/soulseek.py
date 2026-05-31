@@ -61,6 +61,28 @@ class SoulseekError(RuntimeError):
     pass
 
 
+# Lignes de sortie sldl qui signalent un echec FATAL (pas un simple miss de piste) :
+# on stoppe net et on remonte un message clair au lieu de cracher la trace .NET.
+_FATAL_MARKERS = (
+    "Failed to start listening",
+    "the IP and/or port may be in use",
+    "Unhandled exception",
+    "Login failed definitively",
+    "Failed to ensure Soulseek connection",
+    "Failed to initialize Soulseek client",
+)
+
+
+def _fatal_message(line: str) -> str:
+    if "listening" in line or "port may be in use" in line:
+        return ("Port Soulseek 50300 deja utilise (un sldl/slskd tourne deja). "
+                "Ferme-le et reessaie.")
+    if "Login failed" in line or "login failed" in line:
+        return ("Login Soulseek refuse : identifiants invalides, ou une autre session "
+                "(slskd) est deja connectee avec ce compte.")
+    return f"Erreur Soulseek (sldl) : {line.strip()[:120]}"
+
+
 def default_sldl_exe(root: Path = None) -> Path:
     """Chemin du binaire sldl (resolution frozen-aware ; `root` ignore, garde pour compat)."""
     from .. import paths
@@ -124,6 +146,25 @@ def stop_slskd() -> bool:
         return r.returncode == 0
     except Exception as e:  # noqa: BLE001
         logger.debug("stop_slskd: %r", e)
+        return False
+
+
+def stop_orphan_sldl() -> bool:
+    """Tue d'eventuels sldl.exe orphelins d'un run precedent.
+
+    Un sldl reste parfois vivant (loggue, port d'ecoute Soulseek 50300 ouvert) apres
+    une fermeture brutale de l'app. Le sldl suivant ne peut alors PAS binder le port
+    -> 'Failed to start listening on 0.0.0.0:50300' -> crash. On nettoie avant de lancer.
+    """
+    try:
+        if platform.system() == "Windows":
+            r = subprocess.run(["taskkill", "/IM", "sldl.exe", "/F"],
+                               capture_output=True, text=True, **_no_window_kwargs())
+            return r.returncode == 0
+        r = subprocess.run(["pkill", "-f", "sldl"], capture_output=True, text=True)
+        return r.returncode == 0
+    except Exception as e:  # noqa: BLE001
+        logger.debug("stop_orphan_sldl: %r", e)
         return False
 
 
@@ -193,6 +234,7 @@ def run_sldl(
                                 **_no_window_kwargs())
         if on_proc:
             on_proc(proc)   # remet le handle a l'appelant (bouton Annuler -> proc.terminate())
+        fatal_line = None
         for line in proc.stdout:
             line = line.rstrip("\n")
             if on_line:
@@ -201,7 +243,11 @@ def run_sldl(
                 print(line, file=sys.stderr)
             if log_fh:
                 log_fh.write(line + "\n")
+            if fatal_line is None and any(m in line for m in _FATAL_MARKERS):
+                fatal_line = line   # 1ere ligne d'echec fatal (port/login/crash)
         proc.wait()
+        if fatal_line is not None:
+            raise SoulseekError(_fatal_message(fatal_line))
         return proc.returncode
     finally:
         if log_fh:

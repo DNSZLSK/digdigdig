@@ -25,7 +25,8 @@ KNOWN_KEYS = (
     "soulseek_pass",
     "default_target",     # cible de deploiement par defaut
     "default_excludes",   # liste de sous-dossiers a ignorer au scan
-    "last_inbox",         # dernier dossier de destination acquire
+    "download_dir",       # bibliotheque lossless verifiee (upgrade + acquire deposent ici)
+    "last_inbox",         # (legacy) ancien dossier de destination acquire
 )
 
 

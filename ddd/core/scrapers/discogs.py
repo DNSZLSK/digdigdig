@@ -15,10 +15,12 @@ import os
 import re
 import sys
 import time
-import urllib.error
-import urllib.request
 from pathlib import Path
 from typing import Callable, Dict, List, Optional
+
+import requests
+
+from ..naming import normalize_artist_title
 
 API = "https://api.discogs.com"
 UA = "ddd-digdigdig/0.1 +https://github.com/DNSZLSK/digdigdig"
@@ -27,20 +29,20 @@ ProgressCb = Optional[Callable[[str], None]]
 
 
 def _http_get(url: str, token: str, retries: int = 5):
-    req = urllib.request.Request(url)
-    req.add_header("Authorization", f"Discogs token={token}")
-    req.add_header("User-Agent", UA)
+    """GET Discogs via requests (certifi -> SSL robuste ; urllib echouait la verif
+    de certificat sous Windows / dans l'exe). Retry sur reseau + respect du 429."""
+    headers = {"Authorization": f"Discogs token={token}", "User-Agent": UA}
     for attempt in range(retries):
         try:
-            with urllib.request.urlopen(req, timeout=30) as resp:
-                return json.loads(resp.read().decode("utf-8"))
-        except urllib.error.HTTPError as e:
-            if e.code == 429:
-                time.sleep(int(e.headers.get("Retry-After", 2)))
-                continue
-            raise
-        except urllib.error.URLError:
+            r = requests.get(url, headers=headers, timeout=30)
+        except requests.RequestException:
             time.sleep(2 ** attempt)
+            continue
+        if r.status_code == 429:                      # rate limit -> on attend
+            time.sleep(int(r.headers.get("Retry-After", 2)))
+            continue
+        r.raise_for_status()                          # 401/404/... -> remonte clairement
+        return r.json()
     raise RuntimeError(f"Discogs: echec apres {retries} essais: {url}")
 
 
@@ -145,6 +147,9 @@ def scrape_discogs(
                     continue
                 t_artists = track.get("artists")
                 artist = _join_artists(t_artists) if t_artists else rel_artists
+                artist, title = normalize_artist_title(artist, title)  # VA/prefixe/dup
+                if not artist or not title:
+                    continue
                 key2 = (artist.lower(), title.lower())
                 if key2 in seen:
                     continue
