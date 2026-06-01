@@ -69,7 +69,11 @@ def _existing_keys(folder) -> set:
         if p.is_file() and p.suffix.lower() in AUDIO_EXTS:
             parsed = parse_filename(str(p))
             if parsed.parseable:
-                keys.add(match_key(parsed.artist, parsed.title))
+                # MEME normalisation que la want-list et que existing.add au depot
+                # (normalize_artist_title) -> meme espace de cles, pas de faux negatif au re-run.
+                na, nt = normalize_artist_title(parsed.artist, parsed.title)
+                if na and nt:
+                    keys.add(match_key(na, nt))
     return keys
 
 
@@ -234,54 +238,64 @@ def _finalize_download(it, dl, q, *, preset, download_dir, existing, trash_origi
 def _download_pass(
     items, *, root, staging_dir, download_dir, existing, preset, profile,
     fallback_profile, trash_origin, csv_name, fallback_csv_name,
-    progress, on_item, on_proc, cancel, log_path,
+    progress, on_item, on_proc, cancel, log_path, on_chunk=None,
 ) -> List[UpgradeOutcome]:
-    """Telecharge `items` (passe 1 = profile lossless/WAV/AIFF), puis relance en
-    MP3 320 (passe 2 = fallback_profile) les introuvables. Re-audit + seuil a chaque
-    passe via _finalize_download. Retourne la liste des outcomes (un par item).
+    """Telecharge `items` lot par lot. Pour CHAQUE lot de 25 : passe 1 lossless/WAV/AIFF,
+    puis tout de suite passe 2 MP3 320 (fallback_profile) sur les introuvables DU LOT.
+    Re-audit + seuil a chaque passe via _finalize_download. Resultats progressifs (pas de
+    collecte globale des NOT_FOUND -> feedback immediat). Retourne un outcome par item.
+
+    `on_chunk(idx, total_chunks)` (optionnel) est appele en tete de chaque lot : la GUI
+    s'en sert pour un compteur sobre "Lot idx/total" + une barre determinee (pas anime).
     """
     outcomes: List[UpgradeOutcome] = []
-    not_found: List = []
-    for chunk in _chunks(items, CHUNK_SIZE):
+    total_chunks = (len(items) + CHUNK_SIZE - 1) // CHUNK_SIZE
+    for idx, chunk in enumerate(_chunks(items, CHUNK_SIZE), start=1):
         if cancel and cancel():
             break
+        if on_chunk:
+            on_chunk(idx, total_chunks)
+        logger.info("chunk %d/%d, %d items", idx, total_chunks, len(chunk))
         results = download_and_audit(
             chunk, root=root, staging_dir=staging_dir, profile=profile, csv_name=csv_name,
             progress=progress, on_item=on_item, on_proc=on_proc, cancel=cancel, log_path=log_path,
         )
+        chunk_not_found: List = []
         for it, dl, q in results:
             outcome, _ = _finalize_download(
                 it, dl, q, preset=preset, download_dir=download_dir,
                 existing=existing, trash_origin=trash_origin)
             if outcome.action == ACT_NOT_FOUND and fallback_profile:
-                not_found.append(it)              # 2e passe : on ne signale pas 'done' encore
+                chunk_not_found.append(it)        # passe 2 MP3 juste apres, pas a la fin du run
+                if on_item:                       # sort de 'Recherche...' -> 'Repli MP3' (pas empile)
+                    on_item(_item_id(it), "fallback")
             else:
                 outcomes.append(outcome)
                 if on_item:
                     on_item(_item_id(it), "done", outcome.action)
 
-    if not_found:
-        if fallback_profile and not (cancel and cancel()):
-            for chunk in _chunks(not_found, CHUNK_SIZE):
-                results = download_and_audit(
-                    chunk, root=root, staging_dir=staging_dir, profile=fallback_profile,
-                    csv_name=fallback_csv_name, progress=progress, on_item=on_item,
-                    on_proc=on_proc, cancel=cancel, log_path=log_path,
-                )
-                for it, dl, q in results:
-                    outcome, _ = _finalize_download(
-                        it, dl, q, preset=preset, download_dir=download_dir,
-                        existing=existing, trash_origin=trash_origin)
-                    outcomes.append(outcome)
-                    if on_item:
-                        on_item(_item_id(it), "done", outcome.action)
-        else:                                     # repli desactive ou annule -> NOT_FOUND
-            for it in not_found:
+        if not chunk_not_found:
+            continue
+        if cancel and cancel():                   # annule -> on marque les restes NOT_FOUND
+            for it in chunk_not_found:
                 outcomes.append(UpgradeOutcome(
                     action=ACT_NOT_FOUND, artist=it.artist, title=it.title,
                     original=it.origin_path, note="sldl n'a ramene aucun fichier"))
                 if on_item:
                     on_item(_item_id(it), "done", ACT_NOT_FOUND)
+            continue
+        fb_results = download_and_audit(          # passe 2 : MP3 320 sur les misses DU LOT
+            chunk_not_found, root=root, staging_dir=staging_dir, profile=fallback_profile,
+            csv_name=fallback_csv_name, progress=progress, on_item=on_item,
+            on_proc=on_proc, cancel=cancel, log_path=log_path,
+        )
+        for it, dl, q in fb_results:
+            outcome, _ = _finalize_download(
+                it, dl, q, preset=preset, download_dir=download_dir,
+                existing=existing, trash_origin=trash_origin)
+            outcomes.append(outcome)
+            if on_item:
+                on_item(_item_id(it), "done", outcome.action)
     return outcomes
 
 
@@ -302,6 +316,7 @@ def run_upgrade(
     on_proc: Optional[Callable] = None,
     cancel: Optional[Callable] = None,
     log_path=None,
+    on_chunk: Optional[Callable] = None,
 ) -> List[UpgradeOutcome]:
     """Upgrade : pour chaque faux/lossy, telecharge un vrai lossless valide, le DEPOSE
     dans la bibliotheque `download_dir`, et envoie le fichier source (le faux) a la
@@ -346,6 +361,7 @@ def run_upgrade(
         existing=existing, preset=preset, profile=profile, fallback_profile=fallback_profile,
         trash_origin=True, csv_name="ddd_upgrade.csv", fallback_csv_name="ddd_upgrade_mp3.csv",
         progress=progress, on_item=on_item, on_proc=on_proc, cancel=cancel, log_path=log_path,
+        on_chunk=on_chunk,
     )
     return outcomes
 
@@ -423,6 +439,7 @@ def acquire_rows(
     on_proc: Optional[Callable] = None,
     cancel: Optional[Callable] = None,
     log_path=None,
+    on_chunk: Optional[Callable] = None,
 ) -> List[UpgradeOutcome]:
     """Telecharge une want-list scrapee (dicts Artist/Title/Length) et DEPOSE les vrais
     lossless valides dans la bibliotheque `download_dir`. Les candidats rejetes (fake/
@@ -471,6 +488,7 @@ def acquire_rows(
         existing=existing, preset=preset, profile=profile, fallback_profile=fallback_profile,
         trash_origin=False, csv_name="ddd_acquire.csv", fallback_csv_name="ddd_acquire_mp3.csv",
         progress=progress, on_item=on_item, on_proc=on_proc, cancel=cancel, log_path=log_path,
+        on_chunk=on_chunk,
     )
     return outcomes
 

@@ -10,10 +10,11 @@ import argparse
 import csv
 import hashlib
 import json
+import re
 import sys
 import time
 from pathlib import Path
-from typing import Callable, Dict, List, Optional
+from typing import Callable, Dict, List, Optional, Tuple
 
 try:
     import cloudscraper
@@ -71,6 +72,89 @@ def _album_tracklist(scraper, album_url: str, cache_dir: Path):
     return data
 
 
+def _resolve_album_artist(data: Dict, band: str) -> str:
+    """Artiste de repli au niveau album : le champ `artist` de la page album (le vrai
+    artiste, meme quand la page est un label) prime sur `band` (band_name wishlist, qui
+    EST le label pour une sortie de label)."""
+    return (data.get("artist") or "").strip() or band
+
+
+# Separateur "Artiste - Titre" : tiret/en-dash/em-dash entoures d'espaces (Bandcamp
+# utilise frequemment l'en-dash sur les pages de label).
+_BC_SEP = re.compile(r"\s[-–—]\s")
+# Prefixe de face vinyle en tete de titre : "A1 - ", "B2. ", "A1) "...
+_BC_SIDE = re.compile(r"^\s*[A-H][0-9]{1,2}[\s.\)\-_]+", re.IGNORECASE)
+# Suffixe = descriptif de mix "bare" (PAS entre parentheses) : "- Original Mix",
+# "- Tronik Youth Remix", "- Dub". Signale "Titre - Mix", pas "Artiste - Titre".
+_BC_MIX_TAIL = re.compile(r"(?i)\b(mix|remix|edit|dub|version|rework|refix|vip|bootleg|reprise)\s*$")
+
+
+def _split_artist_title(title: str) -> Optional[Tuple[str, str]]:
+    """'Artiste - Titre' -> (artiste, titre) quand la structure est claire, sinon None.
+
+    Garde anti-faux-positif : si la partie droite est un descriptif de mix bare (finit
+    par 'Mix'/'Remix'/'Edit'... SANS parenthese fermante), c'est un 'Titre - Original Mix'
+    d'artiste solo, pas un 'Artiste - Titre' de label -> on ne splitte PAS. Les vrais tags
+    de remix d'un titre sont entre parentheses ('... (Blu:sh remix)') et passent.
+    """
+    t = _BC_SIDE.sub("", title or "").strip()
+    m = _BC_SEP.search(t)
+    if not m:
+        return None
+    left, right = t[: m.start()].strip(), t[m.end():].strip()
+    if not left or not right:
+        return None
+    if not right.endswith(")") and _BC_MIX_TAIL.search(right):
+        return None
+    return left, right
+
+
+def _tracks_from_album(data: Dict, band: str, album_title: str, item_url: str) -> List[Dict]:
+    """Deplie un JSON `data-tralbum` en rows de piste avec le VRAI artiste par piste.
+
+    Trois cas :
+      A) `trackinfo[].artist` rempli (Bandcamp le fait quand l'artiste piste differe de
+         l'album) -> on le prend, repli sur l'artiste de la page album.
+      B) champ vide MAIS l'album est "prefixe artiste" (la majorite des titres sont
+         'Artiste - Titre') -> on splitte le titre piste par piste (labels type Lirica
+         Archives / Neptune Discs qui ne renseignent pas le champ artist).
+      C) champ vide et pas de structure 'Artiste - Titre' (artiste solo) -> artiste de la
+         page album, titre inchange.
+    Les previews `[CLIP]` sont ignorees ; `normalize_artist_title` nettoie/dedoublonne.
+    """
+    album_artist = _resolve_album_artist(data, band)
+    tracks = data.get("trackinfo", [])
+    any_track_artist = any((t.get("artist") or "").strip() for t in tracks)
+
+    prefixed = False
+    if not any_track_artist:
+        n_split = sum(1 for t in tracks if _split_artist_title(t.get("title", "")))
+        prefixed = n_split >= 2 and n_split >= 0.6 * len(tracks)
+
+    rows: List[Dict] = []
+    for t in tracks:
+        t_title = t.get("title", "")
+        if not t_title or "[clip]" in t_title.lower():
+            continue
+        track_artist = (t.get("artist") or "").strip()
+        if track_artist:                                  # A) champ artist par piste
+            artist_in, title_in = track_artist, t_title
+        elif prefixed:                                    # B) artiste dans le titre (label)
+            split = _split_artist_title(t_title)
+            artist_in, title_in = split if split else (album_artist, t_title)
+        else:                                             # C) artiste solo / page
+            artist_in, title_in = album_artist, t_title
+        na, nt = normalize_artist_title(artist_in, title_in)   # VA/prefixe/dup
+        if not na or not nt:
+            continue
+        rows.append({
+            "Artist": na, "Title": nt, "Album": album_title,
+            "Length": _secs(t.get("duration")), "Year": "",
+            "Source": "bandcamp:wishlist", "SourceUrl": item_url,
+        })
+    return rows
+
+
 def scrape_bandcamp(
     username: str,
     expand_albums: bool = True,
@@ -109,18 +193,7 @@ def scrape_bandcamp(
         if item.get("item_type") == "album" and expand_albums and item_url:
             try:
                 data = _album_tracklist(scraper, item_url, cdir)
-                for t in data.get("trackinfo", []):
-                    t_title = t.get("title", "")
-                    if not t_title:
-                        continue
-                    na, nt = normalize_artist_title(band, t_title)   # VA/prefixe/dup
-                    if not na or not nt:
-                        continue
-                    rows.append({
-                        "Artist": na, "Title": nt, "Album": title,
-                        "Length": _secs(t.get("duration")), "Year": "",
-                        "Source": "bandcamp:wishlist", "SourceUrl": item_url,
-                    })
+                rows.extend(_tracks_from_album(data, band, title, item_url))
                 return
             except Exception as e:  # noqa: BLE001
                 if progress:
