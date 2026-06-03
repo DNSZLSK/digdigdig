@@ -17,6 +17,7 @@ from __future__ import annotations
 import json
 import logging
 import re
+import urllib.request
 from typing import Callable, Dict, List, Optional, Tuple
 
 try:
@@ -93,7 +94,54 @@ def _rows_from_pairs(pairs: List[Pair], source: str, url: str) -> List[Dict]:
 
 # ---- YouTube (description + commentaires via yt-dlp) -------------------------
 
+def _find_all(obj, key: str, out: list) -> None:
+    """Collecte recursivement toutes les valeurs de `key` dans un JSON imbrique."""
+    if isinstance(obj, dict):
+        for k, v in obj.items():
+            if k == key:
+                out.append(v)
+            _find_all(v, key, out)
+    elif isinstance(obj, list):
+        for it in obj:
+            _find_all(it, key, out)
+
+
+def _youtube_music_section(video_url: str) -> List[Pair]:
+    """Section 'Musique' (Content ID de YouTube) -> [(artist, title)].
+
+    Pas dans l'info dict yt-dlp : on lit `ytInitialData` de la page et on extrait les
+    cartes `videoAttributeViewModel` (title = titre, subtitle = artiste). C'est la base
+    de fingerprint de YouTube : souvent des tracks que ni la description ni set79 n'ont.
+    """
+    req = urllib.request.Request(video_url, headers={
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)",
+        "Accept-Language": "en-US,en;q=0.9", "Cookie": "CONSENT=YES+1"})
+    html = urllib.request.urlopen(req, timeout=30).read().decode("utf-8", "replace")
+    idx = html.find("ytInitialData = ")
+    if idx < 0:
+        idx = html.find("ytInitialData=")
+    if idx < 0:
+        return []
+    start = html.find("{", idx)
+    try:
+        data, _ = json.JSONDecoder().raw_decode(html[start:])
+    except (ValueError, TypeError):
+        return []
+    cards: list = []
+    _find_all(data, "videoAttributeViewModel", cards)
+    pairs: List[Pair] = []
+    for c in cards:
+        if not isinstance(c, dict):
+            continue
+        artist = (c.get("subtitle") or "").strip()
+        title = (c.get("title") or "").strip()
+        if artist and title and not _is_id(artist) and not _is_id(title):
+            pairs.append((artist, title))
+    return pairs
+
+
 def _scrape_youtube(url: str, progress: ProgressCb) -> List[Pair]:
+    """3 couches YouTube combinees : description + section Musique (Content ID) + commentaires."""
     try:
         import yt_dlp  # noqa: PLC0415
     except ImportError as e:
@@ -102,29 +150,36 @@ def _scrape_youtube(url: str, progress: ProgressCb) -> List[Pair]:
     opts = {
         "quiet": True, "no_warnings": True, "noprogress": True, "socket_timeout": 30,
         "getcomments": True,
-        # cap : ~80 commentaires top, pas de reponses (la tracklist est dans l'epingle/top)
         "extractor_args": {"youtube": {"max_comments": ["80", "all", "0"],
                                        "comment_sort": ["top"]}},
     }
     if progress:
-        progress("YouTube : description + commentaires (yt-dlp)...")
+        progress("YouTube : description + Musique + commentaires...")
     with yt_dlp.YoutubeDL(opts) as ydl:
         info = ydl.extract_info(url, download=False)
 
-    pairs = parse_tracklist_text(info.get("description") or "")
-    # commentaires : on garde celui qui ressemble le plus a une tracklist (le + de paires),
-    # en privilegiant l'epingle.
+    desc = parse_tracklist_text(info.get("description") or "")
+    # commentaire qui ressemble le plus a une tracklist ; il faut >= 4 lignes parsees pour
+    # que ca compte (sinon un commentaire bavard avec un " - " passe pour une track = bruit).
     best: List[Pair] = []
     for c in (info.get("comments") or []):
         cp = parse_tracklist_text(c.get("text") or "")
-        if c.get("is_pinned") and len(cp) >= 3:
+        if c.get("is_pinned") and len(cp) >= 4:
             best = cp
             break
         if len(cp) > len(best):
             best = cp
-    if len(best) > len(pairs):
-        pairs = best
-    return pairs
+    if len(best) < 4:
+        best = []
+    # section Musique (Content ID) : la grosse source manquante, via la page
+    try:
+        music = _youtube_music_section(url)
+    except Exception as e:  # noqa: BLE001
+        music = []
+        logger.debug("section Musique echec: %r", e)
+    if progress:
+        progress(f"  -> {len(music)} Musique + {len(desc)} description + {len(best)} commentaire")
+    return music + desc + best   # le dedup se fait dans _rows_from_pairs
 
 
 # ---- 1001Tracklists (cloudscraper, comme bandcamp.py) -----------------------
