@@ -449,15 +449,19 @@ def main(page: ft.Page) -> None:
     source_dd = ft.Dropdown(
         label="Source", width=200, value="discogs",
         options=[ft.dropdown.Option(key="discogs", text="Discogs"),
-                 ft.dropdown.Option(key="bandcamp", text="Bandcamp")])
+                 ft.dropdown.Option(key="bandcamp", text="Bandcamp"),
+                 ft.dropdown.Option(key="djset", text="Set DJ (URL)")])
     discogs_collection_cb = ft.Checkbox(label="Inclure la collection", value=False, visible=True)
     bandcamp_expand_cb = ft.Checkbox(label="Developper les albums", value=True, visible=False)
+    djset_url = ft.TextField(label="URL du set (YouTube / 1001TL) ou fichier tracklist",
+                             visible=False, expand=True)
     acquire_table_col = ft.Column(scroll=ft.ScrollMode.AUTO, expand=True, spacing=2)
 
     def on_source_change(_e) -> None:
-        is_disc = source_dd.value == "discogs"
-        discogs_collection_cb.visible = is_disc
-        bandcamp_expand_cb.visible = not is_disc
+        src = source_dd.value
+        discogs_collection_cb.visible = src == "discogs"
+        bandcamp_expand_cb.visible = src == "bandcamp"
+        djset_url.visible = src == "djset"
         page.update()
 
     source_dd.on_change = on_source_change
@@ -489,6 +493,7 @@ def main(page: ft.Page) -> None:
         # Tous les identifiants vivent dans Reglages. On relit a chaud (l'user a pu
         # les saisir apres le lancement) et on bloque avec un message clair si manquants.
         creds = config_mod.load()
+        token = ""
         if source == "discogs":
             username = (creds.get("discogs_username") or "").strip()
             token = (creds.get("discogs_token") or "").strip()
@@ -498,13 +503,18 @@ def main(page: ft.Page) -> None:
                 settings_panel.visible = True
                 page.update()
                 return
-        else:
+        elif source == "bandcamp":
             username = (creds.get("bandcamp_username") or "").strip()
-            token = ""
             if not username:
                 status.value = ("Identifiant Bandcamp manquant - renseigne ton username "
                                 "dans Reglages (engrenage en haut a droite).")
                 settings_panel.visible = True
+                page.update()
+                return
+        else:                                   # djset : pas de creds, juste l'URL / le fichier
+            username = (djset_url.value or "").strip()
+            if not username:
+                status.value = "Entre l'URL du set (YouTube / 1001TL) ou un fichier tracklist."
                 page.update()
                 return
         dest = paths.download_dir(config_mod.load())   # bibliotheque (Reglages)
@@ -526,15 +536,17 @@ def main(page: ft.Page) -> None:
                         status.value = str(a[0])[:90]
                         page.update()
 
-                status.value = f"Recuperation de la liste {source} de {username}..."
+                status.value = f"Recuperation {source} : {username[:60]}..."
                 page.update()
                 if source == "discogs":
                     rows = scrapers.scrape_discogs(
                         username, token=token,
                         include_collection=discogs_collection_cb.value, progress=prog)
-                else:
+                elif source == "bandcamp":
                     rows = scrapers.scrape_bandcamp(
                         username, expand_albums=bandcamp_expand_cb.value, progress=prog)
+                else:                           # djset : `username` porte l'URL / le chemin
+                    rows = scrapers.scrape_djset(username, progress=prog)
 
                 if not rows:
                     status.value = f"Aucune piste trouvee pour {username} sur {source}."
@@ -710,7 +722,7 @@ def main(page: ft.Page) -> None:
 
     acquire_tab = ft.Container(
         content=ft.Column([
-            ft.Row([source_dd, acquire_btn, acq_cancel_btn],
+            ft.Row([source_dd, djset_url, acquire_btn, acq_cancel_btn],
                    wrap=True, spacing=8, run_spacing=8,
                    vertical_alignment=ft.CrossAxisAlignment.CENTER),
             ft.Row([discogs_collection_cb, bandcamp_expand_cb], wrap=True),
