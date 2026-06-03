@@ -42,6 +42,11 @@ TXT_DIM = "#9A9A9A"     # texte secondaire
 ACCENT = "#5C6B7A"      # accent slate desature (boutons natifs via seed)
 SPIN = "#A0A0A0"        # spinners / progress, gris neutre
 
+# Formulaire de retours (Google Form / Tally) : case "je kiffe l'app" + suggestions.
+# Aucun compte requis cote user. Colle l'URL de TON formulaire ici une fois cree.
+FEEDBACK_URL = ("https://docs.google.com/forms/d/e/"
+                "1FAIpQLSfcKbhE67BWQsq2SdHMQItMrCc-seh6BSbwJj5VletoY2t_GA/viewform")
+
 VERDICT_COLOR = {
     quality.LOSSLESS: "#6E7F5B",   # olive/vert - vrai lossless
     quality.HQ: "#5A7A8C",         # bleu sobre - jouable club
@@ -177,6 +182,21 @@ def main(page: ft.Page) -> None:
             page.snack_bar = ft.SnackBar(ft.Text(msg, color=TXT), bgcolor=bg)
             page.snack_bar.open = True
             page.update()
+
+    def _open_url(url: str) -> None:
+        """Ouvre une URL dans le navigateur (defensif : fallback hors contexte Flet)."""
+        try:
+            page.launch_url(url)
+        except Exception:  # noqa: BLE001
+            import webbrowser
+            webbrowser.open(url)
+
+    def open_feedback(_e=None) -> None:
+        """Bouton coeur : ouvre le formulaire de retours (like + suggestions)."""
+        if "XXXX" in FEEDBACK_URL:
+            _banner("Formulaire de retours pas encore configure (voir FEEDBACK_URL).", False)
+            return
+        _open_url(FEEDBACK_URL)
 
     def set_cell(status_map: dict, key: str, label: str, color, ring_on: bool) -> None:
         cell = status_map.get(key)
@@ -696,6 +716,9 @@ def main(page: ft.Page) -> None:
                                   on_click=do_acquire)
     acq_cancel_btn = ft.OutlinedButton(text="Annuler", icon=ft.Icons.CANCEL,
                                        on_click=do_cancel, visible=False)
+    feedback_btn = ft.IconButton(icon=ft.Icons.FAVORITE_BORDER,
+                                 tooltip="Kiffer l'app / une suggestion",
+                                 on_click=open_feedback)
     settings_btn = ft.IconButton(icon=ft.Icons.SETTINGS, tooltip="Reglages (identifiants)",
                                  on_click=toggle_settings)
 
@@ -740,7 +763,7 @@ def main(page: ft.Page) -> None:
                 ft.Tab(text="Bibliotheque", content=library_tab),
                 ft.Tab(text="Recuperer favoris", content=acquire_tab),
             ]),
-            ft.Container(settings_btn, top=0, right=0),
+            ft.Container(ft.Row([feedback_btn, settings_btn], spacing=0), top=0, right=0),
         ], expand=True),
         progress,
         status,
