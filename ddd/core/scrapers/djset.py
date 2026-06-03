@@ -94,12 +94,21 @@ def parse_tracklist_text(text: str) -> List[Pair]:
 
 
 _BRACKETS = re.compile(r"\[[^\]]*\]")          # [numero de catalogue] / [label]
+_TRAIL_STAR = re.compile(r"\s*\*+\s*$")        # * en fin de titre (marqueur source unreleased/ID)
+_DUP_PAREN = re.compile(r"(\([^)]*\))(?:\s*\1)+", re.IGNORECASE)  # "(X) (X)" -> "(X)"
 
 
 def _strip_catalog(s: str) -> str:
-    """Vire les [...] (numeros de catalogue/label) qui cassent la recherche Soulseek et la
-    dedup. On GARDE les (Original Mix)/(Remix) entre parentheses (vraie info de version)."""
-    return re.sub(r"\s{2,}", " ", _BRACKETS.sub("", s)).strip()
+    """Nettoie un champ pour la recherche Soulseek + la dedup :
+    - vire les [...] (numero de catalogue / label) ;
+    - vire les * en fin de titre (marqueur source = unreleased / ID, pollue la recherche) ;
+    - dedoublonne les parentheses consecutives identiques ("(X Remix) (X Remix)" -> "(X Remix)",
+      sinon la dedup ne fusionne pas avec la version simple).
+    On GARDE un seul (Original Mix)/(Remix) (vraie info de version)."""
+    s = _BRACKETS.sub("", s)
+    s = _DUP_PAREN.sub(r"\1", s)
+    s = _TRAIL_STAR.sub("", s)
+    return re.sub(r"\s{2,}", " ", s).strip()
 
 
 def _rows_from_pairs(pairs: List[Pair], source: str, url: str) -> List[Dict]:

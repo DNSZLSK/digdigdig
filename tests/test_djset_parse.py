@@ -98,3 +98,26 @@ def test_human_timestamp_guard_keeps_real_artists():
     assert ("808 State", "Pacific") in pairs
     assert ("4 Hero", "Mr Kirks Nightmare") in pairs
     assert ("50 Cent", "In Da Club") in pairs
+
+
+def test_strip_trailing_asterisk():
+    """Les * en fin de titre (marqueur source unreleased/ID) sont vires (polluent la recherche)."""
+    from ddd.core.scrapers.djset import _strip_catalog, _rows_from_pairs
+    assert _strip_catalog("Letna Disko*") == "Letna Disko"
+    assert _strip_catalog("Bongs & Bongos**") == "Bongs & Bongos"
+    assert _strip_catalog("Backstage Access (Original Mix)*") == "Backstage Access (Original Mix)"
+    rows = _rows_from_pairs([("Artist", "Backstage Access*")], "djset:test", "u")
+    assert rows[0]["Title"] == "Backstage Access"
+
+
+def test_dedup_double_remix_paren():
+    """"(Admo Remix) (Admo Remix)" -> un seul, et fusionne avec la version simple a la dedup."""
+    from ddd.core.scrapers.djset import _strip_catalog, _rows_from_pairs
+    assert _strip_catalog("Funky Blaster (Admo Remix) (Admo Remix)") == "Funky Blaster (Admo Remix)"
+    pairs = [
+        ("Sunaas", "Funky Blaster (Admo Remix)"),
+        ("Sunaas", "Funky Blaster (Admo Remix) (Admo Remix)"),
+    ]
+    rows = _rows_from_pairs(pairs, "djset:test", "u")
+    assert len(rows) == 1                                        # les 2 fusionnent
+    assert rows[0]["Title"] == "Funky Blaster (Admo Remix)"      # un seul (Admo Remix)
