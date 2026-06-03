@@ -26,6 +26,17 @@ def test_parse_basic():
     assert len(pairs) == 4
 
 
+def test_skips_social_links():
+    text = (
+        "Tracklist\n"
+        "►Follow Gene On Earth - https://www.instagram.com/gene_on_earth/\n"
+        "►Buy - geneonearth.bandcamp.com\n"
+        "Gene On Earth - Lowcomotion\n"
+    )
+    pairs = parse_tracklist_text(text)
+    assert pairs == [("Gene On Earth", "Lowcomotion")]   # seule la vraie track, pas les liens
+
+
 def test_split_keeps_remix_skips_id_and_noise():
     assert _split_artist_title("Foo - Bar (Someone Remix)") == ("Foo", "Bar (Someone Remix)")
     assert _split_artist_title("ID - ID") is None

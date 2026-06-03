@@ -36,6 +36,8 @@ _TS = re.compile(r"^\s*[\[(]?\s*(?:\d{1,2}:)?\d{1,2}:\d{2}\s*[\])]?\s*[-.)]?\s*"
 # Numero de piste en tete : "1." / "01)" / "12 -"
 _NUM = re.compile(r"^\s*\d{1,3}\s*[.)\]:-]\s+")
 _SEP = " - "
+# Une ligne avec une URL (lien social/promo "►Follow X - https://...") n'est jamais une track
+_URL = re.compile(r"https?://|www\.|\.(?:com|net|org|io|tv|fm|co|me|ly|gl)\b", re.IGNORECASE)
 _TRIM = " -\t·•–—:"   # bullets/dashes/colons en bords
 
 
@@ -71,6 +73,8 @@ def parse_tracklist_text(text: str) -> List[Pair]:
     """Extrait les paires (artist, title) d'un bloc texte (description / commentaire)."""
     out: List[Pair] = []
     for raw in (text or "").splitlines():
+        if _URL.search(raw):        # ligne avec une URL (lien social/promo) -> jamais une track
+            continue
         pair = _split_artist_title(_clean_line(raw))
         if pair:
             out.append(pair)
