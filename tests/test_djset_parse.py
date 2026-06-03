@@ -67,3 +67,34 @@ def test_scrape_djset_dedup_and_format(monkeypatch):
     assert len(rows) == 2                                        # dedup lower(a)-lower(t)
     assert rows[0]["Artist"] == "A" and rows[0]["Title"] == "B"
     assert set(rows[0]) == {"Artist", "Title", "Album", "Length", "Year", "Source", "SourceUrl"}
+
+
+def test_human_timestamps_stripped():
+    """Timestamps "humains" (45min, 1h05, 90sec, 5m30s) en tete -> stripped, pas pris
+    pour l'artiste (sinon "45min - X - Y" donnait artist="min")."""
+    text = (
+        "45min - Frank De Wulf - Compression\n"
+        "1h05 - Artist X - Title Y\n"
+        "90sec - Foo - Bar\n"
+        "5m30s - Baz - Qux\n"
+    )
+    pairs = parse_tracklist_text(text)
+    assert ("Frank De Wulf", "Compression") in pairs
+    assert ("Artist X", "Title Y") in pairs
+    assert ("Foo", "Bar") in pairs
+    assert ("Baz", "Qux") in pairs
+    assert not any(a.lower() in ("min", "45min", "sec", "h", "m", "s") for a, _ in pairs)
+
+
+def test_human_timestamp_guard_keeps_real_artists():
+    """Garde-fou : un nombre+lettre qui n'est PAS une duree reste intact -> on ne mange
+    pas l'artiste (808 State, 4 Hero, 50 Cent)."""
+    text = (
+        "808 State - Pacific\n"
+        "4 Hero - Mr Kirks Nightmare\n"
+        "50 Cent - In Da Club\n"
+    )
+    pairs = parse_tracklist_text(text)
+    assert ("808 State", "Pacific") in pairs
+    assert ("4 Hero", "Mr Kirks Nightmare") in pairs
+    assert ("50 Cent", "In Da Club") in pairs

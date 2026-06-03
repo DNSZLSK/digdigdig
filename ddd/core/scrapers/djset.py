@@ -33,6 +33,17 @@ Pair = Tuple[str, str]
 
 # Timestamp en tete : "0:00", "[01:23]", "1:02:33" (option crochets/parentheses + sep)
 _TS = re.compile(r"^\s*[\[(]?\s*(?:\d{1,2}:)?\d{1,2}:\d{2}\s*[\])]?\s*[-.)]?\s*")
+# Timestamp "humain" en tete : "45min", "1h05", "90 sec", "1h05min30s", "5m30s".
+# Sans ca, "45min - Frank De Wulf - Compression" donne artist="min". Garde-fou (?![a-z]) :
+# l'unite ne doit PAS etre suivie d'une lettre -> ne mange pas "808 State", "4 Hero", "1 hour".
+_TS_HUMAN = re.compile(
+    r"^\s*[\[(]?\s*"
+    r"\d{1,3}\s*(?:h|min|sec|m|s)(?![a-z])"               # 1er <nombre><unite> obligatoire
+    r"(?:\s*\d{1,3}\s*(?:h|min|sec|m|s)(?![a-z]))*"       # <nombre><unite> suivants (1h05min30s)
+    r"(?:\s*\d{1,2})?"                                    # nombre nu final colle (1h05, 5min30)
+    r"\s*[\])]?\s*[-.)]?\s*",
+    re.IGNORECASE,
+)
 # Numero de piste en tete : "1." / "01)" / "12 -"
 _NUM = re.compile(r"^\s*\d{1,3}\s*[.)\]:-]\s+")
 _SEP = " - "
@@ -47,6 +58,7 @@ def _clean_line(line: str) -> str:
     for _ in range(2):
         s = _NUM.sub("", s)
         s = _TS.sub("", s)
+        s = _TS_HUMAN.sub("", s)
     return s.strip(_TRIM)
 
 
