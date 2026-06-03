@@ -77,10 +77,23 @@ def parse_tracklist_text(text: str) -> List[Pair]:
     return out
 
 
+_BRACKETS = re.compile(r"\[[^\]]*\]")          # [numero de catalogue] / [label]
+
+
+def _strip_catalog(s: str) -> str:
+    """Vire les [...] (numeros de catalogue/label) qui cassent la recherche Soulseek et la
+    dedup. On GARDE les (Original Mix)/(Remix) entre parentheses (vraie info de version)."""
+    return re.sub(r"\s{2,}", " ", _BRACKETS.sub("", s)).strip()
+
+
 def _rows_from_pairs(pairs: List[Pair], source: str, url: str) -> List[Dict]:
     rows: List[Dict] = []
     seen = set()
     for artist, title in pairs:
+        artist = _strip_catalog(artist)
+        title = _strip_catalog(title)         # vire les [catalogue] -> recherche propre +
+        if not artist or not title:           # dedup correcte (clean == avec-catalogue)
+            continue
         key = f"{artist.lower()} - {title.lower()}"
         if key in seen:
             continue

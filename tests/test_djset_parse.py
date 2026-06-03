@@ -33,6 +33,22 @@ def test_split_keeps_remix_skips_id_and_noise():
     assert _split_artist_title(" - Track") is None               # artiste vide
 
 
+def test_strip_catalog_and_dedup():
+    from ddd.core.scrapers.djset import _rows_from_pairs
+    pairs = [
+        ("Longhair", "A Moment Of Peace"),
+        ("Longhair", "A Moment Of Peace [MMD025]"),
+        ("Wolfsheim", "The Sparrows And The Nightingales [MS 11071-02]"),
+        ("Marcello Giordani", "Something (Original Mix)"),
+    ]
+    rows = _rows_from_pairs(pairs, "djset:test", "u")
+    titles = [r["Title"] for r in rows]
+    assert titles.count("A Moment Of Peace") == 1                # dedup malgre le [MMD025]
+    assert "The Sparrows And The Nightingales" in titles         # [MS 11071-02] vire
+    assert "Something (Original Mix)" in titles                  # (Original Mix) garde
+    assert len(rows) == 3
+
+
 def test_scrape_djset_dedup_and_format(monkeypatch):
     # URL quelconque -> branche yt-dlp ; on la mock pour rester offline
     monkeypatch.setattr(d, "_scrape_youtube", lambda url, prog: [("A", "B"), ("A", "B"), ("C", "D")])
