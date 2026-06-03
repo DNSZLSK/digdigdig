@@ -69,6 +69,23 @@ Pas besoin d'etre developpeur : telecharge l'`.exe`, double-clic, c'est une fene
 > Les 3 D : **DIG** tes sources -> **DOWNLOAD** sur Soulseek -> **DETECT** au spectre. La sortie,
 > c'est ta bibliotheque lossless verifiee, que tu peux ensuite partager / pointer ou tu veux.
 
+## Usage & responsabilite
+
+DDD est un outil de gestion de **ta** bibliotheque (analyse qualite, organisation,
+recuperation via Soulseek). Il **n'heberge, ne distribue et ne fournit aucun contenu** :
+c'est un client qui automatise la recherche, comme un navigateur ou un client torrent.
+
+Soulseek est un reseau peer-to-peer. Telecharger de la musique protegee sans autorisation
+des ayants droit peut etre **illegal** selon ton pays (France : Code de la propriete
+intellectuelle). **Tu es seul responsable de ton usage** et du respect du droit d'auteur.
+Utilise DDD pour ce que tu as le droit d'utiliser : ta propre musique, tes productions,
+tes promos / white-labels, le domaine public/CC, ou re-telecharger en lossless ce que tu
+**possedes deja**.
+
+> *DDD is a library-management tool; it hosts no content. Downloading copyrighted material
+> without authorization may be illegal in your country. You are solely responsible for your
+> use and for complying with copyright law.*
+
 ## Stack
 
 Coeur **Python** portable (Windows / Mac / Linux) + fenetre native **Flet**. Telechargement via
