@@ -177,6 +177,28 @@ def _write_outcomes_csv(outcomes, path) -> None:
             w.writerow({k: row.get(k, "") for k in fields})
 
 
+def _acquire_rows_now(rows) -> int:
+    """Lance directement l'acquire sur des rows (hand-off `scrape --acquire`)."""
+    from collections import Counter
+    root = paths.resource_base()
+    dl_dir = paths.download_dir(config_mod.load())
+    log_path = paths.logs_dir() / "ddd_acquire.log"
+
+    def progress(*a) -> None:
+        if len(a) == 1:
+            print(a[0], file=sys.stderr)
+
+    print(f"\nLancement acquire sur {len(rows)} pistes -> {dl_dir}", file=sys.stderr)
+    outcomes = upgrade_mod.acquire_rows(
+        rows, root=root, download_dir=dl_dir, staging_dir=paths.cache_dl_dir(),
+        limit=0, profile="lossless-strict", progress=progress, log_path=log_path)
+    counts = Counter(o.action for o in outcomes)
+    print("\n=== Acquire ===")
+    for action, n in counts.most_common():
+        print(f"  {action:<16} {n:>5}")
+    return 0
+
+
 def _cmd_scrape(args: argparse.Namespace) -> int:
     from .core import scrapers
     import csv
@@ -194,6 +216,8 @@ def _cmd_scrape(args: argparse.Namespace) -> int:
             rows = scrapers.scrape_discogs(
                 args.username, token=args.token or "",
                 include_collection=args.include_collection, progress=progress)
+        elif source == "djset":
+            rows = scrapers.scrape_djset(args.username, progress=progress)
         else:
             rows = scrapers.scrape_bandcamp(
                 args.username, expand_albums=not args.no_expand_albums, progress=progress)
@@ -201,7 +225,11 @@ def _cmd_scrape(args: argparse.Namespace) -> int:
         print(f"ERREUR: {e}", file=sys.stderr)
         return 1
 
-    out = Path(args.out) if args.out else paths.outputs_dir() / f"{source}_{args.username}.csv"
+    if args.out:
+        out = Path(args.out)
+    else:                                  # l'URL d'un djset casserait le nom de fichier
+        safe = "".join(c if c.isalnum() or c in "-_" else "_" for c in args.username)[-40:]
+        out = paths.outputs_dir() / f"{source}_{safe}.csv"
     out.parent.mkdir(parents=True, exist_ok=True)
     with open(out, "w", newline="", encoding="utf-8") as fh:
         w = csv.DictWriter(fh, fieldnames=scrapers.ROW_FIELDS)
@@ -210,6 +238,8 @@ def _cmd_scrape(args: argparse.Namespace) -> int:
 
     print(f"\n=== Scrape {source}: {args.username} ===")
     print(f"{len(rows)} pistes -> {out}")
+    if getattr(args, "acquire", False) and rows:
+        return _acquire_rows_now(rows)
     if not args.no_acquire and rows:
         print("\n(pour telecharger ces pistes en vrai lossless : "
               f"ddd acquire \"{out}\")")
@@ -331,13 +361,16 @@ def build_parser() -> argparse.ArgumentParser:
     p_up.add_argument("-v", "--verbose", action="store_true", help="afficher chaque fichier scanne")
     p_up.set_defaults(func=_cmd_upgrade)
 
-    p_sc = sub.add_parser("scrape", help="scraper tes favoris (Discogs/Bandcamp) -> CSV want-list")
-    p_sc.add_argument("source", choices=["discogs", "bandcamp"], help="source a scraper")
-    p_sc.add_argument("username", help="ton nom d'utilisateur sur la source")
+    p_sc = sub.add_parser("scrape", help="scraper favoris/tracklists -> CSV want-list (-> acquire)")
+    p_sc.add_argument("source", choices=["discogs", "bandcamp", "djset"], help="source a scraper")
+    p_sc.add_argument("username", metavar="USER_OU_URL",
+                      help="pseudo (discogs/bandcamp) OU url du set (djset: YouTube/1001Tracklists)")
     p_sc.add_argument("-o", "--out", help="CSV de sortie (defaut: outputs/<source>_<user>.csv)")
     p_sc.add_argument("--token", help="token Discogs (sinon $DISCOGS_TOKEN ou config ddd)")
     p_sc.add_argument("--include-collection", action="store_true", help="Discogs: aussi la collection")
     p_sc.add_argument("--no-expand-albums", action="store_true", help="Bandcamp: garder les albums entiers")
+    p_sc.add_argument("--acquire", action="store_true",
+                      help="enchainer direct sur l'acquire (telecharge les tracks trouvees)")
     p_sc.add_argument("--no-acquire", action="store_true", help="ne pas suggerer l'etape acquire")
     p_sc.set_defaults(func=_cmd_scrape)
 
