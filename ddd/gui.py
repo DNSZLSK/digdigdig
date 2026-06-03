@@ -454,7 +454,7 @@ def main(page: ft.Page) -> None:
     discogs_collection_cb = ft.Checkbox(label="Inclure la collection", value=False, visible=True)
     bandcamp_expand_cb = ft.Checkbox(label="Developper les albums", value=True, visible=False)
     djset_url = ft.TextField(label="URL du set (YouTube / 1001TL) ou fichier tracklist",
-                             visible=False, expand=True)
+                             visible=False, width=480)
     acquire_table_col = ft.Column(scroll=ft.ScrollMode.AUTO, expand=True, spacing=2)
 
     def on_source_change(_e) -> None:
