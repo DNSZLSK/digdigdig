@@ -30,6 +30,7 @@ from .core import config as config_mod
 from .core import quality
 from .core import soulseek
 from .core import upgrade as upgrade_mod
+from .core import stores as stores_mod
 from .core.naming import match_key
 from .core.scan import ScanRecord, duplicate_groups, scan_library
 
@@ -197,6 +198,30 @@ def main(page: ft.Page) -> None:
             _banner("Formulaire de retours pas encore configure (voir FEEDBACK_URL).", False)
             return
         _open_url(FEEDBACK_URL)
+
+    # --- Liens d'achat pour les introuvables (helper commun upgrade + acquire) ----
+    buy_state = {"url": None}
+
+    def _open_buy(_e=None) -> None:
+        if buy_state["url"]:
+            _open_url(buy_state["url"])
+
+    buy_btn = ft.TextButton("", visible=False, on_click=_open_buy)
+
+    def show_buy_links(outcomes, name: str) -> None:
+        """Ecrit la page des introuvables (NOT_FOUND) et affiche un lien cliquable, ou cache."""
+        try:
+            html = stores_mod.write_unfindable(outcomes, paths.outputs_dir(), name)
+        except Exception:  # noqa: BLE001
+            html = None
+        if html:
+            n = sum(1 for o in outcomes if getattr(o, "action", "") == upgrade_mod.ACT_NOT_FOUND
+                    and getattr(o, "title", ""))
+            buy_btn.text = f"{n} introuvable(s) -> liens d'achat (Discogs / Bandcamp)"
+            buy_state["url"] = html.as_uri()
+            buy_btn.visible = True
+        else:
+            buy_btn.visible = False
 
     def set_cell(status_map: dict, key: str, label: str, color, ring_on: bool) -> None:
         cell = status_map.get(key)
@@ -431,6 +456,7 @@ def main(page: ft.Page) -> None:
                     summary = (f"Upgrade fini : {ok} deposes en bibliotheque (faux -> corbeille), "
                                f"{rej} rejetes, {nf} introuvables{dup_txt}.")
                 status.value = summary
+                show_buy_links(outcomes, Path(state.folder).name)
                 _banner(summary, bool(ok) and not state.cancel_requested)
                 # Re-scanner pour refleter les nouveaux verdicts
                 if ok and not state.cancel_requested:
@@ -599,6 +625,7 @@ def main(page: ft.Page) -> None:
                     summary = (f"Recuperation finie : {acq} en bibliotheque, {rej} rejetees "
                                f"(upscale/court/mauvais match), {nf} introuvables{dup_txt}.")
                 status.value = summary
+                show_buy_links(outcomes, "acquire")
                 _banner(summary, bool(acq) and not state.cancel_requested)
             except ValueError as ex:  # token Discogs manquant, etc.
                 status.value = f"Recuperation impossible : {ex}"
@@ -767,6 +794,7 @@ def main(page: ft.Page) -> None:
         ], expand=True),
         progress,
         status,
+        buy_btn,
         settings_panel,
     )
 

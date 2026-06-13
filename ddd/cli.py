@@ -18,6 +18,7 @@ from .core.scan import (
 )
 from .core import upgrade as upgrade_mod
 from .core import rename as rename_mod
+from .core import stores as stores_mod
 
 # Ordre d'affichage du resume (du plus actionnable au moins)
 VERDICT_ORDER = [LOSSLESS, HQ, DOUTEUX, MAUVAIS, "ERROR", "SKIPPED"]
@@ -162,6 +163,12 @@ def _cmd_upgrade(args: argparse.Namespace) -> int:
     out_csv = paths.outputs_dir() / f"upgrade_{folder.name}.csv"
     _write_outcomes_csv(outcomes, out_csv)
     print(f"\nRapport : {out_csv}")
+
+    # Introuvables -> page de liens d'achat (helper commun a tous les points d'entree)
+    buy_html = stores_mod.write_unfindable(outcomes, paths.outputs_dir(), folder.name)
+    if buy_html:
+        n = sum(1 for o in outcomes if o.action == upgrade_mod.ACT_NOT_FOUND and o.title)
+        print(f"{n} introuvable(s) -> liens d'achat : {buy_html}")
     return 0
 
 
@@ -231,6 +238,51 @@ def _cmd_rename(args: argparse.Namespace) -> int:
     return 0
 
 
+def _cmd_buy(args: argparse.Namespace) -> int:
+    import csv
+
+    src = Path(args.source)
+    if not src.exists():
+        print(f"source introuvable: {src}", file=sys.stderr)
+        return 2
+
+    tracks = []
+    if src.is_dir():
+        from .core.scan import iter_audio_files
+        from .core.naming import resolve_name
+        for f in iter_audio_files(src, args.exclude):
+            r = resolve_name(f)
+            if r.title:
+                tracks.append((r.artist, r.title))
+        name = src.name
+    else:
+        with open(src, encoding="utf-8") as fh:
+            rows = list(csv.DictReader(fh))
+        if rows and "action" in rows[0]:              # rapport d'upgrade -> que les NOT_FOUND
+            tracks = [(r.get("artist", ""), r.get("title", ""))
+                      for r in rows if r.get("action") == upgrade_mod.ACT_NOT_FOUND]
+        else:                                         # want-list -> toutes les lignes
+            def _g(r, *keys):
+                for k in keys:
+                    if r.get(k):
+                        return r[k]
+                return ""
+            tracks = [(_g(r, "Artist", "artist"), _g(r, "Title", "title")) for r in rows]
+        name = src.stem
+
+    tracks = [(a, t) for a, t in tracks if t]
+    if not tracks:
+        print("aucune track exploitable dans la source.", file=sys.stderr)
+        return 0
+
+    out_html = paths.outputs_dir() / f"buy_{name}.html"
+    out_csv = paths.outputs_dir() / f"buy_{name}.csv"
+    stores_mod.write_buy_page(tracks, out_html, out_csv, heading=f"A acheter - {name}")
+    print(f"{len(tracks)} track(s) -> {out_html}")
+    print(f"            {out_csv}")
+    return 0
+
+
 def _acquire_rows_now(rows) -> int:
     """Lance directement l'acquire sur des rows (hand-off `scrape --acquire`)."""
     from collections import Counter
@@ -250,6 +302,9 @@ def _acquire_rows_now(rows) -> int:
     print("\n=== Acquire ===")
     for action, n in counts.most_common():
         print(f"  {action:<16} {n:>5}")
+    buy_html = stores_mod.write_unfindable(outcomes, paths.outputs_dir(), "acquire")
+    if buy_html:
+        print(f"\nIntrouvables -> liens d'achat : {buy_html}")
     return 0
 
 
@@ -338,6 +393,9 @@ def _cmd_acquire(args: argparse.Namespace) -> int:
         print(f"\n  --- {len(acquired)} piste(s) AUTHENTIQUE(s) dans la bibliotheque ---")
         for o in acquired:
             print(f"  {o.artist} - {o.title}  cutoff {o.new_cutoff_hz:.0f} Hz")
+    buy_html = stores_mod.write_unfindable(outcomes, paths.outputs_dir(), src.stem)
+    if buy_html:
+        print(f"\nIntrouvables -> liens d'achat : {buy_html}")
     return 0
 
 
@@ -455,6 +513,13 @@ def build_parser() -> argparse.ArgumentParser:
                        help="sous-dossier a ignorer (repetable)")
     p_ren.add_argument("-v", "--verbose", action="store_true", help="afficher aussi les fichiers deja propres")
     p_ren.set_defaults(func=_cmd_rename)
+
+    p_buy = sub.add_parser("buy",
+                           help="liens d'achat (Discogs + Bandcamp) pour des tracks introuvables")
+    p_buy.add_argument("source", help="dossier, rapport upgrade CSV, ou want-list CSV")
+    p_buy.add_argument("-x", "--exclude", action="append", default=[], metavar="NOM",
+                       help="sous-dossier a ignorer (si source = dossier)")
+    p_buy.set_defaults(func=_cmd_buy)
 
     p_cfg = sub.add_parser("config", help="gerer la config (creds, cible)")
     p_cfg.add_argument("action", choices=["show", "set"])
