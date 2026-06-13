@@ -48,4 +48,4 @@ l'OS depuis le projet slsk-batchdl et la placer dans `bin/sldl/`.
 - Flet est epingle `>=0.24,<0.30` : la ligne 0.85+ ("Flet 1.0", alpha) casse l'API.
 - Taille du bundle : ~150-250 MB (client Flutter + scipy + sldl). Normal pour une
   app desktop Python+Flutter.
-- La CLI reste disponible sans empaquetage : `python -m ddd scan|upgrade|scrape|gui`.
+- La CLI reste disponible sans empaquetage : `python -m ddd scan|upgrade|rename|buy|scrape|acquire|gui`.

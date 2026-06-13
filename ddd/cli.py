@@ -1,4 +1,4 @@
-"""CLI DDD : `ddd scan <dossier>` (et, a venir, scrape / upgrade / deploy)."""
+"""CLI DDD : scan / upgrade / rename / buy / scrape / acquire / import / config / gui."""
 
 from __future__ import annotations
 

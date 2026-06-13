@@ -121,3 +121,87 @@ def test_dedup_double_remix_paren():
     rows = _rows_from_pairs(pairs, "djset:test", "u")
     assert len(rows) == 1                                        # les 2 fusionnent
     assert rows[0]["Title"] == "Funky Blaster (Admo Remix)"      # un seul (Admo Remix)
+
+
+def test_playlist_id_detects_real_playlist():
+    from ddd.core.scrapers.djset import _playlist_id
+    assert _playlist_id("https://www.youtube.com/watch?v=abc&list=PLxxx&index=22") == "PLxxx"
+    assert _playlist_id("https://www.youtube.com/playlist?list=OL12345") == "OL12345"
+    assert _playlist_id("https://www.youtube.com/watch?v=abc&list=RDmix") is None   # mix/radio auto
+    assert _playlist_id("https://www.youtube.com/watch?v=abc") is None              # pas de playlist
+
+
+def test_clean_video_title_strips_noise_keeps_version():
+    from ddd.core.scrapers.djset import _clean_video_title
+    assert _clean_video_title("Daft Punk - Around the World (Official Video)") == "Daft Punk - Around the World"
+    assert _clean_video_title("Foo - Bar [Official Audio] (Free DL)") == "Foo - Bar"
+    assert _clean_video_title("Foo - Bar | Some Label Records") == "Foo - Bar"      # vire le tail apres |
+    assert _clean_video_title("X - Y (Original Mix)") == "X - Y (Original Mix)"     # garde la version
+    assert _clean_video_title("X - Y (Mtherapy Remix)") == "X - Y (Mtherapy Remix)"
+
+
+def test_pairs_from_entries_parses_and_skips():
+    from ddd.core.scrapers.djset import _pairs_from_entries
+    entries = [
+        {"title": "A - B (Official Video)"},   # -> ("A","B")
+        {"title": "pas de separateur"},        # skip (pas de ' - ')
+        {"title": None},                       # skip
+        {"title": "X - Y (Original Mix)"},     # garde la version
+        "pas un dict",                         # skip robustement
+    ]
+    assert _pairs_from_entries(entries) == [("A", "B"), ("X", "Y (Original Mix)")]
+
+
+def test_strip_catalog_strips_trailing_year():
+    from ddd.core.scrapers.djset import _strip_catalog, _rows_from_pairs
+    assert _strip_catalog("CR Break (1996)") == "CR Break"
+    assert _strip_catalog("Inhaled Deeply (Original Mix) (2012)") == "Inhaled Deeply (Original Mix)"
+    rows = _rows_from_pairs([("A", "B (1996)")], "djset:test", "u")
+    assert rows[0]["Title"] == "B"
+
+
+def test_playlist_video_titles_both_formats():
+    from ddd.core.scrapers.djset import _playlist_video_titles
+    data = {
+        "x": [{"playlistVideoRenderer": {"title": {"runs": [{"text": "Old - Format"}]}}}],
+        "y": {"lockupViewModel": {"metadata": {"lockupMetadataViewModel": {"title": {"content": "New - Format"}}}}},
+    }
+    assert _playlist_video_titles(data) == ["Old - Format", "New - Format"]
+
+
+def test_continuation_token():
+    from ddd.core.scrapers.djset import _continuation_token
+    assert _continuation_token({"a": {"continuationCommand": {"token": "TOK123"}}}) == "TOK123"
+    assert _continuation_token({"a": {"b": 1}}) is None
+
+
+def test_strip_lead_year():
+    from ddd.core.scrapers.djset import _split_artist_title, _rows_from_pairs
+    rows = _rows_from_pairs([_split_artist_title("(1997) Dimitri From Paris - Just About Right")], "t", "u")
+    assert rows[0]["Artist"] == "Dimitri From Paris" and rows[0]["Title"] == "Just About Right"
+
+
+def test_strip_trailing_label_keeps_version():
+    from ddd.core.scrapers.djset import _strip_catalog
+    assert _strip_catalog("Last (BASENOTIC)") == "Last"
+    assert _strip_catalog("Dom Dom Jump - Sax Mix (Basenotic)") == "Dom Dom Jump - Sax Mix"
+    assert _strip_catalog("Inhaled Deeply (Original Mix)") == "Inhaled Deeply (Original Mix)"   # version gardee
+    assert _strip_catalog("French Lesson (Science Friction Remix)") == "French Lesson (Science Friction Remix)"
+    assert _strip_catalog("Track (Part II)") == "Track (Part II)"   # 2 mots -> garde
+
+
+def test_titlecase_only_when_all_lower():
+    from ddd.core.scrapers.djset import _strip_catalog
+    assert _strip_catalog("tiko") == "Tiko"
+    assert _strip_catalog("the mood is right") == "The Mood Is Right"
+    assert _strip_catalog("DJ Koze") == "DJ Koze"          # deja casse -> respecte
+    assert _strip_catalog("Don't Stop") == "Don't Stop"
+
+
+def test_strip_year_anywhere_keeps_version():
+    from ddd.core.scrapers.djset import _strip_catalog
+    # annee au MILIEU (suivie d'un marqueur de version) -> annee partie, version gardee
+    assert _strip_catalog("Buzz Time (1996) (Edited)") == "Buzz Time (Edited)"
+    assert _strip_catalog("Think Positive (Kid Smart Remix) (2001)") == "Think Positive (Kid Smart Remix)"
+    assert _strip_catalog("They're Among Us (1996)") == "They're Among Us"
+    assert _strip_catalog("Captain Future (2003) (Q-NRT Club Mix)") == "Captain Future (Q-NRT Club Mix)"

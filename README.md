@@ -52,7 +52,9 @@ Pas besoin d'etre developpeur : telecharge l'`.exe`, double-clic, c'est une fene
   - **Puriste** (lossless pur) : vrai lossless plein spectre uniquement.
 - **Upgrade** : remplace tes fichiers sous le seuil par mieux, trouve sur Soulseek. DDD cherche FLAC, WAV et AIFF (beaucoup de DJ partagent en WAV/AIFF), avec **repli MP3 320 automatique** pour les pistes introuvables en lossless. Les MP3 sous 320 kbps sont **bannis systematiquement**, quel que soit le preset.
 - **Recuperer favoris** : scrape ta wantlist Discogs / wishlist Bandcamp et la telecharge.
+- **Set / playlist YouTube** : colle l'URL d'un set (YouTube / 1001Tracklists) ou d'une **playlist YouTube** (chaque video = un track) -> DDD en extrait la tracklist en want-list (CSV).
 - **Une seule bibliotheque** : tout ce qui est valide atterrit dans `~/Music/DDD` (modifiable dans les Reglages), dedoublonne. Les rejets partent a la **corbeille** (recuperables), jamais supprimes en dur.
+- **Introuvables -> liens d'achat** : ce que Soulseek ne trouve pas ressort dans une page cliquable (logo + theme DDD) avec des liens **Discogs** (marketplace vinyle, parfait pour les vieux pressages) et **Bandcamp**, pour l'acheter.
 
 **Le filet de securite : le spectre fait loi.** Chaque telechargement est re-audite au spectre (FFT) ; **le format et le bitrate declares ne servent qu'a la recherche Soulseek, jamais a la decision de garder ou rejeter.** Le spectre ne ment pas, les tags si - c'est ce qui distingue un vrai 320 / lossless d'un upscale (un MP3 128 reencode en .flac ou .wav, ce que les filtres Soulseek ne voient pas). Un fichier n'est garde que s'il passe trois controles : **spectral** (au-dessus du seuil du preset, pas un upscale), **duree** (pas un extrait / preview) et **identite titre + artiste** (le bon morceau, pas un faux match). Sinon -> corbeille.
 
@@ -90,7 +92,7 @@ tes promos / white-labels, le domaine public/CC, ou re-telecharger en lossless c
 
 Coeur **Python** portable (Windows / Mac / Linux) + fenetre native **Flet**. Telechargement via
 **sldl** ([fiso64/slsk-batchdl](https://github.com/fiso64/slsk-batchdl), embarque). Detection spectrale
-via numpy/scipy/soundfile. Scrapers Discogs (API) et Bandcamp (cloudscraper). Tout est embarque dans
+via numpy/scipy/soundfile. Scrapers Discogs (API), Bandcamp (cloudscraper), sets et playlists YouTube (yt-dlp). Tout est embarque dans
 l'`.exe` (pas besoin de Python ni de ffmpeg).
 
 ---
@@ -113,9 +115,18 @@ l'`.exe` (pas besoin de Python ni de ffmpeg).
 # Importer un dossier existant dans la bibliotheque (AUTHENTIC garde, reste corbeille)
 .\.venv\Scripts\python.exe -m ddd import "C:\chemin\vers\Musique"
 
+# Remettre les noms d'un dossier en "Artiste - Titre" (depuis nom + tags ; dry-run, --apply pour ecrire)
+.\.venv\Scripts\python.exe -m ddd rename "C:\chemin\vers\Musique"
+
 # Recuperer ses favoris -> bibliotheque
 .\.venv\Scripts\python.exe -m ddd scrape bandcamp <user>
 .\.venv\Scripts\python.exe -m ddd acquire outputs\bandcamp_<user>.csv
+
+# Set DJ ou playlist YouTube (chaque video = un track) -> extrait la tracklist en want-list CSV
+.\.venv\Scripts\python.exe -m ddd scrape djset "https://www.youtube.com/playlist?list=..."
+
+# Introuvables -> page de liens d'achat Discogs + Bandcamp (dossier, rapport upgrade, ou want-list)
+.\.venv\Scripts\python.exe -m ddd buy "C:\chemin\vers\Musique"
 
 # Reglages (dossier bibliotheque, token Discogs, login Soulseek) -> %APPDATA%\ddd
 .\.venv\Scripts\python.exe -m ddd config set download_dir "D:\Ma Bibliotheque"

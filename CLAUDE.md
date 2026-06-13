@@ -52,7 +52,7 @@ ddd/
 │
 ├── ddd/                        # >>> LE COEUR ACTUEL : package Python portable <<<
 │   ├── __main__.py             # `python -m ddd ...`
-│   ├── cli.py                  # CLI : scan | upgrade | scrape | acquire | config | gui
+│   ├── cli.py                  # CLI : scan | upgrade | rename | buy | scrape | acquire | import | config | gui
 │   ├── gui.py                  # fenetre native Flet (0.28.x)
 │   ├── paths.py                # chemins frozen-aware (dev vs .exe PyInstaller)
 │   └── core/
@@ -115,7 +115,7 @@ $env:DISCOGS_TOKEN = "ton_token"
 
 ---
 
-## État actuel (2026-05-30) : productisé en logiciel `ddd`
+## État actuel (2026-06-13) : productisé en logiciel `ddd`
 
 Le projet n'est plus seulement un pipeline PowerShell : c'est maintenant un **vrai
 logiciel** (coeur Python portable + fenêtre native + `.exe` une-touche). L'ancien
@@ -138,8 +138,17 @@ sur quoi on construit désormais.
   (les filtres sldl ne détectent PAS les upscales - le re-audit, si). Dry-run par
   défaut ; `--apply` remplace, `--delete-old` supprime l'original. **Prouvé en réel**
   sur GAMOLKA\Soa Spirit : 3 vrais FLAC posés, 2 upscales (320k déguisés en .flac) rejetés.
-- ✅ **`ddd scrape discogs|bandcamp`** + **`ddd acquire <csv>`** (télécharge une
-  want-list en vrai lossless vers un inbox).
+- ✅ **`ddd rename <dossier>`** : remet les fichiers en `Artiste - Titre` via un résolveur de
+  nom commun (nom propre → tag-titre → tags → déslug ; gère les tags piégés type compilateur,
+  ex. `artist="Tibor Tury"` + vrai couple dans le tag titre). Dry-run par défaut ; `--apply`
+  écrit, `--dedup` vire les copies byte-identiques. Le même résolveur alimente `upgrade`/`buy`
+  (`search_title` nettoie aussi les `[label, année]` côté requête).
+- ✅ **`ddd scrape discogs|bandcamp|djset`** + **`ddd acquire <csv>`** (télécharge une want-list
+  en vrai lossless). **djset** : URL d'un set (YouTube/1001TL, tracklist) ou d'une **playlist
+  YouTube** (chaque vidéo = un track).
+- ✅ **`ddd buy <dossier|rapport|wantlist>`** : pour les introuvables Soulseek, génère une page
+  HTML cliquable (logo + thème DDD) avec liens **Discogs** + **Bandcamp**. Auto-émise en fin
+  d'`upgrade`/`acquire` ; helper unique `stores.write_unfindable()` câblé CLI + workers GUI.
 - ✅ **`ddd config show|set`** : creds/réglages user dans `%APPDATA%\ddd\config.json`.
 - ✅ **`ddd gui`** : fenêtre native Flet (dossier, scan, tableau filtrable, upgrade, réglages).
 - ✅ **`.exe` autonome** : `packaging/build.ps1` → `dist/DDD/DDD.exe` (255 Mo, embarque
