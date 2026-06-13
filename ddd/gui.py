@@ -18,6 +18,7 @@ incompatibles - voir pyproject [project.optional-dependencies].gui.
 
 from __future__ import annotations
 
+import atexit
 import threading
 from pathlib import Path
 from typing import List, Optional
@@ -266,6 +267,22 @@ def main(page: ft.Page) -> None:
             except Exception:  # noqa: BLE001
                 pass
         page.update()
+
+    def _kill_sldl_on_exit(_e=None) -> None:
+        """Filet de securite a la fermeture de la fenetre : tue le sldl en cours s'il y en
+        a un. Sinon il survit orphelin et tient le port 50300 -> ralentit/bloque le run
+        suivant (le zombie recurrent). Le kill en tete de chaque lot le rattrape aussi,
+        mais autant ne jamais le creer."""
+        proc = state.active_proc
+        if proc is not None:
+            try:
+                proc.terminate()
+            except Exception:  # noqa: BLE001
+                pass
+        soulseek.stop_orphan_sldl()
+
+    page.on_disconnect = _kill_sldl_on_exit   # fenetre fermee / client deconnecte
+    atexit.register(_kill_sldl_on_exit)       # repli : sortie du process
 
     def current_excludes() -> list:
         return [s for s in (cfg.get("default_excludes", "") or "").split(",") if s] or ["PROD"]
