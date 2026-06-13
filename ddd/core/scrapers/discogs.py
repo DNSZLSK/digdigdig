@@ -43,7 +43,7 @@ def _http_get(url: str, token: str, retries: int = 5):
             continue
         r.raise_for_status()                          # 401/404/... -> remonte clairement
         return r.json()
-    raise RuntimeError(f"Discogs: echec apres {retries} essais: {url}")
+    raise RuntimeError(f"Discogs: failed after {retries} tries: {url}")
 
 
 def _dur_to_secs(dur: str):
@@ -109,7 +109,7 @@ def scrape_discogs(
         except Exception:  # noqa: BLE001
             token = ""
     if not token:
-        raise ValueError("token Discogs requis (argument, $DISCOGS_TOKEN, ou config ddd)")
+        raise ValueError("Discogs token required (argument, $DISCOGS_TOKEN, or ddd config)")
 
     cdir = Path(cache_dir)
     cdir.mkdir(parents=True, exist_ok=True)
@@ -122,7 +122,7 @@ def scrape_discogs(
 
     for source_name, start_url in sources:
         if progress:
-            progress(f"Discogs: {source_name} de {username}...")
+            progress(f"Discogs: {source_name} of {username}...")
         key = "wants" if source_name == "wantlist" else "releases"
         for item in _paginated(start_url, token, key):
             basic = item.get("basic_information", {})
@@ -161,7 +161,7 @@ def scrape_discogs(
                     "SourceUrl": f"https://www.discogs.com/release/{rid}",
                 })
     if progress:
-        progress(f"Discogs: {len(rows)} pistes")
+        progress(f"Discogs: {len(rows)} tracks")
     return rows
 
 

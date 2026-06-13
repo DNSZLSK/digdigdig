@@ -19,33 +19,34 @@ from .core.scan import (
 from .core import upgrade as upgrade_mod
 from .core import rename as rename_mod
 from .core import stores as stores_mod
+from .core import soulseek
 
 # Ordre d'affichage du resume (du plus actionnable au moins)
 VERDICT_ORDER = [LOSSLESS, HQ, DOUTEUX, MAUVAIS, "ERROR", "SKIPPED"]
 VERDICT_LABEL = {
-    LOSSLESS: "lossless (plein spectre)",
-    HQ: "HQ (jouable club, >=18 kHz)",
-    DOUTEUX: "douteux (16-18 kHz)",
-    MAUVAIS: "mauvais (<16 kHz)",
-    "ERROR": "erreur d'analyse",
-    "SKIPPED": "ignore",
+    LOSSLESS: "lossless (full spectrum)",
+    HQ: "HQ (club-playable, >=18 kHz)",
+    DOUTEUX: "iffy (16-18 kHz)",
+    MAUVAIS: "bad (<16 kHz)",
+    "ERROR": "analysis error",
+    "SKIPPED": "skipped",
 }
 
 # Statuts de nommage a remonter (on n'affiche pas OK / NAME_ONLY = sans interet)
 NAME_PROBLEM_ORDER = [audit_mod.TAG_MISMATCH, audit_mod.VERSION_MISMATCH, audit_mod.UNPARSEABLE]
 NAME_PROBLEM_LABEL = {
-    audit_mod.TAG_MISMATCH: "tags ne collent pas au nom",
-    audit_mod.VERSION_MISMATCH: "version nom != version tag",
-    audit_mod.UNPARSEABLE: "nom sans 'Artiste - Titre'",
+    audit_mod.TAG_MISMATCH: "tags don't match the name",
+    audit_mod.VERSION_MISMATCH: "name version != tag version",
+    audit_mod.UNPARSEABLE: "name without 'Artist - Title'",
 }
 
 
 def _human_size(n: float) -> str:
-    for unit in ("o", "Ko", "Mo"):
+    for unit in ("B", "KB", "MB"):
         if n < 1024:
             return f"{n:.0f} {unit}"
         n /= 1024.0
-    return f"{n:.1f} Go"
+    return f"{n:.1f} GB"
 
 
 def _cmd_scan(args: argparse.Namespace) -> int:
@@ -53,14 +54,14 @@ def _cmd_scan(args: argparse.Namespace) -> int:
 
     folder = Path(args.folder)
     if not folder.exists():
-        print(f"dossier introuvable: {folder}", file=sys.stderr)
+        print(f"folder not found: {folder}", file=sys.stderr)
         return 2
 
     def progress(i: int, total: int, f: Path) -> None:
         if args.verbose or i == total or i % 25 == 0:
             print(f"  [{i}/{total}] {f.name}", file=sys.stderr)
 
-    print(f"Scan de {folder} ...", file=sys.stderr)
+    print(f"Scanning {folder} ...", file=sys.stderr)
     records = scan_library(folder, exclude_names=args.exclude, progress=progress)
 
     out_csv = Path(args.out) if args.out else paths.outputs_dir() / f"scan_{folder.name}.csv"
@@ -74,9 +75,9 @@ def _cmd_scan(args: argparse.Namespace) -> int:
 
     print()
     print(f"=== Scan: {folder.name} ===")
-    print(f"{len(records)} fichiers audio analyses\n")
+    print(f"{len(records)} audio files scanned\n")
 
-    print("QUALITE")
+    print("QUALITY")
     for verdict in VERDICT_ORDER:
         n = qsummary.get(verdict, 0)
         if n:
@@ -84,7 +85,7 @@ def _cmd_scan(args: argparse.Namespace) -> int:
 
     name_problems = sum(nsummary.get(s, 0) for s in NAME_PROBLEM_ORDER)
     if name_problems:
-        print("\nNOMMAGE / TAGS")
+        print("\nNAMING / TAGS")
         for status in NAME_PROBLEM_ORDER:
             n = nsummary.get(status, 0)
             if n:
@@ -93,25 +94,25 @@ def _cmd_scan(args: argparse.Namespace) -> int:
     if dup_groups:
         dup_files = sum(len(g) for g in dup_groups)
         wasted = sum(g[0].size_bytes * (len(g) - 1) for g in dup_groups)
-        print(f"\nDOUBLONS : {len(dup_groups)} groupes, {dup_files} fichiers "
-              f"(~{_human_size(wasted)} recuperables)")
+        print(f"\nDUPLICATES: {len(dup_groups)} groups, {dup_files} files "
+              f"(~{_human_size(wasted)} recoverable)")
         for g in dup_groups[:10]:
             print(f"  x{len(g)}  {_human_size(g[0].size_bytes)}")
             for r in g:
                 print(f"        {r.quality.path}")
         if len(dup_groups) > 10:
-            print(f"  ... +{len(dup_groups) - 10} autres groupes (voir le CSV)")
+            print(f"  ... +{len(dup_groups) - 10} more groups (see the CSV)")
 
     # Detail qualite a problemes (faux lossless en tete)
     preset = quality_mod.preset_from_config()
     flagged = [r for r in records if r.quality.verdict not in ("SKIPPED", "ERROR")
                and not quality_mod.is_accepted(r.quality, preset)]
     if flagged:
-        print(f"\n  --- {len(flagged)} a verifier/remplacer ---")
+        print(f"\n  --- {len(flagged)} to check/replace ---")
         for r in sorted(flagged, key=lambda r: (r.quality.verdict, r.quality.cutoff_hz)):
             print(f"  {r.quality.verdict:<14} cutoff {r.quality.cutoff_hz:>7.0f} Hz  {r.quality.filename}")
 
-    print(f"\nRapport : {out_csv}")
+    print(f"\nReport: {out_csv}")
     print(f"          {out_json}")
     return 0
 
@@ -119,7 +120,7 @@ def _cmd_scan(args: argparse.Namespace) -> int:
 def _cmd_upgrade(args: argparse.Namespace) -> int:
     folder = Path(args.folder)
     if not folder.exists():
-        print(f"dossier introuvable: {folder}", file=sys.stderr)
+        print(f"folder not found: {folder}", file=sys.stderr)
         return 2
 
     root = paths.resource_base()
@@ -139,8 +140,8 @@ def _cmd_upgrade(args: argparse.Namespace) -> int:
         elif args.verbose and len(a) == 3:
             print(f"  scan [{a[0]}/{a[1]}] {Path(a[2]).name}", file=sys.stderr)
 
-    print(f"Upgrade de {folder}  ->  bibliotheque {dl_dir}", file=sys.stderr)
-    print("(vrais lossless deposes dans la bibliotheque ; faux sources envoyes a la corbeille)",
+    print(f"Upgrade of {folder}  ->  library {dl_dir}", file=sys.stderr)
+    print("(real lossless added to the library; fake sources sent to trash)",
           file=sys.stderr)
     outcomes = upgrade_mod.run_upgrade(
         folder, root=root, staging_dir=staging, download_dir=dl_dir,
@@ -156,19 +157,19 @@ def _cmd_upgrade(args: argparse.Namespace) -> int:
 
     replaced = [o for o in outcomes if o.action in (upgrade_mod.ACT_REPLACED, upgrade_mod.ACT_WOULD_REPLACE)]
     if replaced:
-        print(f"\n  --- {len(replaced)} upgrade(s) AUTHENTIQUE(s) ---")
+        print(f"\n  --- {len(replaced)} AUTHENTIC upgrade(s) ---")
         for o in replaced:
             print(f"  {o.artist} - {o.title}  cutoff {o.new_cutoff_hz:.0f} Hz")
 
     out_csv = paths.outputs_dir() / f"upgrade_{folder.name}.csv"
     _write_outcomes_csv(outcomes, out_csv)
-    print(f"\nRapport : {out_csv}")
+    print(f"\nReport: {out_csv}")
 
     # Introuvables -> page de liens d'achat (helper commun a tous les points d'entree)
     buy_html = stores_mod.write_unfindable(outcomes, paths.outputs_dir(), folder.name)
     if buy_html:
         n = sum(1 for o in outcomes if o.action == upgrade_mod.ACT_NOT_FOUND and o.title)
-        print(f"{n} introuvable(s) -> liens d'achat : {buy_html}")
+        print(f"{n} not found -> buy links: {buy_html}")
     return 0
 
 
@@ -190,7 +191,7 @@ def _cmd_rename(args: argparse.Namespace) -> int:
 
     folder = Path(args.folder)
     if not folder.exists():
-        print(f"dossier introuvable: {folder}", file=sys.stderr)
+        print(f"folder not found: {folder}", file=sys.stderr)
         return 2
 
     rep = rename_mod.rename_folder(
@@ -198,7 +199,7 @@ def _cmd_rename(args: argparse.Namespace) -> int:
         exclude=args.exclude, outputs_dir=paths.outputs_dir(),
     )
 
-    mode = "APPLIQUE" if args.apply else "DRY-RUN"
+    mode = "APPLIED" if args.apply else "DRY-RUN"
     print(f"\n=== Rename: {folder.name} ===  [{mode}]")
     counts = Counter(o.action for o in rep.ops)
     for action in (rename_mod.REN, rename_mod.OK, rename_mod.SKIP, rename_mod.DUP):
@@ -207,13 +208,13 @@ def _cmd_rename(args: argparse.Namespace) -> int:
 
     if rep.dups:
         nred = sum(len(g.redundant) for g in rep.dups)
-        verb = "supprimees" if (args.apply and args.dedup) else "a supprimer (ajoute --dedup)"
-        print(f"\nDOUBLONS : {len(rep.dups)} groupes, {nred} copies {verb} "
+        verb = "deleted" if (args.apply and args.dedup) else "to delete (add --dedup)"
+        print(f"\nDUPLICATES: {len(rep.dups)} groups, {nred} copies {verb} "
               f"(~{_human_size(rep.wasted_bytes)})")
 
     renamed = rep.of(rename_mod.REN)
     if renamed:
-        tag = "RENOMME" if args.apply else "RENOMMERAIT"
+        tag = "RENAMED" if args.apply else "WOULD RENAME"
         print(f"\n  --- {len(renamed)} {tag} ---")
         for o in renamed:
             print(f"  {Path(o.src).name}")
@@ -221,20 +222,20 @@ def _cmd_rename(args: argparse.Namespace) -> int:
 
     skipped = rep.of(rename_mod.SKIP)
     if skipped:
-        print(f"\n  --- {len(skipped)} laisse(s) tel(s) quel(s) (resolution peu fiable) ---")
+        print(f"\n  --- {len(skipped)} left as-is (low-confidence) ---")
         for o in skipped[:20]:
             print(f"  {Path(o.src).name}   ({o.reason})")
         if len(skipped) > 20:
-            print(f"  ... +{len(skipped) - 20} autres")
+            print(f"  ... +{len(skipped) - 20} more")
 
     if args.verbose:
         for o in rep.of(rename_mod.OK):
             print(f"  OK    {Path(o.src).name}")
 
     if rep.log_path:
-        print(f"\nJournal : {rep.log_path}")
+        print(f"\nLog: {rep.log_path}")
     if not args.apply:
-        print("\n(dry-run) Relance avec --apply pour ecrire ; ajoute --dedup pour supprimer les copies.")
+        print("\n(dry-run) Re-run with --apply to write; add --dedup to delete copies.")
     return 0
 
 
@@ -243,7 +244,7 @@ def _cmd_buy(args: argparse.Namespace) -> int:
 
     src = Path(args.source)
     if not src.exists():
-        print(f"source introuvable: {src}", file=sys.stderr)
+        print(f"source not found: {src}", file=sys.stderr)
         return 2
 
     tracks = []
@@ -272,12 +273,12 @@ def _cmd_buy(args: argparse.Namespace) -> int:
 
     tracks = [(a, t) for a, t in tracks if t]
     if not tracks:
-        print("aucune track exploitable dans la source.", file=sys.stderr)
+        print("no usable track in the source.", file=sys.stderr)
         return 0
 
     out_html = paths.outputs_dir() / f"buy_{name}.html"
     out_csv = paths.outputs_dir() / f"buy_{name}.csv"
-    stores_mod.write_buy_page(tracks, out_html, out_csv, heading=f"A acheter - {name}")
+    stores_mod.write_buy_page(tracks, out_html, out_csv, heading=f"To buy - {name}")
     print(f"{len(tracks)} track(s) -> {out_html}")
     print(f"            {out_csv}")
     return 0
@@ -294,7 +295,7 @@ def _acquire_rows_now(rows) -> int:
         if len(a) == 1:
             print(a[0], file=sys.stderr)
 
-    print(f"\nLancement acquire sur {len(rows)} pistes -> {dl_dir}", file=sys.stderr)
+    print(f"\nStarting acquire on {len(rows)} tracks -> {dl_dir}", file=sys.stderr)
     outcomes = upgrade_mod.acquire_rows(
         rows, root=root, download_dir=dl_dir, staging_dir=paths.cache_dl_dir(),
         limit=0, profile="lossless-strict", progress=progress, log_path=log_path)
@@ -304,7 +305,7 @@ def _acquire_rows_now(rows) -> int:
         print(f"  {action:<16} {n:>5}")
     buy_html = stores_mod.write_unfindable(outcomes, paths.outputs_dir(), "acquire")
     if buy_html:
-        print(f"\nIntrouvables -> liens d'achat : {buy_html}")
+        print(f"\nNot found -> buy links: {buy_html}")
     return 0
 
 
@@ -314,7 +315,7 @@ def _cmd_scrape(args: argparse.Namespace) -> int:
 
     source = args.source
     if source not in scrapers.SOURCES:
-        print(f"source inconnue: {source} (dispo: {', '.join(scrapers.SOURCES)})", file=sys.stderr)
+        print(f"unknown source: {source} (available: {', '.join(scrapers.SOURCES)})", file=sys.stderr)
         return 2
 
     def progress(msg: str) -> None:
@@ -331,7 +332,7 @@ def _cmd_scrape(args: argparse.Namespace) -> int:
             rows = scrapers.scrape_bandcamp(
                 args.username, expand_albums=not args.no_expand_albums, progress=progress)
     except (ValueError, RuntimeError) as e:
-        print(f"ERREUR: {e}", file=sys.stderr)
+        print(f"ERROR: {e}", file=sys.stderr)
         return 1
 
     if args.out:
@@ -346,11 +347,11 @@ def _cmd_scrape(args: argparse.Namespace) -> int:
         w.writerows(rows)
 
     print(f"\n=== Scrape {source}: {args.username} ===")
-    print(f"{len(rows)} pistes -> {out}")
+    print(f"{len(rows)} tracks -> {out}")
     if getattr(args, "acquire", False) and rows:
         return _acquire_rows_now(rows)
     if not args.no_acquire and rows:
-        print("\n(pour telecharger ces pistes en vrai lossless : "
+        print("\n(to download these tracks in real lossless: "
               f"ddd acquire \"{out}\")")
     return 0
 
@@ -362,13 +363,13 @@ def _cmd_acquire(args: argparse.Namespace) -> int:
 
     src = Path(args.csv)
     if not src.exists():
-        print(f"CSV introuvable: {src}", file=sys.stderr)
+        print(f"CSV not found: {src}", file=sys.stderr)
         return 2
 
     with open(src, newline="", encoding="utf-8-sig") as fh:
         rows = list(csv.DictReader(fh))
     if not rows:
-        print("CSV vide", file=sys.stderr)
+        print("empty CSV", file=sys.stderr)
         return 1
 
     root = paths.resource_base()
@@ -379,7 +380,7 @@ def _cmd_acquire(args: argparse.Namespace) -> int:
         if len(a) == 1:
             print(a[0], file=sys.stderr)
 
-    print(f"Acquire {len(rows)} pistes -> bibliotheque {dl_dir}", file=sys.stderr)
+    print(f"Acquire {len(rows)} tracks -> library {dl_dir}", file=sys.stderr)
     outcomes = upgrade_mod.acquire_rows(
         rows, root=root, download_dir=dl_dir, staging_dir=paths.cache_dl_dir(),
         limit=args.limit, profile=args.profile, progress=progress, log_path=log_path)
@@ -390,12 +391,12 @@ def _cmd_acquire(args: argparse.Namespace) -> int:
         print(f"  {action:<16} {n:>5}")
     acquired = [o for o in outcomes if o.action == upgrade_mod.ACT_ACQUIRED]
     if acquired:
-        print(f"\n  --- {len(acquired)} piste(s) AUTHENTIQUE(s) dans la bibliotheque ---")
+        print(f"\n  --- {len(acquired)} AUTHENTIC track(s) in the library ---")
         for o in acquired:
             print(f"  {o.artist} - {o.title}  cutoff {o.new_cutoff_hz:.0f} Hz")
     buy_html = stores_mod.write_unfindable(outcomes, paths.outputs_dir(), src.stem)
     if buy_html:
-        print(f"\nIntrouvables -> liens d'achat : {buy_html}")
+        print(f"\nNot found -> buy links: {buy_html}")
     return 0
 
 
@@ -403,7 +404,7 @@ def _cmd_import(args: argparse.Namespace) -> int:
     """Migre un dossier dans la bibliotheque : lossless -> download_dir, reste -> corbeille."""
     src = Path(args.folder)
     if not src.exists():
-        print(f"dossier introuvable: {src}", file=sys.stderr)
+        print(f"folder not found: {src}", file=sys.stderr)
         return 2
     dl_dir = Path(args.download_dir) if args.download_dir else paths.download_dir(config_mod.load())
 
@@ -411,13 +412,13 @@ def _cmd_import(args: argparse.Namespace) -> int:
         if args.verbose or i == total or i % 25 == 0:
             print(f"  [{i}/{total}] {Path(f).name}", file=sys.stderr)
 
-    print(f"Import de {src}  ->  bibliotheque {dl_dir}", file=sys.stderr)
+    print(f"Import of {src}  ->  library {dl_dir}", file=sys.stderr)
     stats = upgrade_mod.import_folder(src, dl_dir, exclude_names=args.exclude, progress=progress)
     print(f"\n=== Import: {src.name} ===")
-    print(f"  {stats['kept']:>5}  vrais lossless deplaces dans la bibliotheque")
-    print(f"  {stats['duplicates']:>5}  doublons (deja dans la bibliotheque) -> corbeille")
-    print(f"  {stats['trashed']:>5}  non-lossless -> corbeille")
-    print(f"  {stats['total']:>5}  fichiers scannes au total")
+    print(f"  {stats['kept']:>5}  real lossless moved to the library")
+    print(f"  {stats['duplicates']:>5}  duplicates (already in library) -> trash")
+    print(f"  {stats['trashed']:>5}  non-lossless -> trash")
+    print(f"  {stats['total']:>5}  files scanned in total")
     return 0
 
 
@@ -426,7 +427,7 @@ def _cmd_config(args: argparse.Namespace) -> int:
         cfg = config_mod.load()
         print(f"Config: {config_mod.config_path()}")
         if not cfg:
-            print("  (vide)")
+            print("  (empty)")
         for k in config_mod.KNOWN_KEYS:
             if k in cfg:
                 val = cfg[k]
@@ -449,85 +450,85 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--version", action="version", version=f"ddd {__version__}")
     sub = parser.add_subparsers(dest="command", required=True)
 
-    p_scan = sub.add_parser("scan", help="scanner la qualite d'un dossier (vrai lossless ou non)")
-    p_scan.add_argument("folder", help="dossier a scanner")
-    p_scan.add_argument("-o", "--out", help="chemin du rapport CSV (defaut: outputs/scan_<dossier>.csv)")
+    p_scan = sub.add_parser("scan", help="scan a folder's quality (real lossless or not)")
+    p_scan.add_argument("folder", help="folder to scan")
+    p_scan.add_argument("-o", "--out", help="CSV report path (default: outputs/scan_<folder>.csv)")
     p_scan.add_argument("-x", "--exclude", action="append", default=[],
-                        metavar="NOM", help="nom de sous-dossier a ignorer (repetable, ex: -x PROD)")
-    p_scan.add_argument("-v", "--verbose", action="store_true", help="afficher chaque fichier")
+                        metavar="NAME", help="subfolder name to ignore (repeatable, e.g. -x PROD)")
+    p_scan.add_argument("-v", "--verbose", action="store_true", help="show each file")
     p_scan.set_defaults(func=_cmd_scan)
 
     p_up = sub.add_parser("upgrade",
-                          help="chercher un vrai lossless sur Soulseek pour les fichiers flagges")
-    p_up.add_argument("folder", help="dossier a upgrader")
-    p_up.add_argument("--download-dir", help="bibliotheque lossless cible (defaut: config / ~/Music/DDD)")
+                          help="find real lossless on Soulseek for flagged files")
+    p_up.add_argument("folder", help="folder to upgrade")
+    p_up.add_argument("--download-dir", help="target lossless library (default: config / ~/Music/DDD)")
     p_up.add_argument("-x", "--exclude", action="append", default=["PROD"],
-                      metavar="NOM", help="sous-dossier a ignorer (defaut: PROD). Repetable.")
+                      metavar="NAME", help="subfolder to ignore (default: PROD). Repeatable.")
     p_up.add_argument("--preset", choices=["dj_club", "audiophile", "puriste"],
-                      help="seuil qualite (defaut: config, dj_club)")
+                      help="quality bar (default: config, dj_club)")
     p_up.add_argument("-n", "--limit", type=int, default=0,
-                      help="limiter a N pistes (smoke test)")
-    p_up.add_argument("--staging", help="cache transitoire de download (defaut: .cache-dl)")
+                      help="limit to N tracks (smoke test)")
+    p_up.add_argument("--staging", help="transient download cache (default: .cache-dl)")
     p_up.add_argument("--profile", default="lossless-strict",
-                      help="profil sldl (defaut: lossless-strict = FLAC uniquement)")
-    p_up.add_argument("-v", "--verbose", action="store_true", help="afficher chaque fichier scanne")
+                      help="sldl profile (default: lossless-strict = FLAC only)")
+    p_up.add_argument("-v", "--verbose", action="store_true", help="show each scanned file")
     p_up.set_defaults(func=_cmd_upgrade)
 
-    p_sc = sub.add_parser("scrape", help="scraper favoris/tracklists -> CSV want-list (-> acquire)")
-    p_sc.add_argument("source", choices=["discogs", "bandcamp", "djset"], help="source a scraper")
-    p_sc.add_argument("username", metavar="USER_OU_URL",
-                      help="pseudo (discogs/bandcamp) OU url du set (djset: YouTube/1001Tracklists)")
-    p_sc.add_argument("-o", "--out", help="CSV de sortie (defaut: outputs/<source>_<user>.csv)")
-    p_sc.add_argument("--token", help="token Discogs (sinon $DISCOGS_TOKEN ou config ddd)")
-    p_sc.add_argument("--include-collection", action="store_true", help="Discogs: aussi la collection")
-    p_sc.add_argument("--no-expand-albums", action="store_true", help="Bandcamp: garder les albums entiers")
+    p_sc = sub.add_parser("scrape", help="scrape favorites/tracklists -> CSV want-list (-> acquire)")
+    p_sc.add_argument("source", choices=["discogs", "bandcamp", "djset"], help="source to scrape")
+    p_sc.add_argument("username", metavar="USER_OR_URL",
+                      help="username (discogs/bandcamp) OR set URL (djset: YouTube/1001Tracklists)")
+    p_sc.add_argument("-o", "--out", help="output CSV (default: outputs/<source>_<user>.csv)")
+    p_sc.add_argument("--token", help="Discogs token (else $DISCOGS_TOKEN or ddd config)")
+    p_sc.add_argument("--include-collection", action="store_true", help="Discogs: also the collection")
+    p_sc.add_argument("--no-expand-albums", action="store_true", help="Bandcamp: keep whole albums")
     p_sc.add_argument("--acquire", action="store_true",
-                      help="enchainer direct sur l'acquire (telecharge les tracks trouvees)")
-    p_sc.add_argument("--no-acquire", action="store_true", help="ne pas suggerer l'etape acquire")
+                      help="chain straight into acquire (downloads the tracks found)")
+    p_sc.add_argument("--no-acquire", action="store_true", help="don't suggest the acquire step")
     p_sc.set_defaults(func=_cmd_scrape)
 
-    p_ac = sub.add_parser("acquire", help="telecharger une want-list CSV en vrai lossless (bibliotheque)")
-    p_ac.add_argument("csv", help="CSV want-list (sortie de scrape)")
-    p_ac.add_argument("--download-dir", help="bibliotheque cible (defaut: config / ~/Music/DDD)")
-    p_ac.add_argument("-n", "--limit", type=int, default=0, help="limiter a N pistes")
-    p_ac.add_argument("--profile", default="lossless-strict", help="profil sldl")
+    p_ac = sub.add_parser("acquire", help="download a CSV want-list in real lossless (library)")
+    p_ac.add_argument("csv", help="CSV want-list (scrape output)")
+    p_ac.add_argument("--download-dir", help="target library (default: config / ~/Music/DDD)")
+    p_ac.add_argument("-n", "--limit", type=int, default=0, help="limit to N tracks")
+    p_ac.add_argument("--profile", default="lossless-strict", help="sldl profile")
     p_ac.set_defaults(func=_cmd_acquire)
 
     p_im = sub.add_parser("import",
-                          help="migrer un dossier dans la bibliotheque (lossless garde, reste corbeille)")
-    p_im.add_argument("folder", help="dossier a importer/trier")
-    p_im.add_argument("--download-dir", help="bibliotheque cible (defaut: config / ~/Music/DDD)")
-    p_im.add_argument("-x", "--exclude", action="append", default=[], metavar="NOM",
-                      help="sous-dossier a ignorer (repetable)")
-    p_im.add_argument("-v", "--verbose", action="store_true", help="afficher chaque fichier")
+                          help="migrate a folder into the library (lossless kept, the rest trashed)")
+    p_im.add_argument("folder", help="folder to import/sort")
+    p_im.add_argument("--download-dir", help="target library (default: config / ~/Music/DDD)")
+    p_im.add_argument("-x", "--exclude", action="append", default=[], metavar="NAME",
+                      help="subfolder to ignore (repeatable)")
+    p_im.add_argument("-v", "--verbose", action="store_true", help="show each file")
     p_im.set_defaults(func=_cmd_import)
 
     p_ren = sub.add_parser("rename",
-                           help="renommer un dossier en 'Artiste - Titre' (depuis nom + tags)")
-    p_ren.add_argument("folder", help="dossier a renommer")
+                           help="rename a folder to 'Artist - Title' (from name + tags)")
+    p_ren.add_argument("folder", help="folder to rename")
     p_ren.add_argument("--apply", action="store_true",
-                       help="ecrire les renommages (defaut: dry-run, rien n'est touche)")
+                       help="write the renames (default: dry-run, nothing touched)")
     p_ren.add_argument("--dedup", action="store_true",
-                       help="envoyer les copies byte-identiques a la corbeille (garde 1 exemplaire)")
-    p_ren.add_argument("-x", "--exclude", action="append", default=[], metavar="NOM",
-                       help="sous-dossier a ignorer (repetable)")
-    p_ren.add_argument("-v", "--verbose", action="store_true", help="afficher aussi les fichiers deja propres")
+                       help="send byte-identical copies to trash (keep 1)")
+    p_ren.add_argument("-x", "--exclude", action="append", default=[], metavar="NAME",
+                       help="subfolder to ignore (repeatable)")
+    p_ren.add_argument("-v", "--verbose", action="store_true", help="also show files already clean")
     p_ren.set_defaults(func=_cmd_rename)
 
     p_buy = sub.add_parser("buy",
-                           help="liens d'achat (Discogs + Bandcamp) pour des tracks introuvables")
-    p_buy.add_argument("source", help="dossier, rapport upgrade CSV, ou want-list CSV")
-    p_buy.add_argument("-x", "--exclude", action="append", default=[], metavar="NOM",
-                       help="sous-dossier a ignorer (si source = dossier)")
+                           help="buy links (Discogs + Bandcamp) for tracks not found")
+    p_buy.add_argument("source", help="folder, upgrade report CSV, or want-list CSV")
+    p_buy.add_argument("-x", "--exclude", action="append", default=[], metavar="NAME",
+                       help="subfolder to ignore (if source = folder)")
     p_buy.set_defaults(func=_cmd_buy)
 
-    p_cfg = sub.add_parser("config", help="gerer la config (creds, cible)")
+    p_cfg = sub.add_parser("config", help="manage config (creds, target)")
     p_cfg.add_argument("action", choices=["show", "set"])
-    p_cfg.add_argument("key", nargs="?", help="cle (ex: discogs_token)")
-    p_cfg.add_argument("value", nargs="?", help="valeur")
+    p_cfg.add_argument("key", nargs="?", help="key (e.g. discogs_token)")
+    p_cfg.add_argument("value", nargs="?", help="value")
     p_cfg.set_defaults(func=_cmd_config)
 
-    p_gui = sub.add_parser("gui", help="lancer la fenetre native (Flet)")
+    p_gui = sub.add_parser("gui", help="launch the native window (Flet)")
     p_gui.set_defaults(func=_cmd_gui)
     return parser
 
@@ -536,7 +537,7 @@ def _cmd_gui(args: argparse.Namespace) -> int:
     try:
         from .gui import run
     except ImportError as e:
-        print(f"GUI indisponible (flet manquant ? pip install 'flet>=0.24,<0.30'): {e}",
+        print(f"GUI unavailable (flet missing? pip install 'flet>=0.24,<0.30'): {e}",
               file=sys.stderr)
         return 1
     run()
@@ -559,7 +560,15 @@ def main(argv=None) -> int:
     logging.basicConfig(level=logging.WARNING, format="%(levelname)s %(name)s: %(message)s")
     parser = build_parser()
     args = parser.parse_args(argv)
-    return args.func(args)
+    try:
+        return args.func(args)
+    except soulseek.SoulseekError as e:
+        # No Soulseek account/creds, sldl missing, login refused... -> clear message, no traceback.
+        print(f"\n{e}", file=sys.stderr)
+        return 1
+    except KeyboardInterrupt:
+        print("\nInterrupted.", file=sys.stderr)
+        return 130
 
 
 if __name__ == "__main__":

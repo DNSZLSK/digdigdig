@@ -148,7 +148,7 @@ def rename_folder(root, *, apply: bool = False, dedup: bool = False,
         report.dups.append(DupGroup(str(keep), [str(r) for r in reds], size))
         for r in reds:
             redundant.add(r)
-            op = RenameOp(DUP, str(r), reason=f"copie de {keep.name}")
+            op = RenameOp(DUP, str(r), reason=f"copy of {keep.name}")
             if apply and dedup:
                 try:
                     op.applied = bool(trash.send_to_trash(r))
@@ -179,7 +179,7 @@ def rename_folder(root, *, apply: bool = False, dedup: bool = False,
                 f.rename(final)
                 op.applied = True
             except OSError as e:
-                op.action, op.reason = SKIP, f"echec rename: {e}"
+                op.action, op.reason = SKIP, f"rename failed: {e}"
         report.ops.append(op)
 
     # 3. Journal d'annulation (sur apply uniquement).

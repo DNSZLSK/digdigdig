@@ -59,10 +59,10 @@ VERDICT_COLOR = {
 VERDICT_LABEL = {
     quality.LOSSLESS: "Lossless",
     quality.HQ: "HQ",
-    quality.DOUTEUX: "Douteux",
-    quality.MAUVAIS: "Mauvais",
-    "ERROR": "Erreur",
-    "SKIPPED": "Ignore",
+    quality.DOUTEUX: "Iffy",
+    quality.MAUVAIS: "Bad",
+    "ERROR": "Error",
+    "SKIPPED": "Skipped",
 }
 
 
@@ -72,22 +72,22 @@ def _is_upgradable(qr, preset):
 # Statut live par ligne. Tuple = (libelle, couleur, ring_anime).
 # ring_anime=True -> petit spinner visible (phase en cours) ; False -> etat final fige.
 PHASE_LABEL = {
-    "queued": ("En file...", TXT_DIM, True),
-    "searching": ("Recherche Soulseek...", "#A0A8B0", True),
-    "auditing": ("Verif spectrale...", "#9A8C6B", True),
-    "cancelled": ("Annule", TXT_DIM, False),
+    "queued": ("Queued...", TXT_DIM, True),
+    "searching": ("Searching Soulseek...", "#A0A8B0", True),
+    "auditing": ("Spectral check...", "#9A8C6B", True),
+    "cancelled": ("Cancelled", TXT_DIM, False),
 }
 ACTION_LABEL = {
-    upgrade_mod.ACT_REPLACED: ("Remplace ✓", "#6E7F5B", False),
-    upgrade_mod.ACT_WOULD_REPLACE: ("Trouve ✓", "#6E7F5B", False),
-    upgrade_mod.ACT_KEPT_BESIDE: ("Garde a cote ✓", "#6E7F5B", False),
-    upgrade_mod.ACT_ACQUIRED: ("Gardee en inbox ✓", "#6E7F5B", False),
-    upgrade_mod.ACT_REJECTED_FAKE: ("Upscale rejete ✗", "#A0785A", False),
-    upgrade_mod.ACT_TOO_SHORT: ("Trop court ✗", "#A0785A", False),
-    upgrade_mod.ACT_WRONG_MATCH: ("Mauvais match ✗", "#A0785A", False),
-    upgrade_mod.ACT_NOT_FOUND: ("Introuvable ✗", "#7A7A7A", False),
-    upgrade_mod.ACT_UNPARSEABLE: ("Nom illisible", "#7A7A7A", False),
-    upgrade_mod.ACT_DUPLICATE: ("Deja present", "#7A7A7A", False),
+    upgrade_mod.ACT_REPLACED: ("Replaced ✓", "#6E7F5B", False),
+    upgrade_mod.ACT_WOULD_REPLACE: ("Found ✓", "#6E7F5B", False),
+    upgrade_mod.ACT_KEPT_BESIDE: ("Kept beside ✓", "#6E7F5B", False),
+    upgrade_mod.ACT_ACQUIRED: ("Kept in inbox ✓", "#6E7F5B", False),
+    upgrade_mod.ACT_REJECTED_FAKE: ("Upscale rejected ✗", "#A0785A", False),
+    upgrade_mod.ACT_TOO_SHORT: ("Too short ✗", "#A0785A", False),
+    upgrade_mod.ACT_WRONG_MATCH: ("Wrong match ✗", "#A0785A", False),
+    upgrade_mod.ACT_NOT_FOUND: ("Not found ✗", "#7A7A7A", False),
+    upgrade_mod.ACT_UNPARSEABLE: ("Unreadable name", "#7A7A7A", False),
+    upgrade_mod.ACT_DUPLICATE: ("Already there", "#7A7A7A", False),
 }
 
 
@@ -154,7 +154,7 @@ def main(page: ft.Page) -> None:
     page.padding = 16
 
     # --- widgets partages (barre d'etat en bas) -----------------------------
-    status = ft.Text("Choisis un dossier puis Scanner.", color=TXT_DIM)
+    status = ft.Text("Pick a folder, then Scan.", color=TXT_DIM)
     progress = ft.ProgressBar(value=0, visible=False, color=SPIN)
 
     file_picker = ft.FilePicker()
@@ -195,7 +195,7 @@ def main(page: ft.Page) -> None:
     def open_feedback(_e=None) -> None:
         """Bouton coeur : ouvre le formulaire de retours (like + suggestions)."""
         if "XXXX" in FEEDBACK_URL:
-            _banner("Formulaire de retours pas encore configure (voir FEEDBACK_URL).", False)
+            _banner("Feedback form not set up yet (see FEEDBACK_URL).", False)
             return
         _open_url(FEEDBACK_URL)
 
@@ -217,7 +217,7 @@ def main(page: ft.Page) -> None:
         if html:
             n = sum(1 for o in outcomes if getattr(o, "action", "") == upgrade_mod.ACT_NOT_FOUND
                     and getattr(o, "title", ""))
-            buy_btn.text = f"{n} introuvable(s) -> liens d'achat (Discogs / Bandcamp)"
+            buy_btn.text = f"{n} not found -> buy links (Discogs / Bandcamp)"
             buy_state["url"] = html.as_uri()
             buy_btn.visible = True
         else:
@@ -258,7 +258,7 @@ def main(page: ft.Page) -> None:
         state.cancel_requested = True
         lib_cancel_btn.disabled = True
         acq_cancel_btn.disabled = True
-        status.value = "Annulation en cours... (arret du telechargement)"
+        status.value = "Cancelling... (stopping the download)"
         proc = state.active_proc
         if proc is not None:
             try:
@@ -273,21 +273,21 @@ def main(page: ft.Page) -> None:
     # ====================================================================
     #  Onglet 1 : Bibliotheque (scan + upgrade)
     # ====================================================================
-    folder_field = ft.TextField(label="Dossier de musique", expand=True, read_only=True,
+    folder_field = ft.TextField(label="Music folder", expand=True, read_only=True,
                                 value=cfg.get("last_folder", ""))
     summary_row = ft.Row(wrap=True, spacing=8)
     table_col = ft.Column(scroll=ft.ScrollMode.AUTO, expand=True, spacing=2)
     dup_text = ft.Text("", color="#9A8C6B", selectable=True)
 
     filter_dd = ft.Dropdown(
-        label="Filtre", width=240, value="upgradable",
+        label="Filter", width=240, value="upgradable",
         options=[
-            ft.dropdown.Option(key="upgradable", text="A upgrader (sous le seuil)"),
-            ft.dropdown.Option(key="all", text="Tout"),
+            ft.dropdown.Option(key="upgradable", text="To upgrade (below the bar)"),
+            ft.dropdown.Option(key="all", text="All"),
             ft.dropdown.Option(key=quality.LOSSLESS, text="Lossless"),
             ft.dropdown.Option(key=quality.HQ, text="HQ"),
-            ft.dropdown.Option(key=quality.DOUTEUX, text="Douteux"),
-            ft.dropdown.Option(key=quality.MAUVAIS, text="Mauvais"),
+            ft.dropdown.Option(key=quality.DOUTEUX, text="Iffy"),
+            ft.dropdown.Option(key=quality.MAUVAIS, text="Bad"),
         ])
 
     def render_summary() -> None:
@@ -304,9 +304,9 @@ def main(page: ft.Page) -> None:
         groups = duplicate_groups(state.records)
         if groups:
             wasted = sum(g[0].size_bytes * (len(g) - 1) for g in groups)
-            dup_text.value = (f"Doublons : {len(groups)} groupes, "
-                              f"{sum(len(g) for g in groups)} fichiers "
-                              f"(~{wasted // (1024 * 1024)} Mo recuperables)")
+            dup_text.value = (f"Duplicates: {len(groups)} groups, "
+                              f"{sum(len(g) for g in groups)} files "
+                              f"(~{wasted // (1024 * 1024)} MB recoverable)")
         else:
             dup_text.value = ""
 
@@ -331,7 +331,7 @@ def main(page: ft.Page) -> None:
         state.row_status = {}
         shown = [(i, r) for i, r in enumerate(state.records) if _visible(r)]
         if not shown:
-            table_col.controls.append(ft.Text("Aucun fichier pour ce filtre.", color=TXT_DIM))
+            table_col.controls.append(ft.Text("No files for this filter.", color=TXT_DIM))
             page.update()
             return
         for idx, rec in shown:
@@ -344,7 +344,7 @@ def main(page: ft.Page) -> None:
                 bgcolor=VERDICT_COLOR.get(q.verdict, "#6E6E6E"),
                 padding=ft.padding.symmetric(vertical=2, horizontal=8),
                 border_radius=10, width=120)
-            dup_tag = ft.Text("  [doublon]", size=11, color="#9A8C6B") \
+            dup_tag = ft.Text("  [duplicate]", size=11, color="#9A8C6B") \
                 if rec.is_duplicate else ft.Text("")
             ring, txt, status_cell = make_status_cell()
             state.row_status[q.path] = (ring, txt)
@@ -367,14 +367,14 @@ def main(page: ft.Page) -> None:
     file_picker.on_result = on_folder_picked
 
     def browse(_e) -> None:
-        file_picker.get_directory_path(dialog_title="Choisir le dossier de musique")
+        file_picker.get_directory_path(dialog_title="Choose the music folder")
 
     def do_scan(_e) -> None:
         if state.busy:
             return
         folder = folder_field.value
         if not folder or not Path(folder).exists():
-            status.value = "Dossier invalide."
+            status.value = "Invalid folder."
             page.update()
             return
         state.folder = folder
@@ -385,16 +385,16 @@ def main(page: ft.Page) -> None:
             try:
                 def prog(i: int, total: int, f: Path) -> None:
                     progress.value = i / total if total else None
-                    status.value = f"Scan... {i}/{total}"
+                    status.value = f"Scanning... {i}/{total}"
                     page.update()
 
                 state.records = scan_library(folder, exclude_names=current_excludes(), progress=prog)
                 render_summary()
                 render_table()
                 n_up = sum(1 for r in state.records if _is_upgradable(r.quality, _preset()))
-                status.value = f"{len(state.records)} fichiers analyses - {n_up} a upgrader."
+                status.value = f"{len(state.records)} files scanned - {n_up} to upgrade."
             except Exception as ex:  # noqa: BLE001
-                status.value = f"Erreur scan : {ex}"
+                status.value = f"Scan error: {ex}"
             finally:
                 set_busy(False)
 
@@ -406,7 +406,7 @@ def main(page: ft.Page) -> None:
         chosen = [state.records[i] for i in sorted(state.selected)] if state.selected else \
                  [r for r in state.records if _is_upgradable(r.quality, _preset())]
         if not chosen:
-            status.value = "Rien a upgrader (coche des fichiers ou change le filtre)."
+            status.value = "Nothing to upgrade (check files or change the filter)."
             page.update()
             return
 
@@ -431,7 +431,7 @@ def main(page: ft.Page) -> None:
                         page.update()
 
                 on_item = make_on_item(state.row_status)
-                status.value = f"Upgrade de {len(chosen)} fichiers via Soulseek..."
+                status.value = f"Upgrading {len(chosen)} files via Soulseek..."
                 page.update()
                 # Vrais lossless -> bibliotheque downloads/, faux source -> corbeille.
                 outcomes = upgrade_mod.run_upgrade(
@@ -444,34 +444,34 @@ def main(page: ft.Page) -> None:
                 rej = _count_rejected(c)
                 nf = c.get(upgrade_mod.ACT_NOT_FOUND, 0)
                 dup = c.get(upgrade_mod.ACT_DUPLICATE, 0)
-                dup_txt = f", {dup} deja en bibliotheque" if dup else ""
+                dup_txt = f", {dup} already in library" if dup else ""
                 if state.cancel_requested:
                     for rec in chosen:   # lignes jamais finies (ring encore actif) -> Annule
                         cell = state.row_status.get(rec.quality.path)
                         if cell and cell[0].visible:
                             set_cell(state.row_status, rec.quality.path, *PHASE_LABEL["cancelled"])
-                    summary = (f"Upgrade annule : {ok} en bibliotheque, {rej} rejetes, "
-                               f"{nf} introuvables{dup_txt} (partiel).")
+                    summary = (f"Upgrade cancelled: {ok} in library, {rej} rejected, "
+                               f"{nf} not found{dup_txt} (partial).")
                 else:
-                    summary = (f"Upgrade fini : {ok} deposes en bibliotheque (faux -> corbeille), "
-                               f"{rej} rejetes, {nf} introuvables{dup_txt}.")
+                    summary = (f"Upgrade done: {ok} added to library (fakes -> trash), "
+                               f"{rej} rejected, {nf} not found{dup_txt}.")
                 status.value = summary
                 show_buy_links(outcomes, Path(state.folder).name)
                 _banner(summary, bool(ok) and not state.cancel_requested)
                 # Re-scanner pour refleter les nouveaux verdicts
                 if ok and not state.cancel_requested:
-                    status.value = summary + " Re-scan en cours..."
+                    status.value = summary + " Re-scanning..."
                     page.update()
                     state.selected.clear()
                     state.records = scan_library(state.folder, exclude_names=current_excludes())
                     render_summary()
                     render_table()
-                    status.value = summary + " Table rafraichie."
+                    status.value = summary + " Table refreshed."
             except soulseek.SoulseekError as e:
                 status.value = str(e)   # message clair (creds manquants / port occupe / login refuse)
                 settings_panel.visible = True
             except Exception as ex:  # noqa: BLE001
-                status.value = f"Erreur upgrade : {ex}"
+                status.value = f"Upgrade error: {ex}"
             finally:
                 lib_cancel_btn.visible = False
                 state.active_proc = None
@@ -496,10 +496,10 @@ def main(page: ft.Page) -> None:
         label="Source", width=200, value="discogs",
         options=[ft.dropdown.Option(key="discogs", text="Discogs"),
                  ft.dropdown.Option(key="bandcamp", text="Bandcamp"),
-                 ft.dropdown.Option(key="djset", text="Set DJ (URL)")])
-    discogs_collection_cb = ft.Checkbox(label="Inclure la collection", value=False, visible=True)
-    bandcamp_expand_cb = ft.Checkbox(label="Developper les albums", value=True, visible=False)
-    djset_url = ft.TextField(label="URL set ou playlist YouTube (ou 1001TL / fichier tracklist)",
+                 ft.dropdown.Option(key="djset", text="DJ set (URL)")])
+    discogs_collection_cb = ft.Checkbox(label="Include collection", value=False, visible=True)
+    bandcamp_expand_cb = ft.Checkbox(label="Expand albums", value=True, visible=False)
+    djset_url = ft.TextField(label="Set or YouTube playlist URL (or 1001TL / tracklist file)",
                              visible=False, width=480)
     acquire_table_col = ft.Column(scroll=ft.ScrollMode.AUTO, expand=True, spacing=2)
 
@@ -518,13 +518,13 @@ def main(page: ft.Page) -> None:
         shown = [r for r in rows
                  if (r.get("Artist") or "").strip() and (r.get("Title") or "").strip()]
         if not shown:
-            acquire_table_col.controls.append(ft.Text("Aucune piste exploitable.", color=TXT_DIM))
+            acquire_table_col.controls.append(ft.Text("No usable tracks.", color=TXT_DIM))
             page.update()
             return
         for r in shown:
             artist, title = r["Artist"].strip(), r["Title"].strip()
             key = match_key(artist, title)   # MEME normalisation que upgrade._item_id
-            ring, txt, status_cell = make_status_cell("En file...", ring_on=True)
+            ring, txt, status_cell = make_status_cell("Queued...", ring_on=True)
             state.acquire_row_status[key] = (ring, txt)
             acquire_table_col.controls.append(
                 ft.Row([status_cell,
@@ -544,23 +544,23 @@ def main(page: ft.Page) -> None:
             username = (creds.get("discogs_username") or "").strip()
             token = (creds.get("discogs_token") or "").strip()
             if not username or not token:
-                status.value = ("Identifiants Discogs manquants - renseigne username + token "
-                                "dans Reglages (engrenage en haut a droite).")
+                status.value = ("Discogs credentials missing - enter username + token "
+                                "in Settings (gear, top right).")
                 settings_panel.visible = True
                 page.update()
                 return
         elif source == "bandcamp":
             username = (creds.get("bandcamp_username") or "").strip()
             if not username:
-                status.value = ("Identifiant Bandcamp manquant - renseigne ton username "
-                                "dans Reglages (engrenage en haut a droite).")
+                status.value = ("Bandcamp username missing - enter it "
+                                "in Settings (gear, top right).")
                 settings_panel.visible = True
                 page.update()
                 return
         else:                                   # djset : pas de creds, juste l'URL / le fichier
             username = (djset_url.value or "").strip()
             if not username:
-                status.value = "Entre l'URL du set (YouTube / 1001TL) ou un fichier tracklist."
+                status.value = "Enter the set URL (YouTube / 1001TL) or a tracklist file."
                 page.update()
                 return
         dest = paths.download_dir(config_mod.load())   # bibliotheque (Reglages)
@@ -582,7 +582,7 @@ def main(page: ft.Page) -> None:
                         status.value = str(a[0])[:90]
                         page.update()
 
-                status.value = f"Recuperation {source} : {username[:60]}..."
+                status.value = f"Fetching {source}: {username[:60]}..."
                 page.update()
                 if source == "discogs":
                     rows = scrapers.scrape_discogs(
@@ -595,11 +595,11 @@ def main(page: ft.Page) -> None:
                     rows = scrapers.scrape_djset(username, progress=prog)
 
                 if not rows:
-                    status.value = f"Aucune piste trouvee pour {username} sur {source}."
+                    status.value = f"No tracks found for {username} on {source}."
                     return
                 state.acquire_rows = rows
                 render_acquire_table(rows)
-                status.value = f"{len(rows)} pistes -> telechargement en vrai lossless..."
+                status.value = f"{len(rows)} tracks -> downloading in real lossless..."
                 page.update()
 
                 on_item = make_on_item(state.acquire_row_status)
@@ -614,28 +614,28 @@ def main(page: ft.Page) -> None:
                 rej = _count_rejected(c)
                 nf = c.get(upgrade_mod.ACT_NOT_FOUND, 0)
                 dup = c.get(upgrade_mod.ACT_DUPLICATE, 0)
-                dup_txt = f", {dup} doublons sautes" if dup else ""
+                dup_txt = f", {dup} duplicates skipped" if dup else ""
                 if state.cancel_requested:
                     for cell in state.acquire_row_status.values():
                         if cell[0].visible:
-                            cell[1].value, cell[1].color, cell[0].visible = "Annule", TXT_DIM, False
-                    summary = (f"Recuperation annulee : {acq} gardees, {rej} rejetees, "
-                               f"{nf} introuvables{dup_txt} (partiel).")
+                            cell[1].value, cell[1].color, cell[0].visible = "Cancelled", TXT_DIM, False
+                    summary = (f"Fetch cancelled: {acq} kept, {rej} rejected, "
+                               f"{nf} not found{dup_txt} (partial).")
                 else:
-                    summary = (f"Recuperation finie : {acq} en bibliotheque, {rej} rejetees "
-                               f"(upscale/court/mauvais match), {nf} introuvables{dup_txt}.")
+                    summary = (f"Fetch done: {acq} in library, {rej} rejected "
+                               f"(upscale/short/wrong match), {nf} not found{dup_txt}.")
                 status.value = summary
                 show_buy_links(outcomes, "acquire")
                 _banner(summary, bool(acq) and not state.cancel_requested)
             except ValueError as ex:  # token Discogs manquant, etc.
-                status.value = f"Recuperation impossible : {ex}"
+                status.value = f"Can't fetch: {ex}"
                 if "token" in str(ex).lower():
                     settings_panel.visible = True
             except soulseek.SoulseekError as e:
                 status.value = str(e)   # message clair (creds manquants / port occupe / login refuse)
                 settings_panel.visible = True
             except Exception as ex:  # noqa: BLE001
-                status.value = f"Erreur : {ex}"
+                status.value = f"Error: {ex}"
             finally:
                 acq_cancel_btn.visible = False
                 state.active_proc = None
@@ -656,7 +656,7 @@ def main(page: ft.Page) -> None:
     bandcamp_user = ft.TextField(label="Bandcamp username", value=cfg.get("bandcamp_username", ""),
                                  width=240)
     dl_dir_field = ft.TextField(
-        label="Dossier bibliotheque (downloads lossless)", expand=True, read_only=True,
+        label="Library folder (lossless downloads)", expand=True, read_only=True,
         value=cfg.get("download_dir", "") or str(paths.default_download_dir()))
 
     def on_dl_picked(e) -> None:
@@ -669,16 +669,16 @@ def main(page: ft.Page) -> None:
     dl_picker.on_result = on_dl_picked
 
     def browse_dl(_e) -> None:
-        dl_picker.get_directory_path(dialog_title="Dossier bibliotheque (lossless verifie)")
+        dl_picker.get_directory_path(dialog_title="Library folder (verified lossless)")
 
-    dl_browse_btn = ft.FilledButton(text="Parcourir", icon=ft.Icons.FOLDER_OPEN, on_click=browse_dl)
+    dl_browse_btn = ft.FilledButton(text="Browse", icon=ft.Icons.FOLDER_OPEN, on_click=browse_dl)
     preset_dd = ft.Dropdown(
-        label="Qualite minimale", width=320,
+        label="Minimum quality", width=320,
         value=cfg.get("quality_preset", "dj_club"),
         options=[
-            ft.dropdown.Option(key="dj_club", text="DJ Club (>=18 kHz, MP3 320 inclus)"),
+            ft.dropdown.Option(key="dj_club", text="DJ Club (>=18 kHz, MP3 320 included)"),
             ft.dropdown.Option(key="audiophile", text="Audiophile (>=20 kHz)"),
-            ft.dropdown.Option(key="puriste", text="Puriste (lossless pur)"),
+            ft.dropdown.Option(key="puriste", text="Purist (pure lossless)"),
         ])
 
     def save_settings(_e) -> None:
@@ -693,23 +693,23 @@ def main(page: ft.Page) -> None:
         }
         config_mod.set_many(vals)
         cfg.update(vals)   # garde le cache en memoire frais (relu aussi a chaud par do_acquire)
-        status.value = "Reglages sauvegardes."
+        status.value = "Settings saved."
         page.update()
 
     settings_body = ft.Column([
-        ft.Text("Soulseek : requis pour telecharger (upgrade + favoris). "
-                "Discogs : username + token (discogs.com/settings/developers). "
-                "Bandcamp : username seul (scrape public).", size=12, color=TXT_DIM),
+        ft.Text("Soulseek: required to download (upgrade + favorites). "
+                "Discogs: username + token (discogs.com/settings/developers). "
+                "Bandcamp: username only (public scrape).", size=12, color=TXT_DIM),
         ft.Row([slsk_user, slsk_pass], wrap=True),
         ft.Row([discogs_user, discogs_tok], wrap=True),
         ft.Row([bandcamp_user], wrap=True),
-        ft.Text("Tout ce que DDD valide (upgrade + favoris) est depose ici ; les faux/rejets "
-                "vont a la corbeille.", size=12, color=TXT_DIM),
+        ft.Text("Everything DDD validates (upgrade + favorites) lands here; fakes/rejects "
+                "go to the trash.", size=12, color=TXT_DIM),
         ft.Row([dl_dir_field, dl_browse_btn]),
-        ft.Text("Seuil de qualite : en dessous, un fichier est candidat a l'upgrade.",
+        ft.Text("Quality bar: below it, a file is a candidate for upgrade.",
                 size=12, color=TXT_DIM),
         ft.Row([preset_dd], wrap=True),
-        ft.FilledButton(text="Sauvegarder", on_click=save_settings),
+        ft.FilledButton(text="Save", on_click=save_settings),
     ], spacing=10)
 
     def toggle_settings(_e) -> None:
@@ -719,7 +719,7 @@ def main(page: ft.Page) -> None:
     settings_panel = ft.Container(
         content=ft.Column([
             ft.Row([ft.Icon(ft.Icons.SETTINGS, size=18, color=TXT_DIM),
-                    ft.Text("Reglages", size=13, weight=ft.FontWeight.BOLD, color=TXT_DIM)],
+                    ft.Text("Settings", size=13, weight=ft.FontWeight.BOLD, color=TXT_DIM)],
                    spacing=6),
             settings_body,
         ], spacing=6),
@@ -729,30 +729,30 @@ def main(page: ft.Page) -> None:
     # ====================================================================
     #  Boutons
     # ====================================================================
-    browse_btn = ft.FilledButton(text="Parcourir", icon=ft.Icons.FOLDER_OPEN, on_click=browse)
-    scan_btn = ft.FilledButton(text="Scanner", icon=ft.Icons.SEARCH, on_click=do_scan)
-    upgrade_btn = ft.FilledButton(text="Upgrader la selection", icon=ft.Icons.UPGRADE,
+    browse_btn = ft.FilledButton(text="Browse", icon=ft.Icons.FOLDER_OPEN, on_click=browse)
+    scan_btn = ft.FilledButton(text="Scan", icon=ft.Icons.SEARCH, on_click=do_scan)
+    upgrade_btn = ft.FilledButton(text="Upgrade selection", icon=ft.Icons.UPGRADE,
                                   on_click=do_upgrade, disabled=True)
-    lib_cancel_btn = ft.OutlinedButton(text="Annuler", icon=ft.Icons.CANCEL,
+    lib_cancel_btn = ft.OutlinedButton(text="Cancel", icon=ft.Icons.CANCEL,
                                        on_click=do_cancel, visible=False)
-    check_all_btn = ft.TextButton(text="Tout cocher", on_click=select_all_visible)
-    uncheck_all_btn = ft.TextButton(text="Tout decocher", on_click=clear_selection)
+    check_all_btn = ft.TextButton(text="Check all", on_click=select_all_visible)
+    uncheck_all_btn = ft.TextButton(text="Uncheck all", on_click=clear_selection)
     filter_dd.on_change = lambda _e: render_table()
 
-    acquire_btn = ft.FilledButton(text="Recuperer & telecharger", icon=ft.Icons.DOWNLOAD,
+    acquire_btn = ft.FilledButton(text="Fetch & download", icon=ft.Icons.DOWNLOAD,
                                   on_click=do_acquire)
-    acq_cancel_btn = ft.OutlinedButton(text="Annuler", icon=ft.Icons.CANCEL,
+    acq_cancel_btn = ft.OutlinedButton(text="Cancel", icon=ft.Icons.CANCEL,
                                        on_click=do_cancel, visible=False)
     feedback_btn = ft.IconButton(icon=ft.Icons.FAVORITE_BORDER,
-                                 tooltip="Kiffer l'app / une suggestion",
+                                 tooltip="Like the app / a suggestion",
                                  on_click=open_feedback)
-    settings_btn = ft.IconButton(icon=ft.Icons.SETTINGS, tooltip="Reglages (identifiants)",
+    settings_btn = ft.IconButton(icon=ft.Icons.SETTINGS, tooltip="Settings (credentials)",
                                  on_click=toggle_settings)
 
     # 1er lancement sans identifiants : deplie Reglages + invite (tout en a besoin)
     if not ((cfg.get("soulseek_user") or "").strip() and (cfg.get("soulseek_pass") or "")):
         settings_panel.visible = True
-        status.value = "Astuce : renseigne tes identifiants Soulseek (engrenage) pour digger."
+        status.value = "Tip: enter your Soulseek credentials (gear) to start digging."
 
     # ====================================================================
     #  Layout : barre fine (engrenage) + onglets + barre d'etat
@@ -787,8 +787,8 @@ def main(page: ft.Page) -> None:
     page.add(
         ft.Stack([
             ft.Tabs(selected_index=0, expand=True, tabs=[
-                ft.Tab(text="Bibliotheque", content=library_tab),
-                ft.Tab(text="Recuperer favoris", content=acquire_tab),
+                ft.Tab(text="Library", content=library_tab),
+                ft.Tab(text="Get favorites", content=acquire_tab),
             ]),
             ft.Container(ft.Row([feedback_btn, settings_btn], spacing=0), top=0, right=0),
         ], expand=True),

@@ -41,7 +41,7 @@ def search_url(store: str, artist: str, title: str) -> str:
         return f"https://www.discogs.com/search/?q={q}&type=release"
     if store == BANDCAMP:
         return f"https://bandcamp.com/search?q={q}"
-    raise ValueError(f"store inconnu: {store}")
+    raise ValueError(f"unknown store: {store}")
 
 
 def links_for(artist: str, title: str) -> Dict[str, str]:
@@ -99,7 +99,7 @@ def _card(artist: str, title: str, links: Dict[str, str]) -> str:
 
 
 def write_buy_page(tracks: Sequence[Track], out_html, out_csv,
-                   heading: str = "Introuvables - acheter") -> Tuple[Path, Path]:
+                   heading: str = "Not found - buy") -> Tuple[Path, Path]:
     """Ecrit la page HTML cliquable + le CSV. Retourne (html, csv). Dedup automatique."""
     items = _dedup(tracks)
     out_html, out_csv = Path(out_html), Path(out_csv)
@@ -113,10 +113,10 @@ def write_buy_page(tracks: Sequence[Track], out_html, out_csv,
             w.writerow([artist, title, li[DISCOGS], li[BANDCAMP]])
 
     cards = "\n".join(_card(a, t, links_for(a, t)) for a, t in items)
-    sub = f"{len(items)} track(s) a acheter - Discogs (vinyle/marketplace) + Bandcamp (digital)"
+    sub = f"{len(items)} track(s) to buy - Discogs (vinyl/marketplace) + Bandcamp (digital)"
     logo = f'<img src="{_LOGO}" alt="DDD - DigDigDig">' if _LOGO else ""
     html = (
-        "<!doctype html>\n<html lang=\"fr\">\n<head>\n<meta charset=\"utf-8\">\n"
+        "<!doctype html>\n<html lang=\"en\">\n<head>\n<meta charset=\"utf-8\">\n"
         "<meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">\n"
         f"<title>{_esc(heading)}</title>\n<style>{_CSS}</style>\n</head>\n<body>\n"
         f"<header>{logo}<h1>{_esc(heading)}</h1></header>\n"
@@ -142,5 +142,5 @@ def write_unfindable(outcomes, outputs_dir, name: str) -> Optional[Path]:
     out_dir = Path(outputs_dir)
     html, _ = write_buy_page(tracks, out_dir / f"unfindable_{name}.html",
                              out_dir / f"unfindable_{name}.csv",
-                             heading=f"Introuvables - {name}")
+                             heading=f"Not found - {name}")
     return html

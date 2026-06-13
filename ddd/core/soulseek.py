@@ -75,12 +75,12 @@ _FATAL_MARKERS = (
 
 def _fatal_message(line: str) -> str:
     if "listening" in line or "port may be in use" in line:
-        return ("Port Soulseek 50300 deja utilise (un sldl/slskd tourne deja). "
-                "Ferme-le et reessaie.")
+        return ("Soulseek port 50300 already in use (an sldl/slskd is already running). "
+                "Close it and try again.")
     if "Login failed" in line or "login failed" in line:
-        return ("Login Soulseek refuse : identifiants invalides, ou une autre session "
-                "(slskd) est deja connectee avec ce compte.")
-    return f"Erreur Soulseek (sldl) : {line.strip()[:120]}"
+        return ("Soulseek login refused: invalid credentials, or another session "
+                "(slskd) is already connected with this account.")
+    return f"Soulseek error (sldl): {line.strip()[:120]}"
 
 
 def default_sldl_exe(root: Path = None) -> Path:
@@ -113,15 +113,15 @@ def read_soulseek_creds() -> Dict[str, str]:
     yml = _slskd_config_path()
     if not yml or not yml.exists():
         raise SoulseekError(
-            "creds Soulseek introuvables : renseigne-les dans l'app (Reglages), "
-            "via `ddd config set soulseek_user/soulseek_pass`, DDD_SOULSEEK_USER/PASS, "
-            "ou installe slskd"
+            "Soulseek account required: you need a (free) Soulseek login to download. "
+            "Set it in the app (Settings), via `ddd config set soulseek_user/soulseek_pass`, "
+            "DDD_SOULSEEK_USER/PASS, or install slskd. No account yet? -> slsknet.org"
         )
     content = yml.read_text(encoding="utf-8", errors="ignore")
     mu = re.search(r"(?ms)^soulseek:\s*\n\s*username:\s*(\S+)", content)
     mp = re.search(r"(?ms)^soulseek:\s*\n\s*username:[^\n]+\n\s*password:\s*(\S+)", content)
     if not mu or not mp:
-        raise SoulseekError(f"impossible de parser user/pass dans {yml}")
+        raise SoulseekError(f"couldn't parse user/pass in {yml}")
     return {"user": mu.group(1), "pass": mp.group(1)}
 
 
@@ -209,7 +209,7 @@ def run_sldl(
     sldl_exe = Path(sldl_exe) if sldl_exe else paths.sldl_exe()
     config_path = Path(config_path) if config_path else paths.sldl_config()
     if not sldl_exe.exists():
-        raise SoulseekError(f"sldl introuvable : {sldl_exe}")
+        raise SoulseekError(f"sldl not found: {sldl_exe}")
     creds = creds or read_soulseek_creds()
 
     args = [

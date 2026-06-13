@@ -5,160 +5,157 @@
 <h1 align="center">DigDigDig</h1>
 
 <p align="center">
-  <em>Le crate digger qui creuse trois fois.</em><br>
-  Dig tes sources -> Dig Soulseek -> Dig le spectre du fichier.
+  <em>The crate digger that digs three times.</em><br>
+  Dig your sources -> Dig Soulseek -> Dig the file's spectrum.
 </p>
 
 <p align="center">
   <a href="https://github.com/DNSZLSK/digdigdig/releases/latest/download/DDD-windows.zip">
-    <img src="https://img.shields.io/badge/T%C3%89L%C3%89CHARGE--MOI-Windows%20.exe-1DB954?style=for-the-badge&logo=windows&logoColor=white" alt="Telecharge DDD pour Windows">
+    <img src="https://img.shields.io/badge/DOWNLOAD--ME-Windows%20.exe-1DB954?style=for-the-badge&logo=windows&logoColor=white" alt="Download DDD for Windows">
   </a>
   <br>
-  <sub>Double-clic, aucune installation. <a href="https://dnszlsk.github.io/digdigdig/">Page de presentation</a></sub>
+  <sub>Double-click, no install. <a href="https://dnszlsk.github.io/digdigdig/">Landing page</a></sub>
 </p>
 
 ---
 
-**DDD nettoie ta bibliotheque musicale et la passe en qualite jouable en club, tout seul.**
+**DDD cleans up your music library and bumps it to club-playable quality, on its own.**
 
-Tu pointes un dossier (ou tes favoris Discogs / Bandcamp), et DDD :
-- repere les **faux lossless** : des MP3 reencodes en .flac/.wav/.aiff qui *paraissent* lossless mais ne le sont pas,
-- va chercher une **vraie version** sur Soulseek (FLAC, WAV ou AIFF, avec repli MP3 320 automatique si rien en lossless),
-- verifie au **spectre** que le fichier telecharge tient la route (pas un upscale), que c'est le **bon morceau** et pas un extrait,
-- le range dans **une seule bibliotheque** propre, et jette les faux a la corbeille.
+You point it at a folder (or your Discogs / Bandcamp favorites), and DDD:
+- spots the **fake lossless**: MP3s re-encoded as .flac/.wav/.aiff that *look* lossless but aren't,
+- goes and finds a **real version** on Soulseek (FLAC, WAV or AIFF, with an automatic MP3 320 fallback if nothing lossless turns up),
+- checks the **spectrum** of the downloaded file to make sure it holds up (not an upscale), that it's the **right track** and not a snippet,
+- files it into **a single** clean library, and sends the fakes to the trash.
 
-Pas besoin d'etre developpeur : telecharge l'`.exe`, double-clic, c'est une fenetre.
+No need to be a developer: download the `.exe`, double-click, it's a window.
 
-## A quoi ca ressemble
+## What it looks like
 
-**Scanner un dossier et upgrader** (Lossless, HQ, Douteux ou Mauvais ? statut live par piste) :
+**Scan a folder and upgrade** (Lossless, HQ, Iffy or Bad? live per-track status):
 
-<p align="center"><img src="docs/screenshot-bibliotheque.png" alt="Onglet Bibliotheque : scan qualite + upgrade" width="900"></p>
+<p align="center"><img src="docs/screenshot-bibliotheque.png" alt="Library tab: quality scan + upgrade" width="900"></p>
 
-**Recuperer tes favoris Discogs / Bandcamp** directement en lossless :
+**Pull your Discogs / Bandcamp favorites** straight to lossless:
 
-<p align="center"><img src="docs/screenshot-favoris.png" alt="Onglet Recuperer favoris" width="900"></p>
+<p align="center"><img src="docs/screenshot-favoris.png" alt="Get favorites tab" width="900"></p>
 
-## Ce que ca fait
+## What it does
 
-- **Scan qualite** : chaque fichier est classe par son **cutoff spectral** (la frequence ou le son s'arrete) dans une des quatre bandes, + doublons :
-  - **Lossless** (vert) : plein spectre, vrai lossless.
-  - **HQ** (bleu) : >= 18 kHz, jouable sur un gros systeme (inclut le MP3 320).
-  - **Douteux** (jaune) : 16-18 kHz, limite.
-  - **Mauvais** (rouge) : < 16 kHz, bouillie.
-- **Trois presets de qualite** (seuil minimum a garder, dans les Reglages) :
-  - **DJ Club** (>= 18 kHz) - *defaut* : garde tout ce qui est jouable en club, MP3 320 inclus.
-  - **Audiophile** (>= 20 kHz) : rejette les MP3 sous 320.
-  - **Puriste** (lossless pur) : vrai lossless plein spectre uniquement.
-- **Upgrade** : remplace tes fichiers sous le seuil par mieux, trouve sur Soulseek. DDD cherche FLAC, WAV et AIFF (beaucoup de DJ partagent en WAV/AIFF), avec **repli MP3 320 automatique** pour les pistes introuvables en lossless. Les MP3 sous 320 kbps sont **bannis systematiquement**, quel que soit le preset.
-- **Recuperer favoris** : scrape ta wantlist Discogs / wishlist Bandcamp et la telecharge.
-- **Set / playlist YouTube** : colle l'URL d'un set (YouTube / 1001Tracklists) ou d'une **playlist YouTube** (chaque video = un track) -> DDD en extrait la tracklist en want-list (CSV).
-- **Une seule bibliotheque** : tout ce qui est valide atterrit dans `~/Music/DDD` (modifiable dans les Reglages), dedoublonne. Les rejets partent a la **corbeille** (recuperables), jamais supprimes en dur.
-- **Introuvables -> liens d'achat** : ce que Soulseek ne trouve pas ressort dans une page cliquable (logo + theme DDD) avec des liens **Discogs** (marketplace vinyle, parfait pour les vieux pressages) et **Bandcamp**, pour l'acheter.
+- **Quality scan**: every file is ranked by its **spectral cutoff** (the frequency where the sound stops) into one of four bands, plus duplicates:
+  - **Lossless** (green): full spectrum, real lossless.
+  - **HQ** (blue): >= 18 kHz, playable on a big system (includes MP3 320).
+  - **Iffy** (yellow): 16-18 kHz, borderline.
+  - **Bad** (red): < 16 kHz, mush.
+- **Three quality presets** (minimum bar to keep, in Settings):
+  - **DJ Club** (>= 18 kHz) - *default*: keeps anything club-playable, MP3 320 included.
+  - **Audiophile** (>= 20 kHz): rejects MP3s below 320.
+  - **Purist** (pure lossless): real full-spectrum lossless only.
+- **Upgrade**: replaces your below-the-bar files with something better, found on Soulseek. DDD looks for FLAC, WAV and AIFF (lots of DJs share in WAV/AIFF), with an **automatic MP3 320 fallback** for tracks that can't be found in lossless. MP3s below 320 kbps are **banned across the board**, whatever the preset.
+- **Get favorites**: scrapes your Discogs wantlist / Bandcamp wishlist and downloads it.
+- **YouTube set / playlist**: paste a set URL (YouTube / 1001Tracklists) or a **YouTube playlist** (each video = a track) -> DDD extracts the tracklist into a want-list (CSV).
+- **Single library**: everything that passes lands in `~/Music/DDD` (changeable in Settings), de-duplicated. Rejects go to the **trash** (recoverable), never hard-deleted.
+- **Not found -> buy links**: whatever Soulseek can't find comes out as a clickable page (DDD logo + theme) with **Discogs** (vinyl marketplace, perfect for old pressings) and **Bandcamp** links to buy it.
 
-**Le filet de securite : le spectre fait loi.** Chaque telechargement est re-audite au spectre (FFT) ; **le format et le bitrate declares ne servent qu'a la recherche Soulseek, jamais a la decision de garder ou rejeter.** Le spectre ne ment pas, les tags si - c'est ce qui distingue un vrai 320 / lossless d'un upscale (un MP3 128 reencode en .flac ou .wav, ce que les filtres Soulseek ne voient pas). Un fichier n'est garde que s'il passe trois controles : **spectral** (au-dessus du seuil du preset, pas un upscale), **duree** (pas un extrait / preview) et **identite titre + artiste** (le bon morceau, pas un faux match). Sinon -> corbeille.
+**The safety net: the spectrum is law.** Every download is re-audited by spectrum (FFT); **the declared format and bitrate are only used for the Soulseek search, never for the keep-or-reject decision.** The spectrum doesn't lie, tags do - that's what tells a real 320 / lossless apart from an upscale (an MP3 128 re-encoded as .flac or .wav, which Soulseek's filters can't see). A file is only kept if it passes three checks: **spectral** (above the preset's bar, not an upscale), **duration** (not a snippet / preview) and **title + artist identity** (the right track, not a wrong match). Otherwise -> trash.
 
-## Demarrer (utilisateur)
+## Getting started (user)
 
-1. [**Telecharge l'exe**](https://github.com/DNSZLSK/digdigdig/releases/latest/download/DDD-windows.zip), dezippe, double-clic sur `DDD.exe`.
-2. Ouvre les **Reglages** (engrenage en haut a droite) et renseigne :
-   - ton login **Soulseek** (requis pour telecharger),
-   - ton **token Discogs** + username, et/ou ton username **Bandcamp** (pour recuperer tes favoris),
-   - le **dossier bibliotheque** (par defaut `~/Music/DDD`).
-3. Onglet **Bibliotheque** : choisis un dossier -> *Scanner* -> coche les fichiers -> *Upgrader la selection*.
-   Onglet **Recuperer favoris** : choisis Discogs/Bandcamp -> *Recuperer & telecharger*.
+> **You need a free Soulseek account** to download - create one in 30 seconds at [slsknet.org](https://www.slsknet.org/). DDD logs into Soulseek to fetch the upgrades; without it, DDD still scans and rates your files, but can't download anything. (sldl, the Soulseek client, is bundled in the `.exe` - nothing else to install.)
 
-> Les 3 D : **DIG** tes sources -> **DOWNLOAD** sur Soulseek -> **DETECT** au spectre. La sortie,
-> c'est ta bibliotheque lossless verifiee, que tu peux ensuite partager / pointer ou tu veux.
+1. [**Download the exe**](https://github.com/DNSZLSK/digdigdig/releases/latest/download/DDD-windows.zip), unzip, double-click `DDD.exe`.
+2. Open **Settings** (gear, top right) and fill in:
+   - your **Soulseek** login (required to download),
+   - your **Discogs token** + username, and/or your **Bandcamp** username (to pull your favorites),
+   - the **library folder** (default `~/Music/DDD`).
+3. **Library** tab: pick a folder -> *Scan* -> check the files -> *Upgrade selection*.
+   **Get favorites** tab: pick Discogs/Bandcamp -> *Fetch & download*.
 
-## Usage & responsabilite
+> The 3 D's: **DIG** your sources -> **DOWNLOAD** from Soulseek -> **DETECT** by spectrum. The output
+> is your verified lossless library, which you can then share / point anywhere you want.
 
-DDD est un outil de gestion de **ta** bibliotheque (analyse qualite, organisation,
-recuperation via Soulseek). Il **n'heberge, ne distribue et ne fournit aucun contenu** :
-c'est un client qui automatise la recherche, comme un navigateur ou un client torrent.
+## Usage & responsibility
 
-Soulseek est un reseau peer-to-peer. Telecharger de la musique protegee sans autorisation
-des ayants droit peut etre **illegal** selon ton pays (France : Code de la propriete
-intellectuelle). **Tu es seul responsable de ton usage** et du respect du droit d'auteur.
-Utilise DDD pour ce que tu as le droit d'utiliser : ta propre musique, tes productions,
-tes promos / white-labels, le domaine public/CC, ou re-telecharger en lossless ce que tu
-**possedes deja**.
+DDD is a tool to manage **your** library (quality analysis, organization, fetching via Soulseek).
+It **hosts, distributes and provides no content**: it's a client that automates the search, like a
+browser or a torrent client.
 
-> *DDD is a library-management tool; it hosts no content. Downloading copyrighted material
-> without authorization may be illegal in your country. You are solely responsible for your
-> use and for complying with copyright law.*
+Soulseek is a peer-to-peer network. Downloading copyrighted music without authorization from the
+rights holders may be **illegal** in your country. **You are solely responsible for your use** and
+for complying with copyright law. Use DDD for what you have the right to: your own music, your
+productions, your promos / white-labels, public domain / CC, or re-downloading in lossless what you
+**already own**.
 
 ## Stack
 
-Coeur **Python** portable (Windows / Mac / Linux) + fenetre native **Flet**. Telechargement via
-**sldl** ([fiso64/slsk-batchdl](https://github.com/fiso64/slsk-batchdl), embarque). Detection spectrale
-via numpy/scipy/soundfile. Scrapers Discogs (API), Bandcamp (cloudscraper), sets et playlists YouTube (yt-dlp). Tout est embarque dans
-l'`.exe` (pas besoin de Python ni de ffmpeg).
+Portable **Python** core (Windows / Mac / Linux) + native **Flet** window. Downloading via
+**sldl** ([fiso64/slsk-batchdl](https://github.com/fiso64/slsk-batchdl), bundled). Spectral detection
+via numpy/scipy/soundfile. Scrapers for Discogs (API), Bandcamp (cloudscraper), YouTube sets and
+playlists (yt-dlp). Everything is bundled into the `.exe` (no Python, no ffmpeg needed).
 
 ---
 
 <details>
-<summary><b>Pour les developpeurs</b> (CLI, build de l'exe, ancien pipeline PowerShell)</summary>
+<summary><b>For developers</b> (CLI, exe build, legacy PowerShell pipeline)</summary>
 
 ### CLI
 
 ```powershell
-# installer le coeur + la GUI
+# install the core + the GUI
 .\.venv\Scripts\python.exe -m pip install -e ".[gui]"
 
-# Scanner un dossier : Lossless / HQ / Douteux / Mauvais ? bien nomme ? doublons ?
-.\.venv\Scripts\python.exe -m ddd scan "C:\chemin\vers\Musique"
+# Scan a folder: Lossless / HQ / Iffy / Bad? well named? duplicates?
+.\.venv\Scripts\python.exe -m ddd scan "C:\path\to\Music"
 
-# Upgrader : depose les vrais lossless dans la bibliotheque, faux source -> corbeille
-.\.venv\Scripts\python.exe -m ddd upgrade "C:\chemin\vers\Musique"
+# Upgrade: drops real lossless into the library, fake source -> trash
+.\.venv\Scripts\python.exe -m ddd upgrade "C:\path\to\Music"
 
-# Importer un dossier existant dans la bibliotheque (AUTHENTIC garde, reste corbeille)
-.\.venv\Scripts\python.exe -m ddd import "C:\chemin\vers\Musique"
+# Import an existing folder into the library (lossless kept, the rest trashed)
+.\.venv\Scripts\python.exe -m ddd import "C:\path\to\Music"
 
-# Remettre les noms d'un dossier en "Artiste - Titre" (depuis nom + tags ; dry-run, --apply pour ecrire)
-.\.venv\Scripts\python.exe -m ddd rename "C:\chemin\vers\Musique"
+# Rename a folder back to "Artist - Title" (from name + tags; dry-run, --apply to write)
+.\.venv\Scripts\python.exe -m ddd rename "C:\path\to\Music"
 
-# Recuperer ses favoris -> bibliotheque
+# Pull your favorites -> library
 .\.venv\Scripts\python.exe -m ddd scrape bandcamp <user>
 .\.venv\Scripts\python.exe -m ddd acquire outputs\bandcamp_<user>.csv
 
-# Set DJ ou playlist YouTube (chaque video = un track) -> extrait la tracklist en want-list CSV
+# DJ set or YouTube playlist (each video = a track) -> extract the tracklist to a want-list CSV
 .\.venv\Scripts\python.exe -m ddd scrape djset "https://www.youtube.com/playlist?list=..."
 
-# Introuvables -> page de liens d'achat Discogs + Bandcamp (dossier, rapport upgrade, ou want-list)
-.\.venv\Scripts\python.exe -m ddd buy "C:\chemin\vers\Musique"
+# Not found -> Discogs + Bandcamp buy-links page (folder, upgrade report, or want-list)
+.\.venv\Scripts\python.exe -m ddd buy "C:\path\to\Music"
 
-# Reglages (dossier bibliotheque, token Discogs, login Soulseek) -> %APPDATA%\ddd
-.\.venv\Scripts\python.exe -m ddd config set download_dir "D:\Ma Bibliotheque"
+# Settings (library folder, Discogs token, Soulseek login) -> %APPDATA%\ddd
+.\.venv\Scripts\python.exe -m ddd config set download_dir "D:\My Library"
 .\.venv\Scripts\python.exe -m ddd config set discogs_token <token>
 
-# La fenetre native
+# The native window
 .\.venv\Scripts\python.exe -m ddd gui
 ```
 
-Resolution des requetes : nom `Artiste - Titre` -> sinon tags ID3/Vorbis -> sinon titre-seul.
-Les compilations (`Various Artists`), prefixes de face vinyle (`A1`, `B2`...) et artistes
-dupliques dans le titre sont normalises avant la recherche.
+Query resolution: name `Artist - Title` -> else ID3/Vorbis tags -> else title-only.
+Compilations (`Various Artists`), vinyl side prefixes (`A1`, `B2`...) and artists duplicated
+in the title are normalized before the search.
 
-### Build du `.exe`
+### Building the `.exe`
 
 ```powershell
 .\.venv\Scripts\python.exe -m pip install -e ".[gui,build]"
 .\packaging\build.ps1
 ```
 
-Sortie : `dist\DDD\DDD.exe`. sldl, les profils, le client graphique et le decodage audio
-(libsndfile) sont embarques. Details + build Mac/Linux : `packaging/README.md`.
+Output: `dist\DDD\DDD.exe`. sldl, the profiles, the GUI client and the audio decoding
+(libsndfile) are bundled. Details + Mac/Linux build: `packaging/README.md`.
 
-### Ancien pipeline PowerShell (toujours dispo)
+### Legacy PowerShell pipeline (still available)
 
-Le projet a demarre comme un pipeline PowerShell (`pipeline.ps1` + `lib/`), qui reste fonctionnel :
+The project started as a PowerShell pipeline (`pipeline.ps1` + `lib/`), which still works:
 
 ```powershell
-$env:DISCOGS_TOKEN = "ton_token"
+$env:DISCOGS_TOKEN = "your_token"
 .\.venv\Scripts\python.exe lib\scrapers\discogs.py <user> -o inputs\sldl_input.csv
 .\pipeline.ps1 -SkipConvert -AutoClean       # DOWNLOAD + audit + DETECT
-.\pipeline.ps1 -SkipConvert -SkipDownload -SkipVerify -DoDeploy -UsbRoot "D:\Ma Library"
+.\pipeline.ps1 -SkipConvert -SkipDownload -SkipVerify -DoDeploy -UsbRoot "D:\My Library"
 ```
 
 </details>

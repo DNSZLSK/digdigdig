@@ -31,7 +31,7 @@ ProgressCb = Optional[Callable[[str], None]]
 
 def _make_scraper():
     if cloudscraper is None:
-        raise RuntimeError("cloudscraper requis : pip install cloudscraper")
+        raise RuntimeError("cloudscraper required: pip install cloudscraper")
     return cloudscraper.create_scraper(
         browser={"browser": "chrome", "platform": "windows", "desktop": True})
 
@@ -166,10 +166,10 @@ def scrape_bandcamp(
     cdir.mkdir(parents=True, exist_ok=True)
     scraper = _make_scraper()
     if progress:
-        progress(f"Bandcamp: wishlist de {username}...")
+        progress(f"Bandcamp: wishlist of {username}...")
     blob = _wishlist_blob(scraper, username)
     if not blob:
-        raise RuntimeError("impossible de charger la wishlist (blob absent)")
+        raise RuntimeError("couldn't load the wishlist (blob missing)")
 
     fan_id = blob.get("fan_data", {}).get("fan_id")
     wishlist = blob.get("item_cache", {}).get("wishlist", {})
@@ -228,14 +228,14 @@ def scrape_bandcamp(
             for item in items:
                 add_item(item)
             if progress:
-                progress(f"  {len(rows)} pistes...")
+                progress(f"  {len(rows)} tracks...")
             last_token = data.get("last_token")
             if not data.get("more_available"):
                 break
             time.sleep(0.5)
 
     if progress:
-        progress(f"Bandcamp: {len(rows)} pistes")
+        progress(f"Bandcamp: {len(rows)} tracks")
     return rows
 
 

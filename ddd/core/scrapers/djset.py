@@ -224,7 +224,7 @@ def _scrape_youtube(url: str, progress: ProgressCb) -> List[Pair]:
     try:
         import yt_dlp  # noqa: PLC0415
     except ImportError as e:
-        raise RuntimeError("yt-dlp manquant : pip install yt-dlp") from e
+        raise RuntimeError("yt-dlp missing: pip install yt-dlp") from e
 
     opts = {
         "quiet": True, "no_warnings": True, "noprogress": True, "socket_timeout": 30,
@@ -233,7 +233,7 @@ def _scrape_youtube(url: str, progress: ProgressCb) -> List[Pair]:
                                        "comment_sort": ["top"]}},
     }
     if progress:
-        progress("YouTube : description + Musique + commentaires...")
+        progress("YouTube: description + Music + comments...")
     with yt_dlp.YoutubeDL(opts) as ydl:
         info = ydl.extract_info(url, download=False)
 
@@ -257,7 +257,7 @@ def _scrape_youtube(url: str, progress: ProgressCb) -> List[Pair]:
         music = []
         logger.debug("section Musique echec: %r", e)
     if progress:
-        progress(f"  -> {len(music)} Musique + {len(desc)} description + {len(best)} commentaire")
+        progress(f"  -> {len(music)} Music + {len(desc)} description + {len(best)} comment")
     return music + desc + best   # le dedup se fait dans _rows_from_pairs
 
 
@@ -383,7 +383,7 @@ def _youtube_playlist_titles(list_id: str, progress: ProgressCb, max_pages: int 
         titles += new
         token, pages = _continuation_token(resp), pages + 1
         if progress and pages % 3 == 0:
-            progress(f"  playlist : {len(titles)} videos...")
+            progress(f"  playlist: {len(titles)} videos...")
         if not new:
             break
     return titles
@@ -392,7 +392,7 @@ def _youtube_playlist_titles(list_id: str, progress: ProgressCb, max_pages: int 
 def _scrape_youtube_playlist(list_id: str, progress: ProgressCb) -> List[Pair]:
     """Playlist YouTube : chaque video = un track. InnerTube (pagine TOUT), repli yt-dlp."""
     if progress:
-        progress("YouTube playlist : extraction des videos...")
+        progress("YouTube playlist: extracting videos...")
     try:
         titles = _youtube_playlist_titles(list_id, progress)
     except Exception as e:  # noqa: BLE001
@@ -402,7 +402,7 @@ def _scrape_youtube_playlist(list_id: str, progress: ProgressCb) -> List[Pair]:
         return _scrape_youtube_playlist_ytdlp(list_id, progress)
     pairs = _pairs_from_entries([{"title": t} for t in titles])
     if progress:
-        progress(f"  -> {len(titles)} videos, {len(pairs)} parsees en Artiste - Titre")
+        progress(f"  -> {len(titles)} videos, {len(pairs)} parsed as Artist - Title")
     return pairs
 
 
@@ -423,14 +423,14 @@ def _scrape_youtube_playlist_ytdlp(list_id: str, progress: ProgressCb) -> List[P
 
 def _make_scraper():
     if cloudscraper is None:
-        raise RuntimeError("cloudscraper requis : pip install cloudscraper")
+        raise RuntimeError("cloudscraper required: pip install cloudscraper")
     return cloudscraper.create_scraper(
         browser={"browser": "chrome", "platform": "windows", "desktop": True})
 
 
 def _scrape_1001(url: str, progress: ProgressCb) -> List[Pair]:
     if progress:
-        progress("1001Tracklists : page (cloudscraper)...")
+        progress("1001Tracklists: page (cloudscraper)...")
     scraper = _make_scraper()
     r = scraper.get(url, timeout=30)
     r.raise_for_status()
@@ -461,7 +461,7 @@ _SET79_NAME = re.compile(r'"@type":\s*"MusicRecording",\s*"name":\s*"((?:[^"\\]|
 
 def _scrape_set79(url: str, progress: ProgressCb) -> List[Pair]:
     if progress:
-        progress("set79 : page (JSON-LD)...")
+        progress("set79: page (JSON-LD)...")
     scraper = _make_scraper()
     r = scraper.get(url, timeout=30)
     r.raise_for_status()
@@ -497,12 +497,12 @@ def scrape_djset(url: str, progress: ProgressCb = None) -> List[Dict]:
         fp = Path(url)
         if fp.is_file():
             if progress:
-                progress(f"Tracklist collee : {fp.name}")
+                progress(f"Pasted tracklist: {fp.name}")
             rows = _rows_from_pairs(
                 parse_tracklist_text(fp.read_text(encoding="utf-8", errors="replace")),
                 "djset:paste", url)
             if progress:
-                progress(f"{len(rows)} piste(s) trouvee(s).")
+                progress(f"{len(rows)} track(s) found.")
             return rows
 
     if "youtube.com" in low or "youtu.be" in low:
@@ -513,37 +513,37 @@ def scrape_djset(url: str, progress: ProgressCb = None) -> List[Dict]:
                 pairs = _scrape_youtube_playlist(list_id, progress)
             except Exception as e:  # noqa: BLE001
                 if progress:
-                    progress(f"playlist YouTube echec : {e}")
+                    progress(f"YouTube playlist failed: {e}")
         else:                                    # set : 1 video, tracklist desc/commentaires/ContentID
             source = "djset:youtube"
             try:
                 pairs = _scrape_youtube(url, progress)
             except Exception as e:  # noqa: BLE001
                 if progress:
-                    progress(f"YouTube echec : {e}")
+                    progress(f"YouTube failed: {e}")
     elif "1001tracklists.com" in low:
         source = "djset:1001"
         try:
             pairs = _scrape_1001(url, progress)
         except Exception as e:  # noqa: BLE001
             if progress:
-                progress(f"1001Tracklists echec (Cloudflare ?) : {e}")
+                progress(f"1001Tracklists failed (Cloudflare?): {e}")
     elif "set79.com" in low:
         source = "djset:set79"
         try:
             pairs = _scrape_set79(url, progress)
         except Exception as e:  # noqa: BLE001
             if progress:
-                progress(f"set79 echec : {e}")
+                progress(f"set79 failed: {e}")
     else:
         # URL inconnue : yt-dlp gere aussi SoundCloud/Mixcloud/etc., on tente.
         try:
             pairs = _scrape_youtube(url, progress)
         except Exception as e:  # noqa: BLE001
             if progress:
-                progress(f"extraction echec : {e}")
+                progress(f"extraction failed: {e}")
 
     rows = _rows_from_pairs(pairs, source, url)
     if progress:
-        progress(f"{len(rows)} piste(s) trouvee(s).")
+        progress(f"{len(rows)} track(s) found.")
     return rows

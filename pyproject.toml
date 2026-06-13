@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "ddd-digdigdig"
-version = "0.1.9"
+version = "0.2.0"
 description = "DDD - DigDigDig : scan qualite lossless + upgrade Soulseek"
 readme = "README.md"
 requires-python = ">=3.10"

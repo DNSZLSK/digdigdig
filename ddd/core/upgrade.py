@@ -92,19 +92,19 @@ def _reject_reason(it, dl, q, preset=quality.DEFAULT_PRESET):
     """
     dur = getattr(q, "duration_s", 0) or 0
     if 0 < dur < MIN_DURATION_S:
-        return ACT_TOO_SHORT, f"trop court ({dur:.0f}s < {MIN_DURATION_S}s) : preview/sample probable"
+        return ACT_TOO_SHORT, f"too short ({dur:.0f}s < {MIN_DURATION_S}s): likely preview/sample"
 
     found = set(get_tokens(Path(dl.filepath).stem))
     t_cov = token_coverage(core_title_tokens(it.title), found)    # -1 = titre non jugeable
     artist_req = get_tokens(it.artist)   # tous les collaborateurs (presence, pas couverture)
     artist_ok = (not artist_req) or any(tok in found for tok in artist_req)
     if (0 <= t_cov < MIN_TITLE_COVERAGE) or not artist_ok:
-        return ACT_WRONG_MATCH, (f"mauvais match (titre {t_cov:.0%}, artiste "
-                                 f"{'ok' if artist_ok else 'absent'}) : {Path(dl.filepath).name}")
+        return ACT_WRONG_MATCH, (f"wrong match (title {t_cov:.0%}, artist "
+                                 f"{'ok' if artist_ok else 'missing'}): {Path(dl.filepath).name}")
 
     if not quality.is_accepted(q, preset):
-        return ACT_REJECTED_FAKE, (f"download sous le seuil ({q.verdict}, "
-                                   f"cutoff {q.cutoff_hz:.0f} Hz, preset {preset}) : {q.reason}")
+        return ACT_REJECTED_FAKE, (f"download below the bar ({q.verdict}, "
+                                   f"cutoff {q.cutoff_hz:.0f} Hz, preset {preset}): {q.reason}")
     return None
 
 
@@ -167,7 +167,7 @@ def build_plan(scan_results, preset: str = quality.DEFAULT_PRESET) -> UpgradePla
         if not title:
             plan.unparseable.append(UpgradeOutcome(
                 action=ACT_UNPARSEABLE, artist=artist, title=title,
-                original=q.path, note="nom de fichier vide / illisible, aucun tag",
+                original=q.path, note="empty / unreadable filename, no tag",
             ))
             continue
         # artist encore vide (ni nom ni tags) -> recherche TITRE-SEUL en dernier recours ;
@@ -209,7 +209,7 @@ def _finalize_download(it, dl, q, *, preset, download_dir, existing, trash_origi
     base = UpgradeOutcome(action="", artist=it.artist, title=it.title, original=it.origin_path)
     if dl is None or not dl.downloaded:
         base.action = ACT_NOT_FOUND
-        base.note = "sldl n'a ramene aucun fichier"
+        base.note = "sldl returned no file"
         return base, False
     base.new_file, base.new_verdict, base.new_cutoff_hz = dl.filepath, q.verdict, q.cutoff_hz
     rej = _reject_reason(it, dl, q, preset)
@@ -223,10 +223,10 @@ def _finalize_download(it, dl, q, *, preset, download_dir, existing, trash_origi
     if trash_origin:
         trash.send_to_trash(it.origin_path)       # le faux source -> corbeille
         base.action = ACT_REPLACED
-        base.note = "depose dans la bibliotheque ; original a la corbeille"
+        base.note = "added to the library; original to trash"
     else:
         base.action = ACT_ACQUIRED
-        base.note = f"depose dans la bibliotheque: {final}"
+        base.note = f"added to the library: {final}"
     return base, True
 
 
@@ -275,7 +275,7 @@ def _download_pass(
             for it in chunk_not_found:
                 outcomes.append(UpgradeOutcome(
                     action=ACT_NOT_FOUND, artist=it.artist, title=it.title,
-                    original=it.origin_path, note="sldl n'a ramene aucun fichier"))
+                    original=it.origin_path, note="sldl returned no file"))
                 if on_item:
                     on_item(_item_id(it), "done", ACT_NOT_FOUND)
             continue
@@ -333,7 +333,7 @@ def run_upgrade(
         for o in plan.unparseable:
             on_item(o.original, "done", o.action)
 
-    # Dedoublonnage a l'entree : ce qui est deja dans la bibliotheque -> DUPLICATE.
+    # Dedoublonnage a l'entree : ce qui est already in library -> DUPLICATE.
     # On ne touche PAS au source dans ce cas (pas de check de version -> jamais de
     # suppression a l'aveugle sur un simple match de cle).
     existing = _existing_keys(download_dir)
@@ -341,7 +341,7 @@ def run_upgrade(
     for it in plan.items:
         if match_key(it.artist, it.title) in existing:
             outcomes.append(UpgradeOutcome(action=ACT_DUPLICATE, artist=it.artist, title=it.title,
-                                           original=it.origin_path, note="deja dans la bibliotheque"))
+                                           original=it.origin_path, note="already in library"))
             if on_item:
                 on_item(_item_id(it), "done", ACT_DUPLICATE)
         else:
@@ -447,7 +447,7 @@ def acquire_rows(
     preset = preset or quality.preset_from_config()
 
     outcomes: List[UpgradeOutcome] = []
-    existing = _existing_keys(download_dir)   # deja dans la bibliotheque -> on saute
+    existing = _existing_keys(download_dir)   # already in library -> on saute
     seen: set = set()                         # doublons a l'interieur de la want-list
     items: List[WantItem] = []
     for r in rows:
@@ -456,7 +456,7 @@ def acquire_rows(
             continue
         key = match_key(artist, title)
         if key in existing or key in seen:
-            note = "deja dans la bibliotheque" if key in existing else "doublon dans la liste"
+            note = "already in library" if key in existing else "duplicate in the list"
             outcomes.append(UpgradeOutcome(action=ACT_DUPLICATE, artist=artist, title=title,
                                            original="", note=note))
             if on_item:
