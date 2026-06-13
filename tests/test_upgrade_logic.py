@@ -195,8 +195,8 @@ def main():
     print("OK import_folder : accepte garde, reste corbeille")
 
     # === build_plan : nom sans separateur -> requete construite depuis les TAGS ===
-    up._read_tags = lambda p: ({"artist": "Gary Beck", "title": "Get Down", "album": ""}
-                               if "gary" in str(p).lower() else {"artist": "", "title": "", "album": ""})
+    up.read_tags = lambda p: ({"artist": "Gary Beck", "title": "Get Down", "album": ""}
+                              if "gary" in str(p).lower() else {"artist": "", "title": "", "album": ""})
     plan = up.build_plan([_qr(r"C:\lib\gary-beck-get-down.mp3", quality.DOUTEUX)], preset="dj_club")
     assert plan.items and plan.items[0].artist == "Gary Beck" and plan.items[0].title == "Get Down", \
         f"nom sans ' - ' doit utiliser les tags : {plan.items}"

@@ -18,15 +18,9 @@ from pathlib import Path
 from typing import Dict, Optional
 
 from . import tokenize as tok
-from .naming import parse_filename
+from .naming import parse_filename, read_tags
 
 logger = logging.getLogger(__name__)
-
-try:
-    import mutagen
-    _MUTAGEN = True
-except ImportError:  # pragma: no cover
-    _MUTAGEN = False
 
 # Statuts d'audit nommage
 OK = "OK"
@@ -58,31 +52,10 @@ class NameAudit:
         return asdict(self)
 
 
-def _read_tags(path) -> Dict[str, str]:
-    """Lit artist/title/album via mutagen (uniforme tous formats). {} si rien."""
-    if not _MUTAGEN:
-        return {}
-    try:
-        mf = mutagen.File(str(path), easy=True)
-    except Exception as e:  # noqa: BLE001
-        logger.debug("mutagen fail %s: %r", path, e)
-        return {}
-    if mf is None or not getattr(mf, "tags", None):
-        return {}
-
-    def first(key: str) -> str:
-        val = mf.tags.get(key) if mf.tags else None
-        if not val:
-            return ""
-        return (val[0] if isinstance(val, (list, tuple)) else str(val)).strip()
-
-    return {"artist": first("artist"), "title": first("title"), "album": first("album")}
-
-
 def audit_file(path) -> NameAudit:
     p = Path(path)
     parsed = parse_filename(p)
-    tags = _read_tags(p)
+    tags = read_tags(p)
     tag_artist = tags.get("artist", "")
     tag_title = tags.get("title", "")
 

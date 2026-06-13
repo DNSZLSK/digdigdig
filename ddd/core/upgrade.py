@@ -20,8 +20,7 @@ from pathlib import Path
 from typing import Callable, Dict, List, Optional, Sequence
 
 from . import quality
-from .naming import match_key, parse_filename, normalize_artist_title
-from .audit import _read_tags
+from .naming import match_key, parse_filename, normalize_artist_title, resolve_name, read_tags, search_title
 from .scan import scan_folder, scan_library, AUDIO_EXTS
 from .tokenize import get_tokens, token_coverage, core_title_tokens
 from . import soulseek
@@ -157,18 +156,14 @@ def build_plan(scan_results, preset: str = quality.DEFAULT_PRESET) -> UpgradePla
             continue                   # pas un fichier audio exploitable
         if quality.is_accepted(q, preset):
             continue                   # deja au-dessus du seuil -> rien a faire
-        parsed = parse_filename(q.path)
-        artist, title = normalize_artist_title(parsed.artist, parsed.title)  # VA/prefixe/dup
-        if not artist:
-            # Pas d'artiste depuis le NOM -> tags embarques (ID3/Vorbis) : bien plus precis
-            # que le titre-seul (ex: "gary-beck-get-down.mp3" -> tags "Gary Beck / Get Down").
-            tags = _read_tags(q.path)
-            t_artist = (tags.get("artist") or "").strip()
-            t_title = (tags.get("title") or "").strip()
-            if t_artist and t_title:
-                artist, title = normalize_artist_title(t_artist, t_title)
-            elif t_title:
-                title = normalize_artist_title("", t_title)[1] or title
+        # Resolveur de nom commun (nom propre -> tag-titre 'Artiste - Titre' -> tags -> deslug).
+        # Coupe le cas piege ou l'artist tag est un compilateur ("Tibor Tury") et le vrai
+        # couple est dans le tag titre ("John Kano - Havana Funk") -> recherche enfin valide.
+        r = resolve_name(q.path, tags=read_tags(q.path))
+        # Nettoie le titre POUR LA RECHERCHE (vire [label, annee], annee, '*') : la requete
+        # sldl ET la validation _reject_reason partagent ce titre. Le rename, lui, garde le
+        # crochet (il appelle resolve_name directement).
+        artist, title = r.artist, search_title(r.title)
         if not title:
             plan.unparseable.append(UpgradeOutcome(
                 action=ACT_UNPARSEABLE, artist=artist, title=title,

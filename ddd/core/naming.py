@@ -7,10 +7,21 @@ index-free : la "verite demandee" d'un fichier existant, c'est son propre nom.
 
 from __future__ import annotations
 
+import logging
 import re
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Optional
+from typing import Dict, Optional
+
+from . import tokenize as tok
+
+logger = logging.getLogger(__name__)
+
+try:
+    import mutagen
+    _MUTAGEN = True
+except ImportError:  # pragma: no cover
+    _MUTAGEN = False
 
 # Codes label/catalogue en crochets : [MELCURE010], [001], [KTLP001V1]
 _LABEL_CODE = re.compile(r"\[[A-Za-z0-9]+\]")
@@ -103,3 +114,162 @@ def normalize_artist_title(artist: str, title: str):
             t = _light(t[m.end():])
 
     return _light(a), _light(t)
+
+
+# ---- Lecture des tags embarques (ID3/Vorbis/...) -----------------------------
+
+def read_tags(path) -> Dict[str, str]:
+    """Lit artist/title/album via mutagen (uniforme tous formats). {} si rien.
+
+    Vit ici (et plus dans audit.py) pour que le resolveur de nom puisse l'utiliser
+    sans import circulaire (audit importe naming, jamais l'inverse).
+    """
+    if not _MUTAGEN:
+        return {}
+    try:
+        mf = mutagen.File(str(path), easy=True)
+    except Exception as e:  # noqa: BLE001
+        logger.debug("mutagen fail %s: %r", path, e)
+        return {}
+    if mf is None or not getattr(mf, "tags", None):
+        return {}
+
+    def first(key: str) -> str:
+        val = mf.tags.get(key) if mf.tags else None
+        if not val:
+            return ""
+        return (val[0] if isinstance(val, (list, tuple)) else str(val)).strip()
+
+    return {"artist": first("artist"), "title": first("title"), "album": first("album")}
+
+
+# ---- Resolveur de nom : meilleur (artist, title) pour recherche + rename -----
+
+# Marques invisibles (ZWSP/ZWNJ/ZWJ/LRM/RLM/BOM) qui parasitent les tags exportes
+_ZERO_WIDTH = re.compile("[\u200b\u200c\u200d\u200e\u200f\ufeff]")
+# Tirets unicode (hyphen .. horizontal bar, signe moins) -> hyphen ASCII
+_UNI_DASH = re.compile("[\u2010-\u2015\u2212]")
+# Caractere de remplacement (mojibake) isole entre espaces = un tiret separateur casse
+_MOJIBAKE_DASH = re.compile("\\s\ufffd+\\s")
+# Annee en fin de titre : "(1997)" / "(2005)"
+_TRAIL_YEAR = re.compile(r"\s*\((?:19|20)\d{2}\)\s*$")
+# Prefixe "audiomack download" colle en tete de slug (am-dl-...)
+_JUNK_SLUG_TOKENS = {"am", "dl"}
+# Parentheses consecutives identiques : "(X Remix) (X Remix)" -> "(X Remix)"
+_DUP_PAREN = re.compile(r"(\([^)]*\))(?:\s*\1)+", re.IGNORECASE)
+# Crochets = label / numero de catalogue / annee : "[Circus Company, 2009]"
+_BRACKETS = re.compile(r"\[[^\]]*\]")
+# '*' de fin de titre (marqueur source unreleased/ID, pollue la recherche)
+_TRAIL_STAR = re.compile(r"\s*\*+\s*$")
+
+
+def _norm_dashes(s: str) -> str:
+    """Normalise les tirets/marques unicode pour que le split ' - ' fonctionne."""
+    if not s:
+        return ""
+    s = _ZERO_WIDTH.sub("", s)
+    s = _UNI_DASH.sub("-", s)
+    s = _MOJIBAKE_DASH.sub(" - ", s)
+    return _WS.sub(" ", s).strip()
+
+
+def _looks_slug(s: str) -> bool:
+    """Vrai si le fragment ressemble a un slug ('am-dl-the-bar-dub') et pas a un vrai
+    artiste/titre. Seuil a 3 tirets : laisse passer 'Jazz-N-Groove', 'Nae-Fix'."""
+    s = (s or "").strip()
+    return bool(s) and " " not in s and s.count("-") >= 3
+
+
+def _strip_year(t: str) -> str:
+    """Retire une annee finale entre parentheses, garde les autres parentheses (mix)."""
+    return _TRAIL_YEAR.sub("", t or "").strip()
+
+
+def _clean_title(t: str) -> str:
+    """Titre depuis un tag : strip annee finale + dedoublonne les parentheses consecutives."""
+    return _DUP_PAREN.sub(r"\1", _strip_year(t)).strip()
+
+
+def search_title(t: str) -> str:
+    """Titre nettoye pour la requete Soulseek : retire [label/catalogue], '*' de fin,
+    annee finale, parentheses doublees. GARDE les (Original Mix)/(X Remix) (vraie version).
+
+    A appliquer cote recherche (WantItem) PAS au rename : on garde '[Label, 2009]' dans
+    le nom de fichier (metadonnee utile) mais on ne le balance pas a sldl (sinon 0 match).
+    """
+    t = _BRACKETS.sub("", t or "")
+    t = _TRAIL_STAR.sub("", t)
+    t = _strip_year(t)
+    t = _DUP_PAREN.sub(r"\1", t)
+    return _WS.sub(" ", t).strip()
+
+
+def _deslug(stem: str) -> str:
+    """Slug 'a-b-c' -> 'A B C' (titre-seul, artiste inconnu). Strip annee + junk 'am dl'."""
+    s = _norm_dashes(stem)
+    s = re.sub(r"\bcopie\b", "", s, flags=re.IGNORECASE)        # variantes "- Copie"
+    parts = [p for p in re.split(r"[-_\s]+", s) if p]
+    parts = [p for p in parts if not re.fullmatch(r"(?:19|20)\d{2}", p)]   # annees
+    while parts and parts[0].lower() in _JUNK_SLUG_TOKENS:
+        parts.pop(0)
+    return " ".join(w.capitalize() for w in parts).strip()
+
+
+@dataclass
+class ResolvedName:
+    artist: str
+    title: str
+    source: str        # name | title-tag | tags | name-title | deslug
+    confident: bool    # True = sur de soi -> ok pour renommer le fichier sur disque
+
+
+def resolve_name(path, tags: Optional[Dict[str, str]] = None) -> ResolvedName:
+    """Meilleur (artist, title) pour un fichier, par cascade de sources fiables.
+
+    1. NOM 'Artiste - Titre' propre (pas un slug).
+    2. TAG titre contenant ' - ' : le vrai couple (cas mixtape ou artist tag = compilateur,
+       ex: artist='Tibor Tury', title='John Kano - Havana Funk (1997)').
+    3. TAGS artist+title propres (artist non-VA, titre recouvrant le nom de fichier).
+    4. Deslugification du nom -> titre-seul (artiste inconnu), non fiable.
+
+    `confident=False` -> a chercher mais jamais a renommer automatiquement.
+    """
+    stem = Path(path).stem
+    parsed = parse_filename(path)
+
+    # 1. NOM propre
+    if parsed.parseable and not _looks_slug(parsed.artist) and not _looks_slug(parsed.title):
+        a, t = normalize_artist_title(parsed.artist, parsed.title)
+        if a and t:
+            return ResolvedName(a, t, "name", True)
+
+    if tags is None:
+        tags = read_tags(path)
+    t_artist = _norm_dashes(tags.get("artist", ""))
+    t_title = _norm_dashes(tags.get("title", ""))
+
+    # 2. TAG titre = 'Artiste - Titre' (cas mixtape : artist tag = compilateur)
+    m = _SEP.search(t_title) if t_title else None
+    if m:
+        a, t = normalize_artist_title(_light(t_title[: m.start()]),
+                                      _clean_title(_light(t_title[m.end():])))
+        if a and t:
+            return ResolvedName(a, t, "title-tag", True)
+
+    # 3. TAGS propres -- fiable seulement si le NOM corrobore artiste ET titre. Sinon un
+    #    tag auto faux (slug 'dj-assasins-...' tagge 'The Players Association', ou
+    #    'the-origin-of-dance...' tagge 'Mandrill') passerait a tort -> on le marque
+    #    non-fiable : cherchable, mais jamais renomme automatiquement.
+    if t_artist and t_title and t_artist.lower() not in _VA_ARTISTS:
+        a, t = normalize_artist_title(t_artist, _clean_title(t_title))
+        if a and t:
+            slug_tokens = tok.get_tokens(stem)
+            title_cov = tok.token_coverage(tok.get_tokens(tok.remove_feat_tail(t)), slug_tokens)
+            artist_cov = tok.token_coverage(tok.core_artist_tokens(a), slug_tokens)
+            confident = (title_cov < 0 or title_cov >= 0.5) and artist_cov != 0
+            return ResolvedName(a, t, "tags", confident)
+
+    # 4. dernier recours : titre-seul depuis le nom (deslug si slug)
+    if parsed.title and not _looks_slug(parsed.title):
+        return ResolvedName("", _strip_year(parsed.title), "name-title", False)
+    return ResolvedName("", _deslug(stem), "deslug", False)

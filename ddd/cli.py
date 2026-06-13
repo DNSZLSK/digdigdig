@@ -17,6 +17,7 @@ from .core.scan import (
     SCAN_RECORD_FIELDS, duplicate_groups, scan_library, write_csv, write_json,
 )
 from .core import upgrade as upgrade_mod
+from .core import rename as rename_mod
 
 # Ordre d'affichage du resume (du plus actionnable au moins)
 VERDICT_ORDER = [LOSSLESS, HQ, DOUTEUX, MAUVAIS, "ERROR", "SKIPPED"]
@@ -175,6 +176,59 @@ def _write_outcomes_csv(outcomes, path) -> None:
         for o in outcomes:
             row = o.as_dict()
             w.writerow({k: row.get(k, "") for k in fields})
+
+
+def _cmd_rename(args: argparse.Namespace) -> int:
+    from collections import Counter
+
+    folder = Path(args.folder)
+    if not folder.exists():
+        print(f"dossier introuvable: {folder}", file=sys.stderr)
+        return 2
+
+    rep = rename_mod.rename_folder(
+        folder, apply=args.apply, dedup=args.dedup,
+        exclude=args.exclude, outputs_dir=paths.outputs_dir(),
+    )
+
+    mode = "APPLIQUE" if args.apply else "DRY-RUN"
+    print(f"\n=== Rename: {folder.name} ===  [{mode}]")
+    counts = Counter(o.action for o in rep.ops)
+    for action in (rename_mod.REN, rename_mod.OK, rename_mod.SKIP, rename_mod.DUP):
+        if counts.get(action):
+            print(f"  {action:<5} {counts[action]:>4}")
+
+    if rep.dups:
+        nred = sum(len(g.redundant) for g in rep.dups)
+        verb = "supprimees" if (args.apply and args.dedup) else "a supprimer (ajoute --dedup)"
+        print(f"\nDOUBLONS : {len(rep.dups)} groupes, {nred} copies {verb} "
+              f"(~{_human_size(rep.wasted_bytes)})")
+
+    renamed = rep.of(rename_mod.REN)
+    if renamed:
+        tag = "RENOMME" if args.apply else "RENOMMERAIT"
+        print(f"\n  --- {len(renamed)} {tag} ---")
+        for o in renamed:
+            print(f"  {Path(o.src).name}")
+            print(f"     -> {Path(o.dst).name}   [{o.source}]")
+
+    skipped = rep.of(rename_mod.SKIP)
+    if skipped:
+        print(f"\n  --- {len(skipped)} laisse(s) tel(s) quel(s) (resolution peu fiable) ---")
+        for o in skipped[:20]:
+            print(f"  {Path(o.src).name}   ({o.reason})")
+        if len(skipped) > 20:
+            print(f"  ... +{len(skipped) - 20} autres")
+
+    if args.verbose:
+        for o in rep.of(rename_mod.OK):
+            print(f"  OK    {Path(o.src).name}")
+
+    if rep.log_path:
+        print(f"\nJournal : {rep.log_path}")
+    if not args.apply:
+        print("\n(dry-run) Relance avec --apply pour ecrire ; ajoute --dedup pour supprimer les copies.")
+    return 0
 
 
 def _acquire_rows_now(rows) -> int:
@@ -389,6 +443,18 @@ def build_parser() -> argparse.ArgumentParser:
                       help="sous-dossier a ignorer (repetable)")
     p_im.add_argument("-v", "--verbose", action="store_true", help="afficher chaque fichier")
     p_im.set_defaults(func=_cmd_import)
+
+    p_ren = sub.add_parser("rename",
+                           help="renommer un dossier en 'Artiste - Titre' (depuis nom + tags)")
+    p_ren.add_argument("folder", help="dossier a renommer")
+    p_ren.add_argument("--apply", action="store_true",
+                       help="ecrire les renommages (defaut: dry-run, rien n'est touche)")
+    p_ren.add_argument("--dedup", action="store_true",
+                       help="envoyer les copies byte-identiques a la corbeille (garde 1 exemplaire)")
+    p_ren.add_argument("-x", "--exclude", action="append", default=[], metavar="NOM",
+                       help="sous-dossier a ignorer (repetable)")
+    p_ren.add_argument("-v", "--verbose", action="store_true", help="afficher aussi les fichiers deja propres")
+    p_ren.set_defaults(func=_cmd_rename)
 
     p_cfg = sub.add_parser("config", help="gerer la config (creds, cible)")
     p_cfg.add_argument("action", choices=["show", "set"])
