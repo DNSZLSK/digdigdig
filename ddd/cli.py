@@ -486,7 +486,7 @@ def build_parser() -> argparse.ArgumentParser:
     p_sc = sub.add_parser("scrape", help="scrape favorites/tracklists -> CSV want-list (-> acquire)")
     p_sc.add_argument("source", choices=["discogs", "bandcamp", "djset"], help="source to scrape")
     p_sc.add_argument("username", metavar="USER_OR_URL",
-                      help="username (discogs/bandcamp) OR set URL (djset: YouTube/1001Tracklists)")
+                      help="username (discogs/bandcamp) OR URL (djset: YouTube set/channel/playlist, 1001Tracklists)")
     p_sc.add_argument("-o", "--out", help="output CSV (default: outputs/<source>_<user>.csv)")
     p_sc.add_argument("--token", help="Discogs token (else $DISCOGS_TOKEN or ddd config)")
     p_sc.add_argument("--include-collection", action="store_true", help="Discogs: also the collection")

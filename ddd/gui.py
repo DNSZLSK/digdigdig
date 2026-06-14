@@ -516,7 +516,7 @@ def main(page: ft.Page) -> None:
                  ft.dropdown.Option(key="djset", text="DJ set (URL)")])
     discogs_collection_cb = ft.Checkbox(label="Include collection", value=False, visible=True)
     bandcamp_expand_cb = ft.Checkbox(label="Expand albums", value=True, visible=False)
-    djset_url = ft.TextField(label="Set or YouTube playlist URL (or 1001TL / tracklist file)",
+    djset_url = ft.TextField(label="Set / channel / playlist URL (or 1001TL / tracklist file)",
                              visible=False, width=480)
     acquire_table_col = ft.Column(scroll=ft.ScrollMode.AUTO, expand=True, spacing=2)
 
@@ -577,7 +577,7 @@ def main(page: ft.Page) -> None:
         else:                                   # djset : pas de creds, juste l'URL / le fichier
             username = (djset_url.value or "").strip()
             if not username:
-                status.value = "Enter the set URL (YouTube / 1001TL) or a tracklist file."
+                status.value = "Enter the set / channel / playlist URL (YouTube / 1001TL) or a tracklist file."
                 page.update()
                 return
         # Acquire telecharge via Soulseek : on verifie les creds AVANT de scraper, sinon

@@ -285,6 +285,36 @@ def _playlist_id(url: str) -> Optional[str]:
     return lid
 
 
+# Chaine YouTube : ses uploads forment une playlist cachee 'UU...' (= 'UU' + channelId[2:])
+# que YouTube rend comme une playlist normale -> on reutilise le paginateur InnerTube.
+_CHANNEL_URL = re.compile(r"youtube\.com/(?:@[^/?#]+|c/[^/?#]+|user/[^/?#]+|channel/UC[\w-]+)", re.I)
+_UC_RX = r"(UC[0-9A-Za-z_-]{20,})"
+_UC_IN_URL = re.compile(r"/channel/" + _UC_RX, re.I)
+_UC_IN_PAGE = re.compile(r'"(?:externalId|channelId|browseId)":"' + _UC_RX + '"')
+
+
+def _channel_uploads_id(url: str) -> Optional[str]:
+    """URL de chaine (@handle, /c/, /user/, /channel/UC...) -> ID de playlist 'uploads'
+    (UU...). None si ce n'est pas une chaine ou si on n'a pas pu resoudre le channelId.
+
+    /channel/UC... : l'id est dans l'URL. Sinon (@handle, c/, user/) on lit la page de la
+    chaine et on extrait le UC... (champs JSON externalId/channelId/browseId, ou un lien
+    /channel/UC... type canonical)."""
+    if not _CHANNEL_URL.search(url):
+        return None
+    m = _UC_IN_URL.search(url)
+    uc = m.group(1) if m else None
+    if not uc:
+        try:
+            html = _yt_get(url)
+        except Exception as e:  # noqa: BLE001
+            logger.debug("channel resolve fetch echec: %r", e)
+            return None
+        m = _UC_IN_PAGE.search(html) or _UC_IN_URL.search(html)
+        uc = m.group(1) if m else None
+    return ("UU" + uc[2:]) if uc else None
+
+
 def _clean_video_title(title: str) -> str:
     """Titre de video YouTube -> propre pour le split : vire le bruit (Official Video,
     Lyric Video, | Channel, Free DL...). Garde les (Original Mix)/(X Remix)."""
@@ -410,8 +440,9 @@ def _scrape_youtube_playlist(list_id: str, progress: ProgressCb) -> List[Pair]:
     return pairs
 
 
-def _scrape_youtube_playlist_ytdlp(list_id: str, progress: ProgressCb) -> List[Pair]:
-    """Repli yt-dlp flat (ne pagine plus le nouveau format -> souvent la 1re page seulement)."""
+def _ytdlp_flat_pairs(target_url: str) -> List[Pair]:
+    """yt-dlp flat (extract_flat) sur une URL playlist OU chaine -> [(artist, title)].
+    Repli quand l'InnerTube ne ramene rien. yt-dlp gere nativement les deux."""
     try:
         import yt_dlp  # noqa: PLC0415
     except ImportError:
@@ -419,8 +450,34 @@ def _scrape_youtube_playlist_ytdlp(list_id: str, progress: ProgressCb) -> List[P
     opts = {"quiet": True, "no_warnings": True, "noprogress": True, "socket_timeout": 30,
             "extract_flat": "in_playlist", "skip_download": True}
     with yt_dlp.YoutubeDL(opts) as ydl:
-        info = ydl.extract_info(f"https://www.youtube.com/playlist?list={list_id}", download=False)
+        info = ydl.extract_info(target_url, download=False)
     return _pairs_from_entries(info.get("entries") or [])
+
+
+def _scrape_youtube_playlist_ytdlp(list_id: str, progress: ProgressCb) -> List[Pair]:
+    """Repli yt-dlp flat pour une playlist (ne pagine plus le nouveau format -> 1re page)."""
+    return _ytdlp_flat_pairs(f"https://www.youtube.com/playlist?list={list_id}")
+
+
+def _scrape_youtube_channel(url: str, uploads_id: str, progress: ProgressCb) -> List[Pair]:
+    """Chaine YouTube : chaque upload = un track. Via la playlist 'uploads' (UU...) +
+    paginateur InnerTube (pagine TOUT), repli yt-dlp flat sur l'URL de chaine."""
+    if progress:
+        progress("YouTube channel: extracting uploads...")
+    try:
+        titles = _youtube_playlist_titles(uploads_id, progress)
+    except Exception as e:  # noqa: BLE001
+        titles = []
+        logger.debug("channel InnerTube echec: %r", e)
+    if not titles:                          # repli : yt-dlp flat sur l'URL de chaine
+        pairs = _ytdlp_flat_pairs(url)
+        if not pairs and progress:
+            progress("  -> 0 video: channel empty/unavailable, or the URL is wrong.")
+        return pairs
+    pairs = _pairs_from_entries([{"title": t} for t in titles])
+    if progress:
+        progress(f"  -> {len(titles)} videos, {len(pairs)} parsed as Artist - Title")
+    return pairs
 
 
 # ---- 1001Tracklists (cloudscraper, comme bandcamp.py) -----------------------
@@ -511,6 +568,7 @@ def scrape_djset(url: str, progress: ProgressCb = None) -> List[Dict]:
 
     if "youtube.com" in low or "youtu.be" in low:
         list_id = _playlist_id(url)
+        uploads_id = None if list_id else _channel_uploads_id(url)
         if list_id:                              # playlist : chaque video = un track
             source = "djset:youtube-playlist"
             try:
@@ -518,6 +576,13 @@ def scrape_djset(url: str, progress: ProgressCb = None) -> List[Dict]:
             except Exception as e:  # noqa: BLE001
                 if progress:
                     progress(f"YouTube playlist failed: {e}")
+        elif uploads_id:                         # chaine : chaque upload = un track
+            source = "djset:youtube-channel"
+            try:
+                pairs = _scrape_youtube_channel(url, uploads_id, progress)
+            except Exception as e:  # noqa: BLE001
+                if progress:
+                    progress(f"YouTube channel failed: {e}")
         else:                                    # set : 1 video, tracklist desc/commentaires/ContentID
             source = "djset:youtube"
             try:

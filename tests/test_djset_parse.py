@@ -205,3 +205,41 @@ def test_strip_year_anywhere_keeps_version():
     assert _strip_catalog("Think Positive (Kid Smart Remix) (2001)") == "Think Positive (Kid Smart Remix)"
     assert _strip_catalog("They're Among Us (1996)") == "They're Among Us"
     assert _strip_catalog("Captain Future (2003) (Q-NRT Club Mix)") == "Captain Future (Q-NRT Club Mix)"
+
+
+_UC = "UCabcdefghijklmnopqrstuv"   # UC + 22 = 24 chars (id de chaine valide)
+
+
+def test_channel_uploads_id_direct_and_negatives():
+    from ddd.core.scrapers.djset import _channel_uploads_id
+    # /channel/UC... : id direct dans l'URL -> uploads playlist UU... (pas de reseau)
+    assert _channel_uploads_id(f"https://www.youtube.com/channel/{_UC}") == "UU" + _UC[2:]
+    assert _channel_uploads_id(f"https://www.youtube.com/channel/{_UC}/videos") == "UU" + _UC[2:]
+    # pas une chaine -> None, sans aucun fetch
+    assert _channel_uploads_id("https://www.youtube.com/watch?v=abc") is None
+    assert _channel_uploads_id("https://www.youtube.com/playlist?list=PLxxx") is None
+    assert _channel_uploads_id("https://youtu.be/abc123") is None
+
+
+def test_channel_uploads_id_handle_resolves_via_page(monkeypatch):
+    # @handle / c/ / user/ : on lit la page et on extrait le channelId UC... du JSON
+    html = f'var x = {{"responseContext":{{}},"channelId":"{_UC}","title":"Some Digger"}};'
+    monkeypatch.setattr(d, "_yt_get", lambda url, data=None: html)
+    assert d._channel_uploads_id("https://www.youtube.com/@SomeDigger/videos") == "UU" + _UC[2:]
+    assert d._channel_uploads_id("https://www.youtube.com/c/SomeDigger") == "UU" + _UC[2:]
+
+
+def test_channel_uploads_id_unresolvable_returns_none(monkeypatch):
+    # page de chaine sans aucun UC... -> None (et le dispatcher retombera sur la branche video)
+    monkeypatch.setattr(d, "_yt_get", lambda url, data=None: "<html>no id here</html>")
+    assert d._channel_uploads_id("https://www.youtube.com/@Ghost") is None
+
+
+def test_scrape_djset_routes_channel(monkeypatch):
+    # URL de chaine -> branche djset:youtube-channel, titres via le paginateur (mocke offline)
+    monkeypatch.setattr(d, "_channel_uploads_id", lambda url: "UU" + _UC[2:])
+    monkeypatch.setattr(d, "_youtube_playlist_titles",
+                        lambda upid, prog, **kw: ["A - B", "C - D (Original Mix)", "A - B"])
+    rows = scrape_djset("https://www.youtube.com/@SomeDigger/videos", progress=None)
+    assert [(r["Artist"], r["Title"]) for r in rows] == [("A", "B"), ("C", "D (Original Mix)")]
+    assert rows[0]["Source"] == "djset:youtube-channel"   # routage + dedup lower(a)-lower(t)
