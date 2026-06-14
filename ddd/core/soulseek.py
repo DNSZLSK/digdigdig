@@ -12,6 +12,7 @@ import logging
 import os
 import platform
 import re
+import shutil
 import subprocess
 import sys
 from dataclasses import dataclass
@@ -166,6 +167,26 @@ def stop_orphan_sldl() -> bool:
     except Exception as e:  # noqa: BLE001
         logger.debug("stop_orphan_sldl: %r", e)
         return False
+
+
+def clear_run_staging(staging_dir, *csv_names) -> None:
+    """Supprime les dossiers de travail sldl d'un run TERMINE (et leurs CSV d'entree).
+
+    Ce qui reste dans `<staging>/<stem>/` apres un run fini est du dechet : les fichiers
+    valides ont deja ete deplaces vers la bibliotheque, les rejetes envoyes a la corbeille
+    -> il ne reste que des candidats orphelins (sldl en telecharge parfois plusieurs), des
+    `.incomplete` et le `_index.csv`. Sans nettoyage, `.cache-dl` grossit sans fin.
+
+    A n'appeler QUE sur un run NON annule : sur annulation/exception on garde tout pour
+    permettre la reprise (sldl `skip-existing`) du run interrompu.
+    """
+    staging_dir = Path(staging_dir)
+    for name in csv_names:
+        shutil.rmtree(staging_dir / Path(name).stem, ignore_errors=True)
+        try:
+            (staging_dir / name).unlink(missing_ok=True)
+        except OSError as e:
+            logger.debug("clear_run_staging unlink %s: %r", name, e)
 
 
 def write_input_csv(items: Sequence[WantItem], path) -> Path:

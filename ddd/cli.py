@@ -318,6 +318,15 @@ def _cmd_scrape(args: argparse.Namespace) -> int:
         print(f"unknown source: {source} (available: {', '.join(scrapers.SOURCES)})", file=sys.stderr)
         return 2
 
+    # --acquire telecharge via Soulseek : verifie les creds AVANT de scraper, sinon on
+    # scrape une longue liste (djset/playlist) pour echouer juste apres faute de compte.
+    if getattr(args, "acquire", False):
+        try:
+            soulseek.read_soulseek_creds()
+        except soulseek.SoulseekError as e:
+            print(f"\n{e}", file=sys.stderr)
+            return 1
+
     def progress(msg: str) -> None:
         print(f"  {msg}", file=sys.stderr)
 

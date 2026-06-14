@@ -358,6 +358,8 @@ def run_upgrade(
         progress=progress, on_item=on_item, on_proc=on_proc, cancel=cancel, log_path=log_path,
         on_chunk=on_chunk,
     )
+    if not (cancel and cancel()):   # run fini -> purge le staging (garde tout si annule, pour reprise)
+        soulseek.clear_run_staging(staging_dir, "ddd_upgrade.csv", "ddd_upgrade_mp3.csv")
     return outcomes
 
 
@@ -485,6 +487,8 @@ def acquire_rows(
         progress=progress, on_item=on_item, on_proc=on_proc, cancel=cancel, log_path=log_path,
         on_chunk=on_chunk,
     )
+    if not (cancel and cancel()):   # run fini -> purge le staging (garde tout si annule, pour reprise)
+        soulseek.clear_run_staging(staging_dir, "ddd_acquire.csv", "ddd_acquire_mp3.csv")
     return outcomes
 
 

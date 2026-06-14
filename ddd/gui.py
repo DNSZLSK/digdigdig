@@ -580,6 +580,15 @@ def main(page: ft.Page) -> None:
                 status.value = "Enter the set URL (YouTube / 1001TL) or a tracklist file."
                 page.update()
                 return
+        # Acquire telecharge via Soulseek : on verifie les creds AVANT de scraper, sinon
+        # djset scrape une longue playlist puis echoue seulement au moment du download.
+        try:
+            soulseek.read_soulseek_creds()
+        except soulseek.SoulseekError as e:
+            status.value = str(e)
+            settings_panel.visible = True
+            page.update()
+            return
         dest = paths.download_dir(config_mod.load())   # bibliotheque (Reglages)
 
         def worker() -> None:

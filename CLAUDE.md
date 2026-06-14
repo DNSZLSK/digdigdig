@@ -35,7 +35,7 @@ Logo : `docs/logo.png`
 - **PowerShell** : pipeline orchestrateur + lib utilitaire (Windows-natif)
 - **Python 3.12** (venv local `.venv/`) : scrapers + FLAC_Detective
 - **sldl** (`bin/sldl/`) : binary .NET self-contained, batch Soulseek download
-- **ffmpeg** : décodage FLAC pour analyse spectrale (winget install Gyan.FFmpeg)
+- **soundfile / libsndfile** : décodage audio (WAV/FLAC/AIFF/MP3) pour l'analyse spectrale du coeur Python - embarqué dans le `.exe`, **pas de ffmpeg requis** (ffmpeg n'était utilisé que par l'ancien pipeline PowerShell)
 - **cloudscraper** : bypass FingerprintJS sur Bandcamp
 - **slskd** (`C:\slskd\`) : daemon Soulseek headless, gardé en standby comme dashboard (port 5030)
 
@@ -199,6 +199,11 @@ sur quoi on construit désormais.
 - Soulseek refus si ratio compte bas → slskd peut auto-partager le `staging/` (déjà configuré dans slskd.yml)
 - Tracks vraiment rares → `unfindable.txt` final, fallback Beatport/Bandcamp paid
 - Bandcamp scraping → dépend de cloudscraper, peut breaker si Bandcamp change
+- **Pas de timeout sur l'I/O fichier réseau** (`soundfile.info`/`sf.read`, `mutagen.File`,
+  subprocess sldl) → un NAS/partage UNC en rade peut figer l'app. Les chemins UNC eux-mêmes
+  marchent (pathlib gère). Reporté : timeout propre sur un appel natif bloquant = délicat.
+- **Pas de check d'espace disque** avant download → un disque plein fait échouer sldl de
+  façon opaque. Reporté (pré-vol `shutil.disk_usage` à ajouter si ça mord).
 
 ---
 

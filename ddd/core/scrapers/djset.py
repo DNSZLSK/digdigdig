@@ -399,7 +399,11 @@ def _scrape_youtube_playlist(list_id: str, progress: ProgressCb) -> List[Pair]:
         titles = []
         logger.debug("playlist InnerTube echec: %r", e)
     if not titles:                          # repli : yt-dlp (ne pagine plus -> souvent 1re page)
-        return _scrape_youtube_playlist_ytdlp(list_id, progress)
+        pairs = _scrape_youtube_playlist_ytdlp(list_id, progress)
+        if not pairs and progress:          # rien des 2 cotes -> dire POURQUOI, pas juste "0 found"
+            progress("  -> 0 video: the playlist may be private, unlisted (the link is "
+                     "required), empty, or the URL is wrong.")
+        return pairs
     pairs = _pairs_from_entries([{"title": t} for t in titles])
     if progress:
         progress(f"  -> {len(titles)} videos, {len(pairs)} parsed as Artist - Title")
