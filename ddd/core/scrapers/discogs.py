@@ -28,9 +28,11 @@ UA = "ddd-digdigdig/0.1 +https://github.com/DNSZLSK/digdigdig"
 ProgressCb = Optional[Callable[[str], None]]
 
 
-def _http_get(url: str, token: str, retries: int = 5):
+def http_get(url: str, token: str, retries: int = 5):
     """GET Discogs via requests (certifi -> SSL robuste ; urllib echouait la verif
-    de certificat sous Windows / dans l'exe). Retry sur reseau + respect du 429."""
+    de certificat sous Windows / dans l'exe). Retry sur reseau + respect du 429.
+
+    Public (reutilise par core/genre.py pour la Database Search en plus du scrape)."""
     headers = {"Authorization": f"Discogs token={token}", "User-Agent": UA}
     for attempt in range(retries):
         try:
@@ -75,7 +77,7 @@ def _join_artists(artists) -> str:
 
 def _paginated(url: str, token: str, key: str):
     while url:
-        data = _http_get(url, token)
+        data = http_get(url, token)
         for item in data.get(key, []):
             yield item
         url = data.get("pagination", {}).get("urls", {}).get("next")
@@ -86,7 +88,7 @@ def _release(release_id: int, token: str, cache_dir: Path):
     if cache_file.exists():
         with open(cache_file, encoding="utf-8") as f:
             return json.load(f)
-    data = _http_get(f"{API}/releases/{release_id}", token)
+    data = http_get(f"{API}/releases/{release_id}", token)
     with open(cache_file, "w", encoding="utf-8") as f:
         json.dump(data, f)
     return data

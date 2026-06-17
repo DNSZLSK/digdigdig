@@ -14,12 +14,12 @@ re-audite, et rapporte ce qui SERAIT remplace, sans toucher la bibliotheque.
 from __future__ import annotations
 
 import logging
-import shutil
 from dataclasses import dataclass, asdict, field
 from pathlib import Path
 from typing import Callable, Dict, List, Optional, Sequence
 
 from . import quality
+from .fsutil import safe_move
 from .naming import match_key, parse_filename, normalize_artist_title, resolve_name, read_tags, search_title
 from .scan import scan_folder, scan_library, AUDIO_EXTS
 from .tokenize import get_tokens, token_coverage, core_title_tokens
@@ -183,20 +183,10 @@ def build_plan(scan_results, preset: str = quality.DEFAULT_PRESET) -> UpgradePla
 def _deposit(src, download_dir) -> Path:
     """Deplace un download VALIDE dans la bibliotheque downloads/ (son vrai nom sldl).
 
-    `downloads/` ne contient donc que du lossless verifie. En cas de collision de nom
-    (rare), suffixe ' (n)'. Retourne le chemin final.
+    `downloads/` ne contient donc que du lossless verifie. Collision de nom (rare) ->
+    suffixe ' (n)'. Delegue le deplacement a `fsutil.safe_move`. Retourne le chemin final.
     """
-    src = Path(src)
-    download_dir = Path(download_dir)
-    download_dir.mkdir(parents=True, exist_ok=True)
-    dest = download_dir / src.name
-    i = 1
-    while dest.exists() and dest.resolve() != src.resolve():
-        dest = download_dir / f"{src.stem} ({i}){src.suffix}"
-        i += 1
-    if dest.resolve() != src.resolve():
-        shutil.move(str(src), str(dest))
-    return dest
+    return safe_move(src, download_dir)
 
 
 def _finalize_download(it, dl, q, *, preset, download_dir, existing, trash_origin):

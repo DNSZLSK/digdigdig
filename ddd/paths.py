@@ -90,3 +90,8 @@ def logs_dir() -> Path:
 
 def outputs_dir() -> Path:
     return _ensure(data_base() / "outputs")
+
+
+def genre_cache_dir() -> Path:
+    """Cache du lookup de genre (1 JSON par 'artiste - titre', miss inclus)."""
+    return _ensure(data_base() / ".genre-cache")

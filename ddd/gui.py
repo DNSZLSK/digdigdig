@@ -19,6 +19,7 @@ incompatibles - voir pyproject [project.optional-dependencies].gui.
 from __future__ import annotations
 
 import atexit
+import json
 import threading
 from pathlib import Path
 from typing import List, Optional
@@ -31,6 +32,7 @@ from .core import config as config_mod
 from .core import quality
 from .core import soulseek
 from .core import upgrade as upgrade_mod
+from .core import organize as organize_mod
 from .core import stores as stores_mod
 from .core.naming import match_key
 from .core.scan import ScanRecord, duplicate_groups, scan_library
@@ -135,6 +137,7 @@ class AppState:
         self.row_status: dict = {}            # bibliotheque, keye par chemin
         self.acquire_rows: list = []
         self.acquire_row_status: dict = {}    # acquire, keye par match_key(artist, titre)
+        self.sort_report = None               # dernier plan de tri (dry-run) en attente d'apply
 
 
 def main(page: ft.Page) -> None:
@@ -169,7 +172,7 @@ def main(page: ft.Page) -> None:
         """Une seule operation a la fois : verrouille les actions des 2 onglets."""
         state.busy = b
         progress.visible = b
-        for btn in (browse_btn, scan_btn, acquire_btn, dl_browse_btn):
+        for btn in (browse_btn, scan_btn, acquire_btn, dl_browse_btn, sort_btn, sort_apply_btn):
             btn.disabled = b
         upgrade_btn.disabled = b or not state.records
         source_dd.disabled = b
@@ -506,6 +509,102 @@ def main(page: ft.Page) -> None:
         state.selected.clear()
         render_table()
 
+    # --- Tri par genre : range les tracks EN VRAC du dossier dans des sous-dossiers
+    #     de vibe (ACID/DEEPWATER/...) via lookup Discogs/MusicBrainz. Dry-run d'abord,
+    #     l'user voit le plan, puis Apply deplace (le cache rend le 2e passage rapide).
+    def render_sort_table(ops) -> None:
+        table_col.controls.clear()
+        if not ops:
+            table_col.controls.append(ft.Text("No loose tracks to sort in this folder.", color=TXT_DIM))
+            page.update()
+            return
+        for o in ops:
+            if o.action == organize_mod.MOVE:
+                label, color = o.folder, "#6E7F5B"
+            elif o.action == organize_mod.INBOX_ACT:
+                label, color = "_INBOX", "#8C7A5A"
+            else:
+                label, color = "left as-is", "#6E6E6E"
+            badge = ft.Container(
+                content=ft.Text(label, size=11, color=TXT, no_wrap=True),
+                bgcolor=color, padding=ft.padding.symmetric(vertical=2, horizontal=8),
+                border_radius=10, width=130)
+            styles = ft.Text(o.styles or "", size=11, color=TXT_DIM, width=200, no_wrap=True)
+            name = ft.Text(Path(o.src).name, expand=True, size=12, no_wrap=True, color=TXT)
+            table_col.controls.append(ft.Row([badge, styles, name], spacing=8))
+        page.update()
+
+    def _run_sort(apply: bool) -> None:
+        folder = folder_field.value or state.folder
+        if not folder or not Path(folder).exists():
+            status.value = "Pick a folder first (Browse)."
+            page.update()
+            return
+        state.folder = folder
+
+        def worker() -> None:
+            set_busy(True)
+            state.cancel_requested = False
+            lib_cancel_btn.visible = not apply       # le dry-run (lookups reseau) est annulable
+            lib_cancel_btn.disabled = False
+            progress.value = None
+            table_col.controls.clear()               # vide la table -> page.update() leger pendant la boucle
+            cfg2 = config_mod.load()
+            # Destination = l'ARBRE DDD (config library_root -> sinon la bibliotheque download_dir),
+            # JAMAIS le dossier source : on transvase le tas vers DDD/ACID, DDD/DEEPWATER, ...
+            lib_root = (cfg2.get("library_root") or cfg2.get("download_dir")
+                        or str(paths.default_download_dir()))
+            status.value = (f"Applying sort -> {lib_root} ..." if apply
+                            else f"Sort preview -> {lib_root}  (genre lookup; first run can take a moment)...")
+            page.update()
+            try:
+                mapping = cfg2.get("genre_mapping") or organize_mod.DEFAULT_GENRE_MAPPING
+                token = (cfg2.get("discogs_token") or "").strip()
+
+                def prog(i: int, total: int, f: Path) -> None:
+                    progress.value = i / total if total else None
+                    if i == total or i % 20 == 0:    # throttle : pas de page.update() par fichier
+                        status.value = f"{'Sorting' if apply else 'Looking up'}... {i}/{total}"
+                        page.update()
+
+                rep = organize_mod.sort_folder(
+                    folder, library_root=lib_root, apply=apply, mapping=mapping,
+                    token=token, cache_dir=paths.genre_cache_dir(),
+                    outputs_dir=(paths.outputs_dir() if apply else None),
+                    progress=prog, cancel=is_cancelled)
+                state.sort_report = None if apply else rep
+                render_sort_table(rep.ops)
+
+                from collections import Counter
+                c = Counter(o.action for o in rep.ops)
+                moved = c.get(organize_mod.MOVE, 0)
+                inbox = c.get(organize_mod.INBOX_ACT, 0)
+                skip = c.get(organize_mod.SKIP, 0)
+                if apply:
+                    summary = f"Sorted: {moved} filed into folders, {inbox} -> _INBOX, {skip} left as-is."
+                    _banner(summary, bool(moved or inbox))
+                    sort_apply_btn.visible = False
+                else:
+                    summary = (f"Preview: {moved} would be filed, {inbox} -> _INBOX, "
+                               f"{skip} left as-is. Review, then Apply sort.")
+                    sort_apply_btn.visible = bool(moved or inbox) and not state.cancel_requested
+                status.value = summary
+            except Exception as ex:  # noqa: BLE001
+                status.value = f"Sort error: {ex}"
+            finally:
+                lib_cancel_btn.visible = False
+                set_busy(False)
+
+        threading.Thread(target=worker, daemon=True).start()
+
+    def do_sort(_e) -> None:
+        if not state.busy:
+            _run_sort(apply=False)
+
+    def do_sort_apply(_e) -> None:
+        if not state.busy and state.sort_report is not None:
+            _run_sort(apply=True)
+
     # ====================================================================
     #  Onglet 2 : Recuperer favoris (scrape Discogs/Bandcamp + acquire)
     # ====================================================================
@@ -707,6 +806,12 @@ def main(page: ft.Page) -> None:
             ft.dropdown.Option(key="puriste", text="Purist (pure lossless)"),
         ])
 
+    mapping_field = ft.TextField(
+        label="Genre -> folder mapping (JSON, advanced)",
+        value=json.dumps(cfg.get("genre_mapping") or organize_mod.DEFAULT_GENRE_MAPPING,
+                         ensure_ascii=False, indent=2),
+        multiline=True, min_lines=3, max_lines=6, expand=True, text_size=11)
+
     def save_settings(_e) -> None:
         vals = {
             "soulseek_user": slsk_user.value.strip(),
@@ -717,9 +822,19 @@ def main(page: ft.Page) -> None:
             "download_dir": (dl_dir_field.value or "").strip(),
             "quality_preset": preset_dd.value,
         }
+        msg = "Settings saved."
+        raw = (mapping_field.value or "").strip()
+        if raw:
+            try:
+                parsed = json.loads(raw)
+                if not isinstance(parsed, dict):
+                    raise ValueError("expected a JSON object {folder: [keywords]}")
+                vals["genre_mapping"] = parsed
+            except (json.JSONDecodeError, ValueError) as e:
+                msg = f"Saved, but genre mapping NOT updated (invalid JSON: {e})."
         config_mod.set_many(vals)
         cfg.update(vals)   # garde le cache en memoire frais (relu aussi a chaud par do_acquire)
-        status.value = "Settings saved."
+        status.value = msg
         page.update()
 
     settings_body = ft.Column([
@@ -735,22 +850,34 @@ def main(page: ft.Page) -> None:
         ft.Text("Quality bar: below it, a file is a candidate for upgrade.",
                 size=12, color=TXT_DIM),
         ft.Row([preset_dd], wrap=True),
+        ft.Text("Sort: genre -> your vibe folders. Edit only to retune; the default covers most.",
+                size=12, color=TXT_DIM),
+        ft.Row([mapping_field]),
         ft.FilledButton(text="Save", on_click=save_settings),
     ], spacing=10)
 
     def toggle_settings(_e) -> None:
-        settings_panel.visible = not settings_panel.visible
+        opening = not settings_panel.visible
+        settings_panel.visible = opening
+        main_stack.visible = not opening      # Reglages prend toute la fenetre ; la croix ferme
         page.update()
 
+    close_settings_btn = ft.IconButton(icon=ft.Icons.CLOSE, tooltip="Close settings",
+                                        on_click=toggle_settings)
+
+    # Panneau Reglages : pas de hauteur fixe (ne coupe plus le contenu). Il occupe la place
+    # via expand et scrolle si besoin ; quand il est ouvert, on cache les onglets derriere
+    # (main_stack.visible=False) -> plein ecran propre, ferme par la croix (le bouton X).
     settings_panel = ft.Container(
         content=ft.Column([
             ft.Row([ft.Icon(ft.Icons.SETTINGS, size=18, color=TXT_DIM),
-                    ft.Text("Settings", size=13, weight=ft.FontWeight.BOLD, color=TXT_DIM)],
-                   spacing=6),
+                    ft.Text("Settings", size=13, weight=ft.FontWeight.BOLD, color=TXT_DIM),
+                    ft.Container(expand=True), close_settings_btn],
+                   spacing=6, vertical_alignment=ft.CrossAxisAlignment.CENTER),
             settings_body,
-        ], spacing=6),
+        ], spacing=6, scroll=ft.ScrollMode.AUTO, expand=True),
         padding=8, border=ft.border.all(1, BORDER), border_radius=8, bgcolor=SURFACE,
-        visible=False)
+        visible=False, expand=True)
 
     # ====================================================================
     #  Boutons
@@ -761,6 +888,11 @@ def main(page: ft.Page) -> None:
                                   on_click=do_upgrade, disabled=True)
     lib_cancel_btn = ft.OutlinedButton(text="Cancel", icon=ft.Icons.CANCEL,
                                        on_click=do_cancel, visible=False)
+    sort_btn = ft.FilledButton(
+        text="Sort by genre", icon=ft.Icons.SORT, on_click=do_sort,
+        tooltip="File loose tracks into vibe subfolders (ACID, DEEPWATER, ...) here, by genre lookup")
+    sort_apply_btn = ft.FilledButton(text="Apply sort", icon=ft.Icons.CHECK,
+                                     on_click=do_sort_apply, visible=False)
     check_all_btn = ft.TextButton(text="Check all", on_click=select_all_visible)
     uncheck_all_btn = ft.TextButton(text="Uncheck all", on_click=clear_selection)
     filter_dd.on_change = lambda _e: render_table()
@@ -775,17 +907,12 @@ def main(page: ft.Page) -> None:
     settings_btn = ft.IconButton(icon=ft.Icons.SETTINGS, tooltip="Settings (credentials)",
                                  on_click=toggle_settings)
 
-    # 1er lancement sans identifiants : deplie Reglages + invite (tout en a besoin)
-    if not ((cfg.get("soulseek_user") or "").strip() and (cfg.get("soulseek_pass") or "")):
-        settings_panel.visible = True
-        status.value = "Tip: enter your Soulseek credentials (gear) to start digging."
-
     # ====================================================================
     #  Layout : barre fine (engrenage) + onglets + barre d'etat
     # ====================================================================
     library_tab = ft.Container(
         content=ft.Column([
-            ft.Row([folder_field, browse_btn, scan_btn]),
+            ft.Row([folder_field, browse_btn, scan_btn, sort_btn, sort_apply_btn]),
             summary_row,
             dup_text,
             ft.Row([filter_dd, check_all_btn, uncheck_all_btn, upgrade_btn, lib_cancel_btn],
@@ -807,22 +934,23 @@ def main(page: ft.Page) -> None:
         ], expand=True, spacing=10),
         padding=ft.padding.only(top=6))
 
-    # Pas de bandeau-titre (redondant avec la barre de fenetre). L'engrenage Reglages
-    # est pose en HAUT A DROITE, superpose (Stack) sur la zone vide de la barre d'onglets
-    # -> point d'acces fixe et visible, sans consommer de hauteur. Le panneau toggle en bas.
-    page.add(
-        ft.Stack([
-            ft.Tabs(selected_index=0, expand=True, tabs=[
-                ft.Tab(text="Library", content=library_tab),
-                ft.Tab(text="Get favorites", content=acquire_tab),
-            ]),
-            ft.Container(ft.Row([feedback_btn, settings_btn], spacing=0), top=0, right=0),
-        ], expand=True),
-        progress,
-        status,
-        buy_btn,
-        settings_panel,
-    )
+    # L'engrenage Reglages est pose en HAUT A DROITE, superpose (Stack) sur la barre d'onglets.
+    # main_stack = les onglets ; on le cache quand le panneau Reglages s'ouvre (plein ecran).
+    main_stack = ft.Stack([
+        ft.Tabs(selected_index=0, expand=True, tabs=[
+            ft.Tab(text="Library", content=library_tab),
+            ft.Tab(text="Get favorites", content=acquire_tab),
+        ]),
+        ft.Container(ft.Row([feedback_btn, settings_btn], spacing=0), top=0, right=0),
+    ], expand=True)
+
+    # 1er lancement sans identifiants : deplie Reglages (plein ecran) + invite.
+    if not ((cfg.get("soulseek_user") or "").strip() and (cfg.get("soulseek_pass") or "")):
+        settings_panel.visible = True
+        main_stack.visible = False
+        status.value = "Tip: enter your Soulseek credentials (gear) to start digging."
+
+    page.add(main_stack, progress, status, buy_btn, settings_panel)
 
 
 def run() -> None:

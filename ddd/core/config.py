@@ -28,6 +28,9 @@ KNOWN_KEYS = (
     "download_dir",       # bibliotheque lossless verifiee (upgrade + acquire deposent ici)
     "last_inbox",         # (legacy) ancien dossier de destination acquire
     "quality_preset",     # seuil qualite : dj_club (defaut) | audiophile | puriste
+    "library_root",       # racine du tri par vibe (dossiers ACID/DEEPWATER/... + _INBOX)
+    "genre_mapping",      # dict {dossier: [mots-cles style/genre]} pour `ddd sort`
+    "sort_sources",       # ordre des sources de lookup genre, defaut ["discogs","musicbrainz"]
 )
 
 

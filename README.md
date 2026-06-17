@@ -54,6 +54,7 @@ No need to be a developer: download the `.exe`, double-click, it's a window.
 - **Get favorites**: scrapes your Discogs wantlist / Bandcamp wishlist and downloads it.
 - **YouTube set / playlist**: paste a set URL (YouTube / 1001Tracklists) or a **YouTube playlist** (each video = a track) -> DDD extracts the tracklist into a want-list (CSV).
 - **Single library**: everything that passes lands in `~/Music/DDD` (changeable in Settings), de-duplicated. Rejects go to the **trash** (recoverable), never hard-deleted.
+- **Sort by genre** (*Sort by genre* button / `ddd sort`): files your loose tracks into your own **vibe folders** by looking up each track's genre on **Discogs** (then MusicBrainz). The default set is house/techno-oriented (ACID, DEEPWATER, HOUSERZ, PROG, TECHNO, TRANCE, GARAGE, DISCO-FUNK, BREAKS-ELECTRO) and is **fully editable** in Settings. Confident matches move; the rest land in `_INBOX` for manual sorting. **Dry-run by default** - you preview, then Apply. Only loose files are touched, never your curated subfolders.
 - **Not found -> buy links**: whatever Soulseek can't find comes out as a clickable page (DDD logo + theme) with **Discogs** (vinyl marketplace, perfect for old pressings) and **Bandcamp** links to buy it.
 
 **The safety net: the spectrum is law.** Every download is re-audited by spectrum (FFT); **the declared format and bitrate are only used for the Soulseek search, never for the keep-or-reject decision.** The spectrum doesn't lie, tags do - that's what tells a real 320 / lossless apart from an upscale (an MP3 128 re-encoded as .flac or .wav, which Soulseek's filters can't see). A file is only kept if it passes three checks: **spectral** (above the preset's bar, not an upscale), **duration** (not a snippet / preview) and **title + artist identity** (the right track, not a wrong match). Otherwise -> trash.
@@ -114,6 +115,9 @@ playlists (yt-dlp). Everything is bundled into the `.exe` (no Python, no ffmpeg 
 
 # Rename a folder back to "Artist - Title" (from name + tags; dry-run, --apply to write)
 .\.venv\Scripts\python.exe -m ddd rename "C:\path\to\Music"
+
+# Sort loose tracks into vibe folders by genre (Discogs/MusicBrainz; dry-run, --apply to move)
+.\.venv\Scripts\python.exe -m ddd sort "C:\path\to\Music" --library "C:\path\to\Music"
 
 # Pull your favorites -> library
 .\.venv\Scripts\python.exe -m ddd scrape bandcamp <user>

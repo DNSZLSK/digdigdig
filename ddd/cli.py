@@ -1,4 +1,4 @@
-"""CLI DDD : scan / upgrade / rename / buy / scrape / acquire / import / config / gui."""
+"""CLI DDD : scan / upgrade / sort / rename / buy / scrape / acquire / import / config / gui."""
 
 from __future__ import annotations
 
@@ -18,6 +18,8 @@ from .core.scan import (
 )
 from .core import upgrade as upgrade_mod
 from .core import rename as rename_mod
+from .core import organize as organize_mod
+from .core import genre as genre_mod
 from .core import stores as stores_mod
 from .core import soulseek
 
@@ -236,6 +238,63 @@ def _cmd_rename(args: argparse.Namespace) -> int:
         print(f"\nLog: {rep.log_path}")
     if not args.apply:
         print("\n(dry-run) Re-run with --apply to write; add --dedup to delete copies.")
+    return 0
+
+
+def _cmd_sort(args: argparse.Namespace) -> int:
+    from collections import Counter
+
+    # Destination = l'arbre DDD : --library -> config library_root -> bibliotheque download_dir
+    # -> defaut ~/Music/DDD. Le dossier source (args.folder) est ce qu'on RANGE, pas la cible.
+    library = (args.library or config_mod.get("library_root")
+               or config_mod.get("download_dir") or str(paths.default_download_dir()))
+    library = Path(library)
+    folder = Path(args.folder) if args.folder else library
+    if not folder.exists():
+        print(f"folder not found: {folder}", file=sys.stderr)
+        return 2
+
+    mapping = config_mod.get("genre_mapping") or organize_mod.DEFAULT_GENRE_MAPPING
+    sources = args.source or config_mod.get("sort_sources") or list(genre_mod.DEFAULT_SOURCES)
+
+    def progress(i: int, total: int, f: Path) -> None:
+        if args.verbose or i == total or i % 25 == 0:
+            print(f"  [{i}/{total}] {Path(f).name}", file=sys.stderr)
+
+    mode = "APPLIED" if args.apply else "DRY-RUN"
+    print(f"Sort {folder}  ->  library {library}   [{mode}]", file=sys.stderr)
+    print("(genre lookup: Discogs/MusicBrainz; loose tracks only; unmatched -> _INBOX)",
+          file=sys.stderr)
+    rep = organize_mod.sort_folder(
+        folder, library_root=library, apply=args.apply, mapping=mapping,
+        sources=sources, token=args.token or "", route_inbox=args.inbox,
+        init_tree=args.init_tree, limit=args.limit, cache_dir=paths.genre_cache_dir(),
+        outputs_dir=paths.outputs_dir(), progress=progress,
+    )
+
+    counts = Counter(o.action for o in rep.ops)
+    print(f"\n=== Sort: {folder.name} ===  [{mode}]")
+    for action in (organize_mod.MOVE, organize_mod.INBOX_ACT, organize_mod.SKIP, organize_mod.ERROR):
+        if counts.get(action):
+            print(f"  {action:<6} {counts[action]:>4}")
+
+    moved = rep.of(organize_mod.MOVE)
+    if moved:
+        tag = "FILED" if args.apply else "WOULD FILE"
+        print(f"\n  --- {len(moved)} {tag} by folder ---")
+        for fol, n in Counter(o.folder for o in moved).most_common():
+            print(f"  {fol:<16} {n:>4}")
+
+    if args.verbose:
+        for o in moved:
+            print(f"  {o.folder:<16} {Path(o.src).name}   [{o.styles}]")
+        for o in rep.of(organize_mod.INBOX_ACT):
+            print(f"  {'_INBOX':<16} {Path(o.src).name}   [{o.styles or 'no genre found'}]")
+
+    if rep.log_path:
+        print(f"\nLog: {rep.log_path}")
+    if not args.apply:
+        print("\n(dry-run) Re-run with --apply to move the files.")
     return 0
 
 
@@ -523,6 +582,27 @@ def build_parser() -> argparse.ArgumentParser:
                        help="subfolder to ignore (repeatable)")
     p_ren.add_argument("-v", "--verbose", action="store_true", help="also show files already clean")
     p_ren.set_defaults(func=_cmd_rename)
+
+    p_sort = sub.add_parser("sort",
+                            help="auto-file loose tracks into your vibe folders (genre lookup)")
+    p_sort.add_argument("folder", nargs="?",
+                        help="folder of loose tracks to sort (default: the library root)")
+    p_sort.add_argument("--apply", action="store_true",
+                        help="move the files (default: dry-run, nothing touched)")
+    p_sort.add_argument("--library", help="library root where the vibe folders live (else config)")
+    p_sort.add_argument("--no-inbox", dest="inbox", action="store_false",
+                        help="leave unmatched tracks in place instead of routing to _INBOX")
+    p_sort.add_argument("--source", action="append", choices=["discogs", "musicbrainz"],
+                        default=[], metavar="SRC",
+                        help="lookup source(s), in order (repeatable; default: discogs, musicbrainz)")
+    p_sort.add_argument("--init-tree", action="store_true",
+                        help="create the vibe folders (+ _INBOX) under the library root first")
+    p_sort.add_argument("--token", help="Discogs token (else $DISCOGS_TOKEN or ddd config)")
+    p_sort.add_argument("-n", "--limit", type=int, default=0,
+                        help="limit to N tracks (smoke test)")
+    p_sort.add_argument("-v", "--verbose", action="store_true",
+                        help="show each file + its styles")
+    p_sort.set_defaults(func=_cmd_sort)
 
     p_buy = sub.add_parser("buy",
                            help="buy links (Discogs + Bandcamp) for tracks not found")

@@ -52,7 +52,7 @@ ddd/
 │
 ├── ddd/                        # >>> LE COEUR ACTUEL : package Python portable <<<
 │   ├── __main__.py             # `python -m ddd ...`
-│   ├── cli.py                  # CLI : scan | upgrade | rename | buy | scrape | acquire | import | config | gui
+│   ├── cli.py                  # CLI : scan | upgrade | sort | rename | buy | scrape | acquire | import | config | gui
 │   ├── gui.py                  # fenetre native Flet (0.28.x)
 │   ├── paths.py                # chemins frozen-aware (dev vs .exe PyInstaller)
 │   └── core/
@@ -63,6 +63,9 @@ ddd/
 │       ├── naming.py           # parse "Artiste - Titre" depuis un nom de fichier
 │       ├── soulseek.py         # wrapper sldl (creds, run, lecture _index.csv)
 │       ├── upgrade.py          # boucle upgrade + RE-AUDIT anti-upscale ; acquire_rows()
+│       ├── genre.py            # lookup style/genre par 'Artiste - Titre' (Discogs+MusicBrainz+cache)
+│       ├── organize.py         # `ddd sort` : range les tracks en vrac -> dossiers de vibe
+│       ├── fsutil.py           # safe_move (deplacement anti-collision, partage upgrade/organize)
 │       ├── config.py           # creds/reglages user -> %APPDATA%\ddd\config.json
 │       └── scrapers/           # discogs.py + bandcamp.py (importables)
 │
@@ -70,7 +73,7 @@ ddd/
 │   ├── ddd.spec                # PyInstaller (bundle sldl + config + Flet + libsndfile)
 │   ├── entry.py  build.ps1  README.md
 │
-├── tests/                      # test_quality/scan_merge/upgrade_logic/gui_build
+├── tests/                      # test_quality/scan_merge/upgrade_logic/gui_build/organize/genre/cli_sort
 │
 ├── pipeline.ps1                # ANCIEN orchestrateur PowerShell (toujours dispo)
 ├── lib/                        # ANCIENS scripts PS (convert/audit/clean/retry/route + scrapers/)
@@ -143,6 +146,14 @@ sur quoi on construit désormais.
   ex. `artist="Tibor Tury"` + vrai couple dans le tag titre). Dry-run par défaut ; `--apply`
   écrit, `--dedup` vire les copies byte-identiques. Le même résolveur alimente `upgrade`/`buy`
   (`search_title` nettoie aussi les `[label, année]` côté requête).
+- ✅ **`ddd sort <dossier>`** : range les tracks **en vrac** dans TES dossiers de vibe (ACID,
+  DEEPWATER, HOUSERZ, PROG, TECHNO, TRANCE, GARAGE, DISCO-FUNK, BREAKS-ELECTRO) par **lookup de
+  genre** (`genre.py` : Discogs Database Search -> `style`, repli MusicBrainz, cache disque incl.
+  les miss). Mapping style->dossier **éditable** (`organize.DEFAULT_GENRE_MAPPING`, surchargeable en
+  config/GUI ; match par mots-clés sur mots entiers, le plus spécifique gagne). **Non récursif** (ne
+  touche que les fichiers en vrac, jamais les sous-dossiers curatés type MOUSTAKI). Sans match fiable
+  -> `_INBOX`. Dry-run par défaut ; `--apply` déplace. GUI : bouton "Sort by genre" + "Apply sort".
+  **Prouvé en réel** : Jeff Mills - The Bells -> TECHNO, Mr Fingers - Mystery of Love -> ACID.
 - ✅ **`ddd scrape discogs|bandcamp|djset`** + **`ddd acquire <csv>`** (télécharge une want-list
   en vrai lossless). **djset** : URL d'un set (YouTube/1001TL, tracklist) ou d'une **playlist
   YouTube** (chaque vidéo = un track).
@@ -153,7 +164,8 @@ sur quoi on construit désormais.
 - ✅ **`ddd gui`** : fenêtre native Flet (dossier, scan, tableau filtrable, upgrade, réglages).
 - ✅ **`.exe` autonome** : `packaging/build.ps1` → `dist/DDD/DDD.exe` (255 Mo, embarque
   sldl + profils + client Flet + libsndfile ; **pas de ffmpeg requis**). Lancé et vérifié.
-- ✅ Tests : `tests/test_quality.py`, `test_scan_merge.py`, `test_upgrade_logic.py`, `test_gui_build.py`.
+- ✅ Tests : `tests/test_quality.py`, `test_scan_merge.py`, `test_upgrade_logic.py`, `test_gui_build.py`,
+  `test_organize_mapping.py`, `test_organize_logic.py`, `test_genre_lookup.py`, `test_cli_sort.py`.
 
 ### Distribution
 - Repo : **github.com/DNSZLSK/digdigdig** (branche `master`).
@@ -174,7 +186,9 @@ sur quoi on construit désormais.
 - **Filtrer les CSV rows sans artiste** avant sldl (sinon random match assuré)
 - **Dédupliquer cross-source** sur clé `lower(artist) - lower(title)`
 - **Pas de SoundCloud** pour le moment
-- **Auto-catégorisation par genre = non** ; tout va dans `inbox/`, l'user classe manuellement
+- **Auto-catégorisation par genre** : longtemps "non", désormais **opt-in** via `ddd sort` (lookup
+  métadonnées Discogs/MusicBrainz -> dossiers de vibe, dry-run par défaut, non récursif). Sans `sort`,
+  le défaut reste "tout va dans inbox/, l'user classe à la main".
 - **Match du titre COMPLET** (durci 2026-05-30) : l'audit ne mesure plus seulement le
   rappel mais aussi la **précision** (mots du fichier qu'on n'a PAS demandés) et la
   **version** (`Original` ≠ `(X Remix)` ≠ `Extended` ≠ `Radio` - symétrique selon ce
