@@ -37,7 +37,8 @@ hiddenimports = ["ddd", "ddd.gui", "ddd.cli"]
 #    PyInstaller rate -> sans collect_all, le scrape YouTube (set + repli playlist) est mort
 #    dans le .exe ("yt-dlp missing"). cloudscraper (1001/set79/Bandcamp) embarque aussi du JS.
 #  - flac_detective : sous-modules charges dynamiquement par quality.py.
-for pkg in ("flet", "flet_desktop", "soundfile", "yt_dlp", "cloudscraper", "flac_detective"):
+for pkg in ("flet", "flet_desktop", "soundfile", "yt_dlp", "cloudscraper", "flac_detective",
+            "onnxruntime"):
     d, b, h = collect_all(pkg)
     datas += d
     binaries += b

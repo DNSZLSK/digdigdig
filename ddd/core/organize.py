@@ -18,7 +18,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Callable, Dict, List, Optional, Sequence
 
-from . import genre
+from . import audioml, genre
 from .fsutil import safe_move
 from .naming import normalize_artist_title, parse_filename, read_tags, search_title
 from .scan import AUDIO_EXTS
@@ -177,6 +177,7 @@ def sort_folder(
     on_item: Optional[Callable] = None,
     cancel: Optional[Callable] = None,
     lookup: Optional[Callable] = None,
+    use_audio_ml: bool = True,
 ) -> SortReport:
     """Trie les tracks EN VRAC d'un dossier vers les dossiers de vibe (dry-run par defaut).
 
@@ -230,6 +231,16 @@ def sort_folder(
             folder = map_styles_to_folder(tag_signals, (), mapping) if tag_signals else None
             source = "id3" if folder else ""
             styles_str = tag_genre if folder else ""
+
+        # 2bis. Source TERMINALE : si ni le tag ni Discogs n'ont matche, on classe par l'AUDIO
+        #       (Discogs-EffNet ONNX, local) -> marche meme sur un nom illisible. On prend le
+        #       1er style mappable par proba decroissante. No-op si onnxruntime/modele absent.
+        if folder is None and use_audio_ml:
+            for st, _pr in (audioml.classify(f) or []):
+                folder = map_styles_to_folder([st], (), mapping)
+                if folder:
+                    source, styles_str = "audioml", st
+                    break
 
         # 3. Decision : dossier trouve -> MOVE ; nom illisible sans dossier -> SKIP sur place
         #    (on ne deplace jamais un fichier qu'on ne sait pas identifier) ; sinon miss -> _INBOX.

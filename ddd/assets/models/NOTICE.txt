@@ -1,0 +1,18 @@
+Discogs-EffNet model bundled with DDD
+=====================================
+
+Files:
+  discogs-effnet-bsdynamic-1.onnx   - EfficientNet-B0, predicts 400 Discogs music styles
+  discogs-effnet-bsdynamic-1.json   - model metadata + the 400 class labels
+
+Author : Pablo Alonso-Jimenez et al.
+Source : Music Technology Group (MTG), Universitat Pompeu Fabra (UPF)
+         https://essentia.upf.edu/models.html
+License: Creative Commons BY-NC (attribution, non-commercial).
+
+The model is bundled UNMODIFIED and used only for local, offline genre
+classification inside DDD (a free, non-commercial tool). DDD itself does not use
+TensorFlow nor the Essentia library: the .onnx is run via onnxruntime with a
+numpy mel-spectrogram front-end (see ddd/core/audioml.py).
+
+If you reuse this model, credit the MTG/UPF and respect the non-commercial terms.

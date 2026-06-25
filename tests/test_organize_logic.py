@@ -4,9 +4,18 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import pytest
+
 import ddd.core.organize as org
 from ddd.core.fsutil import safe_move
 from ddd.core.genre import GenreResult
+
+
+@pytest.fixture(autouse=True)
+def _no_audio_ml(monkeypatch):
+    """Desactive l'audio-ML par defaut dans ces tests (isole + rapide, pas de modele charge).
+    Les tests dedies le re-activent en monkeypatchant classify."""
+    monkeypatch.setattr(org.audioml, "classify", lambda f: None)
 
 
 def _touch(p: Path, data: bytes = b"x") -> Path:
@@ -169,3 +178,39 @@ def test_no_tag_keeps_network_behaviour(tmp_path, monkeypatch):
     by = {Path(o.src).name: o for o in rep.ops}
     assert by["Artist A - Title.mp3"].action == org.MOVE and by["Artist A - Title.mp3"].folder == "ACID"
     assert by["slugfilehere.mp3"].action == org.SKIP
+
+
+# ---- Source terminale audio-ML (classify monkeypatche : pas d'inference reelle en test) ----
+
+def test_audioml_rescues_when_tag_and_discogs_miss(tmp_path, monkeypatch):
+    """Nom illisible, pas de tag, Discogs vide -> l'audio-ML classe (source=audioml)."""
+    src = tmp_path / "pile"; lib = tmp_path / "lib"; src.mkdir(); lib.mkdir()
+    _touch(src / "Track_01.mp3")                       # pas de ' - ', pas de tag
+    monkeypatch.setattr(org, "read_tags", lambda p: {})
+    monkeypatch.setattr(org.audioml, "classify", lambda f: [("Dub Techno", 0.8), ("Techno", 0.5)])
+    rep = org.sort_folder(src, library_root=lib, apply=False, lookup=fake_lookup)
+    o = rep.ops[0]
+    assert o.action == org.MOVE and o.folder == "DEEPWATER" and o.source == "audioml"
+
+
+def test_audioml_not_called_when_tag_matches(tmp_path, monkeypatch):
+    """Si le tag (ou Discogs) a deja donne un dossier, l'audio-ML n'est PAS appele."""
+    src = tmp_path / "pile"; lib = tmp_path / "lib"; src.mkdir(); lib.mkdir()
+    _touch(src / "X - Y.mp3")
+    monkeypatch.setattr(org, "read_tags", lambda p: {"genre": "Tech House"})
+    calls = []
+    monkeypatch.setattr(org.audioml, "classify", lambda f: calls.append(1) or [("Techno", 0.9)])
+    rep = org.sort_folder(src, library_root=lib, apply=False, lookup=lambda a, t, **k: GenreResult())
+    o = rep.ops[0]
+    assert o.folder == "HOUSERZ" and o.source == "id3"
+    assert calls == [], "tag a matche -> audio-ML pas appele"
+
+
+def test_audioml_disabled_flag(tmp_path, monkeypatch):
+    """use_audio_ml=False -> on ne classe pas par l'audio meme sur un miss."""
+    src = tmp_path / "pile"; lib = tmp_path / "lib"; src.mkdir(); lib.mkdir()
+    _touch(src / "Track_01.mp3")
+    monkeypatch.setattr(org, "read_tags", lambda p: {})
+    monkeypatch.setattr(org.audioml, "classify", lambda f: [("Techno", 0.9)])
+    rep = org.sort_folder(src, library_root=lib, apply=False, lookup=fake_lookup, use_audio_ml=False)
+    assert rep.ops[0].action == org.SKIP

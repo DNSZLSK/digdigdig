@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "ddd-digdigdig"
-version = "0.2.5"
+version = "0.2.6"
 description = "DDD - DigDigDig : scan qualite lossless + upgrade Soulseek"
 readme = "README.md"
 requires-python = ">=3.10"
@@ -27,6 +27,9 @@ dependencies = [
 # incompatibles (TextField sans label, boutons sans label positionnel).
 gui = ["flet>=0.24,<0.30"]
 build = ["pyinstaller>=6.0"]
+# Classif genre par l'AUDIO pour `ddd sort` (modele Discogs-EffNet en ONNX, local).
+# Optionnel : sans, le tri degrade gracieusement (tag ID3 + Discogs seuls).
+ml = ["onnxruntime>=1.16"]
 
 [project.scripts]
 ddd = "ddd.cli:main"

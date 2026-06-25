@@ -55,6 +55,16 @@ def app_icon() -> Path:
     return resource_base() / "ddd" / "assets" / "ddd.ico"
 
 
+def effnet_model() -> Path:
+    """Modele ONNX Discogs-EffNet (classif genre par l'audio), embarque, frozen-aware."""
+    return resource_base() / "ddd" / "assets" / "models" / "discogs-effnet-bsdynamic-1.onnx"
+
+
+def effnet_labels() -> Path:
+    """Metadata du modele (contient les 400 labels 'Genre---Style')."""
+    return resource_base() / "ddd" / "assets" / "models" / "discogs-effnet-bsdynamic-1.json"
+
+
 def gui_assets_dir() -> Path:
     """Dossier d'assets servis par Flet (polices, images) : frozen-aware.
 
