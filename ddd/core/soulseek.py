@@ -103,7 +103,7 @@ def read_soulseek_creds() -> Dict[str, str]:
         return {"user": user, "pass": pwd}
 
     try:
-        from .. import config as _config
+        from . import config as _config
         cfg = _config.load()
         cu, cp = cfg.get("soulseek_user"), cfg.get("soulseek_pass")
         if cu and cp:

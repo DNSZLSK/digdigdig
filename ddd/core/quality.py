@@ -235,7 +235,7 @@ def analyze_file(path) -> QualityResult:
 def preset_from_config(default: str = DEFAULT_PRESET) -> str:
     """Preset de qualite courant (config 'quality_preset'), valide, defaut dj_club."""
     try:
-        from .. import config as _config
+        from . import config as _config
         val = _config.get("quality_preset")
     except Exception:  # noqa: BLE001
         val = None
