@@ -31,13 +31,21 @@ No need to be a developer: download the `.exe`, double-click, it's a window.
 
 ## What it looks like
 
-**Scan a folder and upgrade** (Lossless, HQ, Iffy or Bad? live per-track status):
+**Library - scan a folder and upgrade** (Lossless, HQ, Iffy or Bad? live per-track status):
 
-<p align="center"><img src="docs/screenshot-bibliotheque.png" alt="Library tab: quality scan + upgrade" width="900"></p>
+<p align="center"><img src="docs/screenshot-library.png" alt="Library tab: quality scan + upgrade" width="900"></p>
 
-**Pull your Discogs / Bandcamp favorites** straight to lossless:
+**Sort by genre - filed from the spectrum** (local audio-ML; even untagged / badly named tracks):
 
-<p align="center"><img src="docs/screenshot-favoris.png" alt="Get favorites tab" width="900"></p>
+<p align="center"><img src="docs/screenshot-sort-by.png" alt="Sort by genre tab: audio-ML filing" width="900"></p>
+
+**Get favorites - Discogs / Bandcamp** straight to lossless:
+
+<p align="center"><img src="docs/screenshot-get-favorite.png" alt="Get favorites tab" width="900"></p>
+
+**YouTube set - paste a set / playlist URL**, DDD scrapes the tracklist:
+
+<p align="center"><img src="docs/screenshot-youtube.png" alt="YouTube set tab" width="900"></p>
 
 ## What it does
 
@@ -54,7 +62,7 @@ No need to be a developer: download the `.exe`, double-click, it's a window.
 - **Get favorites**: scrapes your Discogs wantlist / Bandcamp wishlist and downloads it.
 - **YouTube set / playlist**: paste a set URL (YouTube / 1001Tracklists) or a **YouTube playlist** (each video = a track) -> DDD extracts the tracklist into a want-list (CSV).
 - **Single library**: everything that passes lands in `~/Music/DDD` (changeable in Settings), de-duplicated. Rejects go to the **trash** (recoverable), never hard-deleted.
-- **Sort by genre** (*Sort by genre* button / `ddd sort`): files your loose tracks into your own **vibe folders** by looking up each track's genre on **Discogs** (then MusicBrainz). The default set is house/techno-oriented (ACID, DEEPWATER, HOUSERZ, PROG, TECHNO, TRANCE, GARAGE, DISCO-FUNK, BREAKS-ELECTRO) and is **fully editable** in Settings. Confident matches move; the rest land in `_INBOX` for manual sorting. **Dry-run by default** - you preview, then Apply. Only loose files are touched, never your curated subfolders.
+- **Sort by genre** (*Sort by genre* button / `ddd sort`): files your loose tracks into your own **vibe folders** through a cascade - the file's **ID3 genre tag**, then **Discogs** (+ MusicBrainz), and when both come up empty a **local audio model** (Discogs-EffNet, 400 Discogs styles) that reads the genre **from the spectrum** - so even an untagged, badly-named edit (`Track_01.flac`) lands in the right folder instead of `_INBOX`. The default set is house/techno-oriented (ACID, DEEPWATER, HOUSERZ, PROG, TECHNO, TRANCE, GARAGE, DISCO-FUNK, BREAKS-ELECTRO) and is **fully editable** in Settings. **Dry-run by default** - you preview, then Apply. Only loose files are touched, never your curated subfolders. (The audio model runs **on-device, no cloud**; by the MTG/UPF, CC BY-NC.)
 - **Not found -> buy links**: whatever Soulseek can't find comes out as a clickable page (DDD logo + theme) with **Discogs** (vinyl marketplace, perfect for old pressings) and **Bandcamp** links to buy it.
 
 **The safety net: the spectrum is law.** Every download is re-audited by spectrum (FFT); **the declared format and bitrate are only used for the Soulseek search, never for the keep-or-reject decision.** The spectrum doesn't lie, tags do - that's what tells a real 320 / lossless apart from an upscale (an MP3 128 re-encoded as .flac or .wav, which Soulseek's filters can't see). A file is only kept if it passes three checks: **spectral** (above the preset's bar, not an upscale), **duration** (not a snippet / preview) and **title + artist identity** (the right track, not a wrong match). Otherwise -> trash.
@@ -90,7 +98,7 @@ productions, your promos / white-labels, public domain / CC, or re-downloading i
 
 Portable **Python** core (Windows / Mac / Linux) + native **Flet** window. Downloading via
 **sldl** ([fiso64/slsk-batchdl](https://github.com/fiso64/slsk-batchdl), bundled). Spectral detection
-via numpy/scipy/soundfile. Scrapers for Discogs (API), Bandcamp (cloudscraper), YouTube sets and
+via numpy/scipy/soundfile; genre-from-audio via a **Discogs-EffNet** ONNX model run with **onnxruntime** (no TensorFlow). Scrapers for Discogs (API), Bandcamp (cloudscraper), YouTube sets and
 playlists (yt-dlp). Everything is bundled into the `.exe` (no Python, no ffmpeg needed).
 
 ---
