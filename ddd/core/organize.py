@@ -20,7 +20,7 @@ from typing import Callable, Dict, List, Optional, Sequence
 
 from . import genre
 from .fsutil import safe_move
-from .naming import normalize_artist_title, parse_filename, search_title
+from .naming import normalize_artist_title, parse_filename, read_tags, search_title
 from .scan import AUDIO_EXTS
 
 INBOX = "_INBOX"
@@ -208,31 +208,50 @@ def sort_folder(
         if cancel and cancel():
             break
         parsed = parse_filename(str(f))
+        # Le tag genre ID3 et les styles Discogs/MB sont COMBINES dans un seul match : le plus
+        # specifique gagne (mots entiers), donc un tag generique "House" ne write jamais par-dessus
+        # un Discogs "Deep House". Le tag peut etre multi-valeur ("Acid House, Minimal") -> on split.
+        tag_genre = (read_tags(f).get("genre") or "").strip()
+        tag_signals = [s.strip() for s in re.split(r"[;,]", tag_genre) if s.strip()]
+
         artist, title = normalize_artist_title(parsed.artist, parsed.title)
         title = search_title(title)
-        if not (parsed.parseable and artist and title):
-            op = SortOp(SKIP, str(f), reason="name without 'Artist - Title'")
-        else:
+        name_ok = bool(parsed.parseable and artist and title)
+
+        if name_ok:
+            # Nom exploitable : Discogs/MB (cache disque) + le tag, le plus specifique tranche.
             gr = lookup(artist, title, sources=sources, token=token, cache_dir=cache_dir)
-            folder = map_styles_to_folder(gr.styles, gr.genres, mapping)
-            styles_str = ", ".join(gr.styles or gr.genres)
-            if folder:
-                target, action = folder, MOVE
-            elif route_inbox:
-                target, action = INBOX, INBOX_ACT
-            else:
-                target, action = "", SKIP
-            if action == SKIP:
-                op = SortOp(SKIP, str(f), styles=styles_str, source=gr.source,
-                            reason="no confident genre match")
-            else:
-                try:
-                    dest = safe_move(f, library_root / target, dry_run=not apply)
-                    op = SortOp(action, str(f), str(dest), folder=target,
-                                styles=styles_str, source=gr.source, applied=apply)
-                except OSError as e:  # noqa: BLE001
-                    op = SortOp(ERROR, str(f), folder=target, styles=styles_str,
-                                source=gr.source, reason=f"move failed: {e}")
+            folder = map_styles_to_folder(list(gr.styles) + tag_signals, gr.genres, mapping)
+            source = gr.source or ("id3" if folder else "")
+            styles_str = ", ".join(dict.fromkeys(list(gr.styles or gr.genres) + tag_signals))
+        else:
+            # Nom illisible : pas de requete possible -> le tag genre est la seule chance
+            # (avant ces fichiers etaient SKIP sans rien tenter).
+            folder = map_styles_to_folder(tag_signals, (), mapping) if tag_signals else None
+            source = "id3" if folder else ""
+            styles_str = tag_genre if folder else ""
+
+        # 3. Decision : dossier trouve -> MOVE ; nom illisible sans dossier -> SKIP sur place
+        #    (on ne deplace jamais un fichier qu'on ne sait pas identifier) ; sinon miss -> _INBOX.
+        if folder:
+            target, action, reason = folder, MOVE, ""
+        elif not name_ok:
+            target, action, reason = "", SKIP, "name without 'Artist - Title'"
+        elif route_inbox:
+            target, action, reason = INBOX, INBOX_ACT, ""
+        else:
+            target, action, reason = "", SKIP, "no confident genre match"
+
+        if action == SKIP:
+            op = SortOp(SKIP, str(f), styles=styles_str, source=source, reason=reason)
+        else:
+            try:
+                dest = safe_move(f, library_root / target, dry_run=not apply)
+                op = SortOp(action, str(f), str(dest), folder=target,
+                            styles=styles_str, source=source, applied=apply)
+            except OSError as e:  # noqa: BLE001
+                op = SortOp(ERROR, str(f), folder=target, styles=styles_str,
+                            source=source, reason=f"move failed: {e}")
         report.ops.append(op)
         if on_item:
             on_item(str(f), "done", op.action)

@@ -113,3 +113,59 @@ def test_safe_move_dry_run_and_collision(tmp_path):
     src2 = _touch(tmp_path / "a.mp3", b"y")
     d3 = safe_move(src2, dest_dir)
     assert d3 == dest_dir / "a (1).mp3" and d3.exists()
+
+
+# ---- Tag genre ID3 d'abord (read_tags monkeypatche : pas de vrai conteneur audio) -----
+
+def test_combine_discogs_refines_generic_tag(tmp_path, monkeypatch):
+    """Tag generique 'House' + Discogs 'Deep House' -> DEEPWATER (le plus specifique gagne)."""
+    src = tmp_path / "pile"; lib = tmp_path / "lib"; src.mkdir(); lib.mkdir()
+    _touch(src / "Some Artist - Some Track.mp3")
+    monkeypatch.setattr(org, "read_tags", lambda p: {"genre": "House"})
+    def lk(a, t, **kw):
+        return GenreResult(styles=["Deep House"], source="discogs")
+    rep = org.sort_folder(src, library_root=lib, apply=False, lookup=lk)
+    o = rep.ops[0]
+    assert o.action == org.MOVE and o.folder == "DEEPWATER" and o.source == "discogs"
+
+
+def test_tag_carries_when_discogs_empty(tmp_path, monkeypatch):
+    """Discogs ne trouve rien mais le tag mappe -> classe via le tag (source=id3)."""
+    src = tmp_path / "pile"; lib = tmp_path / "lib"; src.mkdir(); lib.mkdir()
+    _touch(src / "Some Artist - Some Track.mp3")
+    monkeypatch.setattr(org, "read_tags", lambda p: {"genre": "Tech House"})
+    rep = org.sort_folder(src, library_root=lib, apply=False, lookup=lambda a, t, **k: GenreResult())
+    o = rep.ops[0]
+    assert o.action == org.MOVE and o.folder == "HOUSERZ" and o.source == "id3"
+
+
+def test_id3_tag_rescues_unparseable_name(tmp_path, monkeypatch):
+    """Un nom illisible (pas de ' - ') mais avec un tag mappable est maintenant classe."""
+    src = tmp_path / "pile"; lib = tmp_path / "lib"; src.mkdir(); lib.mkdir()
+    _touch(src / "slugfilehere.mp3")
+    monkeypatch.setattr(org, "read_tags", lambda p: {"genre": "Acid House"})
+    rep = org.sort_folder(src, library_root=lib, apply=True, lookup=fake_lookup)
+    assert (lib / "ACID" / "slugfilehere.mp3").exists()
+    assert rep.ops[0].source == "id3"
+
+
+def test_generic_tag_falls_back_to_network(tmp_path, monkeypatch):
+    """Un tag trop generique ('Electronic') ne mappe pas -> repli sur le lookup reseau."""
+    src = tmp_path / "pile"; lib = tmp_path / "lib"; src.mkdir(); lib.mkdir()
+    _touch(src / "Artist A - Title.mp3")
+    monkeypatch.setattr(org, "read_tags", lambda p: {"genre": "Electronic"})
+    rep = org.sort_folder(src, library_root=lib, apply=False, lookup=fake_lookup)
+    o = rep.ops[0]
+    assert o.action == org.MOVE and o.folder == "ACID" and o.source == "discogs"
+
+
+def test_no_tag_keeps_network_behaviour(tmp_path, monkeypatch):
+    """Sans tag genre, comportement historique : nom -> lookup reseau."""
+    src = tmp_path / "pile"; lib = tmp_path / "lib"; src.mkdir(); lib.mkdir()
+    _touch(src / "Artist A - Title.mp3")
+    _touch(src / "slugfilehere.mp3")
+    monkeypatch.setattr(org, "read_tags", lambda p: {})
+    rep = org.sort_folder(src, library_root=lib, apply=False, lookup=fake_lookup)
+    by = {Path(o.src).name: o for o in rep.ops}
+    assert by["Artist A - Title.mp3"].action == org.MOVE and by["Artist A - Title.mp3"].folder == "ACID"
+    assert by["slugfilehere.mp3"].action == org.SKIP

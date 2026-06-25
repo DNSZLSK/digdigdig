@@ -119,7 +119,7 @@ def normalize_artist_title(artist: str, title: str):
 # ---- Lecture des tags embarques (ID3/Vorbis/...) -----------------------------
 
 def read_tags(path) -> Dict[str, str]:
-    """Lit artist/title/album via mutagen (uniforme tous formats). {} si rien.
+    """Lit artist/title/album/genre via mutagen (uniforme tous formats). {} si rien.
 
     Vit ici (et plus dans audit.py) pour que le resolveur de nom puisse l'utiliser
     sans import circulaire (audit importe naming, jamais l'inverse).
@@ -140,7 +140,8 @@ def read_tags(path) -> Dict[str, str]:
             return ""
         return (val[0] if isinstance(val, (list, tuple)) else str(val)).strip()
 
-    return {"artist": first("artist"), "title": first("title"), "album": first("album")}
+    return {"artist": first("artist"), "title": first("title"),
+            "album": first("album"), "genre": first("genre")}
 
 
 # ---- Resolveur de nom : meilleur (artist, title) pour recherche + rename -----
@@ -202,6 +203,48 @@ def search_title(t: str) -> str:
     t = _strip_year(t)
     t = _DUP_PAREN.sub(r"\1", t)
     return _WS.sub(" ", t).strip()
+
+
+# Mots "promo" qui polluent un nom de fichier sans etre une version musicale. On les vire
+# a l'AFFICHAGE (prefixe colle a l'artiste, ou entre parentheses/crochets dans le titre).
+# On NE touche PAS aux vraies versions : (Original Mix) / (X Remix) / (Extended) / (Dub)...
+_PROMO_WORD = r"premi[eè]re|free\s*(?:download|dl)|out\s*now|teaser|preview|snippet|exclusive"
+# Prefixe "Premiere_ ", "Premiere - ", "FREE DL: ", "Out Now | " colle en tete d'artiste.
+_PROMO_PREFIX = re.compile(r"^\s*(?:" + _PROMO_WORD + r")\s*[_\-:|]+\s*", re.IGNORECASE)
+# Mot promo entre parentheses/crochets dans le titre : "(Premiere)", "[Free DL]".
+_PROMO_PAREN = re.compile(r"\s*[\(\[]\s*(?:" + _PROMO_WORD + r")\s*[\)\]]", re.IGNORECASE)
+# Suffixe promo en fin de titre : "... #7 - Free download", "... - Out Now", "#4 - free dl".
+_PROMO_SUFFIX = re.compile(
+    r"\s*(?:#\d+\s*)?(?:[-|]\s*)?(?:" + _PROMO_WORD + r")\s*$", re.IGNORECASE)
+# Marqueur "#N" isole en fin de titre (numero de piste compilation).
+_TRAIL_HASHNUM = re.compile(r"\s*#\d+\s*$")
+# Artiste qui n'est QUE le mot promo (forme "Premiere - Artist - Title") -> vrai couple
+# dans le titre, a re-splitter.
+_PROMO_BARE = {"premiere", "première", "free download", "free dl", "out now"}
+
+
+def display_artist_title(artist: str, title: str):
+    """(artist, title) nettoyes pour l'AFFICHAGE de la table GUI.
+
+    - titre : retire [label/catalogue], annee finale, '*', et les mots promo entre
+      parentheses ('(Premiere)') via search_title + _PROMO_PAREN ;
+    - artiste : retire les [crochets] et un prefixe promo colle ('Premiere_ X' -> 'X') ;
+    - cas 'Premiere - Artist - Title' : l'artiste = juste le mot promo -> on recupere le
+      vrai couple en re-splittant le titre sur le 1er ' - '.
+
+    Complementaire de search_title/normalize_artist_title (cote requete) : ici c'est
+    purement cosmetique, on ne renvoie jamais une chaine vide si on peut l'eviter.
+    """
+    title = _PROMO_PAREN.sub("", search_title(title))
+    title = _TRAIL_HASHNUM.sub("", _PROMO_SUFFIX.sub("", title))
+    artist = _PROMO_PREFIX.sub("", _BRACKETS.sub("", artist or "")).strip(" -_")
+    if (not artist) or artist.lower() in _PROMO_BARE:
+        m = _SEP.search(title)
+        if m:
+            cand = _light(title[: m.start()])
+            if cand and cand.lower() not in _PROMO_BARE:
+                artist, title = cand, _light(title[m.end():])
+    return _light(artist), _light(_WS.sub(" ", title))
 
 
 def _deslug(stem: str) -> str:

@@ -28,6 +28,7 @@ import flet as ft
 
 from . import __version__
 from . import paths
+from . import gui_theme as theme
 from .core import config as config_mod
 from .core import quality
 from .core import soulseek
@@ -37,36 +38,39 @@ from .core import stores as stores_mod
 from .core.naming import match_key
 from .core.scan import ScanRecord, duplicate_groups, scan_library
 
-# --- Palette sobre facon Soulseek/LimeWire (gris charbon, tons desatures) --------
-BG = "#1E1E1E"          # fond fenetre
-SURFACE = "#252525"     # cartes / panneaux
-BORDER = "#3A3A3A"      # bordures discretes
-TXT = "#D0D0D0"         # texte principal (blanc casse)
-TXT_DIM = "#9A9A9A"     # texte secondaire
-ACCENT = "#5C6B7A"      # accent slate desature (boutons natifs via seed)
-SPIN = "#A0A0A0"        # spinners / progress, gris neutre
+# --- Palette creme "crate digger" (definie dans gui_theme, miroir docs/index.html) ---
+# On garde les memes NOMS qu'avant (BG/SURFACE/BORDER/TXT/...) pour ne pas reecrire
+# tous les `color=`/`bgcolor=` du fichier : seules les valeurs basculent vers le creme.
+BG = theme.BG               # fond fenetre + zone table (ivoire chaud, uniforme)
+SURFACE = theme.SURFACE     # pastilles / petits panneaux
+FIELD_BG = theme.FIELD_BG   # fond des champs de saisie
+BORDER = theme.LINE         # filets / dividers discrets
+TXT = theme.INK             # texte principal (brun presque noir)
+TXT_DIM = theme.INK_DIM     # texte secondaire (brun-gris chaud)
+TXT_FAINT = theme.INK_FAINT  # en-tetes de colonnes (capitales pales)
+ACCENT = theme.PINK         # accent crimson (Upgrade + onglet actif + coches)
+PINK = theme.PINK           # alias explicite (coches, bordure focus, statut probleme)
+SPIN = theme.PINK           # spinners / progress, sur l'accent
+
+# Polices custom (servies depuis ddd/assets/fonts via ft.app(assets_dir=...)).
+FONT_SLAB = "Anton"         # wordmark DIGDIGDIG (display Anton, repli sur le defaut si absente)
+FONT_MONO = "DMMono"        # tagline + pastilles + cutoff (DM Mono, repli si absente)
 
 # Formulaire de retours (Google Form / Tally) : case "je kiffe l'app" + suggestions.
 # Aucun compte requis cote user. Colle l'URL de TON formulaire ici une fois cree.
 FEEDBACK_URL = ("https://docs.google.com/forms/d/e/"
                 "1FAIpQLSfcKbhE67BWQsq2SdHMQItMrCc-seh6BSbwJj5VletoY2t_GA/viewform")
 
-VERDICT_COLOR = {
-    quality.LOSSLESS: "#6E7F5B",   # olive/vert - vrai lossless
-    quality.HQ: "#5A7A8C",         # bleu sobre - jouable club
-    quality.DOUTEUX: "#8C7A5A",    # taupe/jaune - limite
-    quality.MAUVAIS: "#8C5A5A",    # brun-rouge - bouillie
-    "ERROR": "#6E6E6E",
-    "SKIPPED": "#6E6E6E",
-}
-VERDICT_LABEL = {
-    quality.LOSSLESS: "Lossless",
-    quality.HQ: "HQ",
-    quality.DOUTEUX: "Iffy",
-    quality.MAUVAIS: "Bad",
-    "ERROR": "Error",
-    "SKIPPED": "Skipped",
-}
+VERDICT_COLOR = theme.VERDICT_COLOR
+VERDICT_LABEL = theme.VERDICT_LABEL
+BAND_BG = theme.BAND_BG
+
+# Largeurs des colonnes du tableau (header + lignes alignes).
+COL_CHECK = 38
+COL_FMT = 96
+COL_CUT = 84
+COL_BAND = 84
+COL_STATUS = 232
 
 
 def _is_upgradable(qr, preset):
@@ -75,22 +79,22 @@ def _is_upgradable(qr, preset):
 # Statut live par ligne. Tuple = (libelle, couleur, ring_anime).
 # ring_anime=True -> petit spinner visible (phase en cours) ; False -> etat final fige.
 PHASE_LABEL = {
-    "queued": ("Queued...", TXT_DIM, True),
-    "searching": ("Searching Soulseek...", "#A0A8B0", True),
-    "auditing": ("Spectral check...", "#9A8C6B", True),
-    "cancelled": ("Cancelled", TXT_DIM, False),
+    "queued": ("queued...", TXT_DIM, True),
+    "searching": ("hunting slsk...", theme.BLUE, True),
+    "auditing": ("spectral check...", theme.TAN, True),
+    "cancelled": ("cancelled", TXT_DIM, False),
 }
 ACTION_LABEL = {
-    upgrade_mod.ACT_REPLACED: ("Replaced ✓", "#6E7F5B", False),
-    upgrade_mod.ACT_WOULD_REPLACE: ("Found ✓", "#6E7F5B", False),
-    upgrade_mod.ACT_KEPT_BESIDE: ("Kept beside ✓", "#6E7F5B", False),
-    upgrade_mod.ACT_ACQUIRED: ("Kept in inbox ✓", "#6E7F5B", False),
-    upgrade_mod.ACT_REJECTED_FAKE: ("Upscale rejected ✗", "#A0785A", False),
-    upgrade_mod.ACT_TOO_SHORT: ("Too short ✗", "#A0785A", False),
-    upgrade_mod.ACT_WRONG_MATCH: ("Wrong match ✗", "#A0785A", False),
-    upgrade_mod.ACT_NOT_FOUND: ("Not found ✗", "#7A7A7A", False),
-    upgrade_mod.ACT_UNPARSEABLE: ("Unreadable name", "#7A7A7A", False),
-    upgrade_mod.ACT_DUPLICATE: ("Already there", "#7A7A7A", False),
+    upgrade_mod.ACT_REPLACED: ("replaced ✓", theme.GREEN, False),
+    upgrade_mod.ACT_WOULD_REPLACE: ("found ✓", theme.GREEN, False),
+    upgrade_mod.ACT_KEPT_BESIDE: ("kept beside ✓", theme.GREEN, False),
+    upgrade_mod.ACT_ACQUIRED: ("kept in inbox ✓", theme.GREEN, False),
+    upgrade_mod.ACT_REJECTED_FAKE: ("upscale -> trash ✗", theme.PINK, False),
+    upgrade_mod.ACT_TOO_SHORT: ("too short ✗", theme.PINK, False),
+    upgrade_mod.ACT_WRONG_MATCH: ("wrong match ✗", theme.PINK, False),
+    upgrade_mod.ACT_NOT_FOUND: ("not found ✗", TXT_DIM, False),
+    upgrade_mod.ACT_UNPARSEABLE: ("unreadable name", TXT_DIM, False),
+    upgrade_mod.ACT_DUPLICATE: ("already there", TXT_DIM, False),
 }
 
 
@@ -125,6 +129,19 @@ def _set_window_icon(page, ico) -> None:
         pass
 
 
+def _font_map() -> dict:
+    """Polices custom presentes dans ddd/assets/fonts -> {nom logique: chemin relatif}.
+
+    On n'enregistre QUE les fichiers presents : si une police manque, Flet retombe
+    sur le defaut (le wordmark reste lisible, juste pas slab). Chemins relatifs a
+    l'assets_dir passe a ft.app().
+    """
+    fonts_dir = paths.gui_assets_dir() / "fonts"
+    candidates = {FONT_SLAB: "Anton-Regular.ttf", FONT_MONO: "DMMono-Regular.ttf"}
+    return {name: f"fonts/{fn}" for name, fn in candidates.items()
+            if (fonts_dir / fn).exists()}
+
+
 class AppState:
     def __init__(self) -> None:
         self.folder: Optional[str] = None
@@ -136,8 +153,12 @@ class AppState:
         # cle -> (ProgressRing, Text) des cellules statut (reconstruit a chaque render)
         self.row_status: dict = {}            # bibliotheque, keye par chemin
         self.acquire_rows: list = []
-        self.acquire_row_status: dict = {}    # acquire, keye par match_key(artist, titre)
+        self.acquire_row_status: dict = {}    # favoris, keye par match_key(artist, titre)
+        self.djset_row_status: dict = {}      # onglet YouTube set, meme keyage
         self.sort_report = None               # dernier plan de tri (dry-run) en attente d'apply
+        # Compteurs du recap pied de page (mis a jour par scan / upgrade).
+        self.last_upgraded: int = 0
+        self.last_buylinks: int = 0
 
 
 def main(page: ft.Page) -> None:
@@ -147,23 +168,59 @@ def main(page: ft.Page) -> None:
     def _preset() -> str:
         return config_mod.load().get("quality_preset", quality.DEFAULT_PRESET)
 
-    page.title = f"DDD - DigDigDig  v{__version__}"
-    _set_window_size(page, 1100, 760)
+    page.title = "DDD.exe - DigDigDig"
+    _set_window_size(page, 1120, 780)
     _icon = paths.app_icon()
     if _icon.exists():
         _set_window_icon(page, _icon)
-    page.theme_mode = ft.ThemeMode.DARK
-    page.theme = ft.Theme(color_scheme_seed=ACCENT)
+    page.theme_mode = ft.ThemeMode.LIGHT
+    # ColorScheme explicite et 100% creme -> Material n'injecte plus ses gris froids.
+    # On force AUSSI la famille surface_container* (fonds des dropdowns/menus/dialogs)
+    # sinon ces composants retombent sur des gris par defaut qui cassent l'ivoire.
+    page.theme = ft.Theme(
+        color_scheme=ft.ColorScheme(
+            primary=ACCENT, on_primary="#FFFFFF",
+            secondary=ACCENT, on_secondary="#FFFFFF",
+            error=theme.BRICK, on_error="#FFFFFF",
+            background=BG, on_background=TXT,
+            surface=BG, on_surface=TXT,
+            surface_variant=SURFACE, on_surface_variant=TXT_DIM,
+            surface_tint=BG, outline=BORDER, outline_variant=BORDER,
+            surface_bright=FIELD_BG, surface_dim=SURFACE,
+            surface_container_lowest=FIELD_BG, surface_container_low=BG,
+            surface_container=SURFACE, surface_container_high=SURFACE,
+            inverse_surface=TXT, on_inverse_surface=BG),
+        scrollbar_theme=ft.ScrollbarTheme(thumb_color=BORDER))
+    _fonts = _font_map()
+    if _fonts:
+        page.fonts = _fonts
     page.bgcolor = BG
-    page.padding = 16
+    page.padding = ft.padding.symmetric(horizontal=22, vertical=12)
 
     # --- widgets partages (barre d'etat en bas) -----------------------------
     status = ft.Text("Pick a folder, then Scan.", color=TXT_DIM)
-    progress = ft.ProgressBar(value=0, visible=False, color=SPIN)
+    progress = ft.ProgressBar(value=0, visible=False, color=ACCENT)
 
     file_picker = ft.FilePicker()
     dl_picker = ft.FilePicker()   # pour choisir le dossier bibliotheque dans Reglages
     page.overlay.extend([file_picker, dl_picker])
+
+    # Indicateur "slsk connected" (point + texte) : signal cheap, local, pas de reseau.
+    # Vert = des creds Soulseek sont lisibles (env / config ddd / slskd) ; gris sinon.
+    def _slsk_connected() -> bool:
+        try:
+            soulseek.read_soulseek_creds()
+            return True
+        except Exception:  # noqa: BLE001
+            return False
+
+    slsk_dot = ft.Container(width=9, height=9, border_radius=5, bgcolor=theme.NEUTRAL)
+    slsk_txt = ft.Text("", size=12, color=TXT_DIM, font_family=FONT_MONO)
+
+    def _refresh_slsk() -> None:
+        on = _slsk_connected()
+        slsk_dot.bgcolor = theme.DOT_GREEN if on else theme.NEUTRAL
+        slsk_txt.value = "slsk connected" if on else "slsk offline"
 
     # ====================================================================
     #  Helpers partages
@@ -172,7 +229,8 @@ def main(page: ft.Page) -> None:
         """Une seule operation a la fois : verrouille les actions des 2 onglets."""
         state.busy = b
         progress.visible = b
-        for btn in (browse_btn, scan_btn, acquire_btn, dl_browse_btn, sort_btn, sort_apply_btn):
+        for btn in (browse_btn, sort_browse_btn, scan_btn, acquire_btn, djset_fetch_btn,
+                    dl_browse_btn, sort_btn, sort_apply_btn):
             btn.disabled = b
         upgrade_btn.disabled = b or not state.records
         source_dd.disabled = b
@@ -218,31 +276,44 @@ def main(page: ft.Page) -> None:
             html = stores_mod.write_unfindable(outcomes, paths.outputs_dir(), name)
         except Exception:  # noqa: BLE001
             html = None
+        n = sum(1 for o in outcomes if getattr(o, "action", "") == upgrade_mod.ACT_NOT_FOUND
+                and getattr(o, "title", ""))
+        state.last_buylinks += n
         if html:
-            n = sum(1 for o in outcomes if getattr(o, "action", "") == upgrade_mod.ACT_NOT_FOUND
-                    and getattr(o, "title", ""))
             buy_btn.text = f"{n} not found -> buy links (Discogs / Bandcamp)"
             buy_state["url"] = html.as_uri()
             buy_btn.visible = True
         else:
             buy_btn.visible = False
 
-    def set_cell(status_map: dict, key: str, label: str, color, ring_on: bool) -> None:
+    def set_cell(status_map: dict, key: str, label: str, color, ring_on: bool):
+        """Met a jour une cellule statut. Renvoie (ring, txt) touches, ou None."""
         cell = status_map.get(key)
         if not cell:
-            return
+            return None
         ring, txt = cell
         txt.value, txt.color, ring.visible = label, color, ring_on
+        return ring, txt
 
     def make_on_item(status_map: dict):
-        """Fabrique un callback on_item(key, phase, detail) qui met a jour status_map."""
+        """Fabrique un callback on_item(key, phase, detail) qui met a jour status_map.
+
+        Update SCOPE a la cellule (ring + txt), pas page.update() : sur une grosse
+        table, page.update() re-diff tout l'arbre A CHAQUE item et etrangle le worker
+        de download (bug connu). On ne rafraichit que les 2 controles touches.
+        """
         def on_item(key, phase, detail="") -> None:
             if phase == "done":
                 label, color, ring_on = ACTION_LABEL.get(detail, (detail, TXT_DIM, False))
             else:
                 label, color, ring_on = PHASE_LABEL.get(phase, (phase, TXT_DIM, False))
-            set_cell(status_map, key, label, color, ring_on)
-            page.update()
+            cell = set_cell(status_map, key, label, color, ring_on)
+            if cell is not None:
+                try:
+                    cell[0].update()
+                    cell[1].update()
+                except Exception:  # noqa: BLE001  (cellule pas encore montee)
+                    pass
         return on_item
 
     def on_proc(proc) -> None:
@@ -251,17 +322,18 @@ def main(page: ft.Page) -> None:
     def is_cancelled() -> bool:
         return state.cancel_requested
 
-    def make_status_cell(label: str = "", ring_on: bool = False):
-        """Cellule statut (spinner + texte) reutilisee par les 2 tableaux."""
-        ring = ft.ProgressRing(width=14, height=14, stroke_width=2, color=SPIN, visible=ring_on)
-        txt = ft.Text(label, size=11, no_wrap=True, color=TXT_DIM)
-        return ring, txt, ft.Row([ring, txt], spacing=6, width=170,
+    def make_status_cell(label: str = "", ring_on: bool = False, width: int = 170, color=None):
+        """Cellule statut (spinner + texte) reutilisee par les tableaux."""
+        ring = ft.ProgressRing(width=13, height=13, stroke_width=2, color=SPIN, visible=ring_on)
+        txt = ft.Text(label, size=11, no_wrap=True, color=color or TXT_DIM, font_family=FONT_MONO)
+        return ring, txt, ft.Row([ring, txt], spacing=6, width=width,
                                   alignment=ft.MainAxisAlignment.START)
 
     def do_cancel(_e) -> None:
         state.cancel_requested = True
         lib_cancel_btn.disabled = True
         acq_cancel_btn.disabled = True
+        dj_cancel_btn.disabled = True
         status.value = "Cancelling... (stopping the download)"
         proc = state.active_proc
         if proc is not None:
@@ -293,14 +365,48 @@ def main(page: ft.Page) -> None:
     # ====================================================================
     #  Onglet 1 : Bibliotheque (scan + upgrade)
     # ====================================================================
-    folder_field = ft.TextField(label="Music folder", expand=True, read_only=True,
-                                value=cfg.get("last_folder", ""))
-    summary_row = ft.Row(wrap=True, spacing=8)
-    table_col = ft.Column(scroll=ft.ScrollMode.AUTO, expand=True, spacing=2)
-    dup_text = ft.Text("", color="#9A8C6B", selectable=True)
+    folder_field = ft.TextField(width=360, read_only=True, dense=True, text_size=13, color=TXT,
+                                prefix_icon=ft.Icons.FOLDER, hint_text="~/Music/incoming",
+                                value=cfg.get("last_folder", ""), bgcolor=FIELD_BG,
+                                border_color=BORDER, border_radius=8, focused_border_color=PINK)
+    # Miroir read-only du dossier pour l'onglet Sort (un controle ne vit que dans un onglet).
+    sort_folder_field = ft.TextField(width=360, read_only=True, dense=True, text_size=13, color=TXT,
+                                     prefix_icon=ft.Icons.FOLDER, hint_text="folder to sort",
+                                     value=cfg.get("last_folder", ""), bgcolor=FIELD_BG,
+                                     border_color=BORDER, border_radius=8, focused_border_color=PINK)
+    summary_row = ft.Row(wrap=True, spacing=14)
+    quality_bar = ft.Container(content=ft.Row(spacing=0, controls=[]), height=8,
+                               border_radius=4, bgcolor=BORDER,
+                               clip_behavior=ft.ClipBehavior.HARD_EDGE)
+    table_col = ft.ListView(expand=True, spacing=0)
+    dup_text = ft.Text("", color=TXT_DIM, size=11, selectable=True)
+
+    # Libelle du preset (deux lignes, a droite de la toolbar) : "keep >= N kHz / PRESET".
+    preset_l1 = ft.Text("", size=11, color=TXT_DIM, font_family=FONT_MONO,
+                        text_align=ft.TextAlign.RIGHT)
+    preset_l2 = ft.Text("", size=10, weight=ft.FontWeight.W_600, color=TXT_DIM,
+                        font_family=FONT_MONO, text_align=ft.TextAlign.RIGHT,
+                        style=ft.TextStyle(letter_spacing=1))
+    preset_label = ft.Column([preset_l1, preset_l2], spacing=0,
+                             horizontal_alignment=ft.CrossAxisAlignment.END)
+
+    def _refresh_preset_label() -> None:
+        p = _preset()
+        hz = quality.QUALITY_PRESETS.get(p)
+        preset_l1.value = "pure lossless" if hz is None else f"keep >= {hz / 1000:.0f} kHz"
+        preset_l2.value = {"dj_club": "DJ CLUB", "audiophile": "AUDIOPHILE",
+                           "puriste": "PURIST"}.get(p, str(p).upper())
+
+    def _upgrade_count() -> int:
+        if state.selected:
+            return len(state.selected)
+        return sum(1 for r in state.records if _is_upgradable(r.quality, _preset()))
+
+    def _refresh_upgrade_count() -> None:
+        upgrade_btn.text = f"Upgrade selection · {_upgrade_count()}"
 
     filter_dd = ft.Dropdown(
-        label="Filter", width=240, value="upgradable",
+        label="Filter", width=220, value="upgradable", text_size=12,
         options=[
             ft.dropdown.Option(key="upgradable", text="To upgrade (below the bar)"),
             ft.dropdown.Option(key="all", text="All"),
@@ -310,25 +416,36 @@ def main(page: ft.Page) -> None:
             ft.dropdown.Option(key=quality.MAUVAIS, text="Bad"),
         ])
 
+    def _dot(color) -> ft.Container:
+        return ft.Container(width=9, height=9, border_radius=5, bgcolor=color)
+
+    _BANDS = (quality.LOSSLESS, quality.HQ, quality.DOUTEUX, quality.MAUVAIS)
+
     def render_summary() -> None:
         from collections import Counter
         summary_row.controls.clear()
+        quality_bar.content.controls.clear()
         counts = Counter(r.quality.verdict for r in state.records)
-        for verdict, n in counts.most_common():
-            summary_row.controls.append(
-                ft.Container(
-                    content=ft.Text(f"{VERDICT_LABEL.get(verdict, verdict)} : {n}",
-                                    color=TXT, weight=ft.FontWeight.BOLD, size=12),
-                    bgcolor=VERDICT_COLOR.get(verdict, "#6E6E6E"),
-                    padding=ft.padding.symmetric(vertical=6, horizontal=12), border_radius=14))
+        for v in _BANDS:
+            n = counts.get(v, 0)
+            if n:
+                summary_row.controls.append(
+                    ft.Row([_dot(VERDICT_COLOR[v]),
+                            ft.Text(f"{VERDICT_LABEL[v]} {n}", size=12, color=TXT)], spacing=5))
         groups = duplicate_groups(state.records)
         if groups:
+            summary_row.controls.append(ft.Text(f"·  {len(groups)} dupes", size=12, color=TXT_DIM))
             wasted = sum(g[0].size_bytes * (len(g) - 1) for g in groups)
-            dup_text.value = (f"Duplicates: {len(groups)} groups, "
-                              f"{sum(len(g) for g in groups)} files "
-                              f"(~{wasted // (1024 * 1024)} MB recoverable)")
+            dup_text.value = (f"{sum(len(g) for g in groups)} duplicate files in "
+                              f"{len(groups)} groups (~{wasted // (1024 * 1024)} MB recoverable)")
         else:
             dup_text.value = ""
+        for v in _BANDS:
+            n = counts.get(v, 0)
+            if n:
+                quality_bar.content.controls.append(ft.Container(expand=n, bgcolor=VERDICT_COLOR[v]))
+        if not quality_bar.content.controls:        # rien scanne -> barre vide neutre
+            quality_bar.content.controls.append(ft.Container(expand=1, bgcolor=BORDER))
 
     def _visible(rec: ScanRecord) -> bool:
         f = filter_dd.value
@@ -345,6 +462,43 @@ def main(page: ft.Page) -> None:
             state.selected.add(idx)
         else:
             state.selected.discard(idx)
+        _refresh_upgrade_count()
+        try:
+            upgrade_btn.update()
+        except Exception:  # noqa: BLE001
+            pass
+
+    def _format_pill(q) -> ft.Container:
+        pill = ft.Container(
+            ft.Text(theme.format_label(q), size=12, color=TXT, font_family=FONT_MONO, no_wrap=True),
+            padding=ft.padding.symmetric(vertical=2, horizontal=6),
+            bgcolor=FIELD_BG, border=ft.border.all(1, BORDER), border_radius=4)
+        return ft.Container(pill, width=COL_FMT, alignment=ft.alignment.center_left)
+
+    def _band_pill(q) -> ft.Container:
+        v = q.verdict
+        pill = ft.Container(
+            ft.Text(theme.band_label(v), size=10, weight=ft.FontWeight.W_600,
+                    color=theme.BAND_TEXT.get(v, theme.NEUTRAL), font_family=FONT_MONO, no_wrap=True),
+            padding=ft.padding.symmetric(vertical=3, horizontal=8),
+            bgcolor=BAND_BG.get(v, SURFACE), border_radius=4)
+        return ft.Container(pill, width=COL_BAND, alignment=ft.alignment.center_left)
+
+    def _hcell(label, width=None, expand=False) -> ft.Text:
+        return ft.Text(label, size=10, weight=ft.FontWeight.W_600, color=TXT_FAINT,
+                       font_family=FONT_MONO, width=width, expand=expand, no_wrap=True,
+                       style=ft.TextStyle(letter_spacing=1))
+
+    table_header = ft.Container(
+        ft.Row([
+            ft.Container(width=COL_CHECK),
+            _hcell("TRACK", expand=True),
+            _hcell("FORMAT", width=COL_FMT),
+            _hcell("CUTOFF", width=COL_CUT),
+            _hcell("BAND", width=COL_BAND),
+            _hcell("STATUS", width=COL_STATUS),
+        ], spacing=12),
+        padding=ft.padding.symmetric(vertical=8, horizontal=4))
 
     def render_table() -> None:
         table_col.controls.clear()
@@ -352,34 +506,42 @@ def main(page: ft.Page) -> None:
         shown = [(i, r) for i, r in enumerate(state.records) if _visible(r)]
         if not shown:
             table_col.controls.append(ft.Text("No files for this filter.", color=TXT_DIM))
+            _refresh_upgrade_count()
             page.update()
             return
+        preset = _preset()
         for idx, rec in shown:
             q = rec.quality
-            checkbox = ft.Checkbox(value=idx in state.selected,
-                                   disabled=not _is_upgradable(q, _preset()),
-                                   data=idx, on_change=_on_check)
-            badge = ft.Container(
-                content=ft.Text(VERDICT_LABEL.get(q.verdict, q.verdict), size=11, color=TXT),
-                bgcolor=VERDICT_COLOR.get(q.verdict, "#6E6E6E"),
-                padding=ft.padding.symmetric(vertical=2, horizontal=8),
-                border_radius=10, width=120)
-            dup_tag = ft.Text("  [duplicate]", size=11, color="#9A8C6B") \
-                if rec.is_duplicate else ft.Text("")
-            ring, txt, status_cell = make_status_cell()
+            checkbox = ft.Container(
+                ft.Checkbox(value=idx in state.selected, disabled=not _is_upgradable(q, preset),
+                            data=idx, on_change=_on_check, fill_color=PINK, check_color=BG),
+                width=COL_CHECK)
+            title, artist = theme.track_title_artist(rec)
+            track_cell = ft.Column(
+                [ft.Text(title or q.filename, size=14, weight=ft.FontWeight.W_600,
+                         color=TXT, no_wrap=True),
+                 ft.Text(artist or "-", size=11, color=TXT_DIM, no_wrap=True)],
+                spacing=3, expand=True)
+            cut = f"{q.cutoff_hz / 1000:.1f} kHz" if q.cutoff_hz else "-"
+            st_text, st_problem = theme.status_oneliner(rec, preset)
+            ring, txt, status_cell = make_status_cell(
+                st_text, width=COL_STATUS, color=(PINK if st_problem else TXT_DIM))
             state.row_status[q.path] = (ring, txt)
-            table_col.controls.append(
-                ft.Row([
-                    checkbox, badge, status_cell,
-                    ft.Text(f"{q.cutoff_hz:.0f} Hz", width=80, size=12, color=TXT_DIM),
-                    ft.Text(q.filename, expand=True, size=12, no_wrap=True, color=TXT),
-                    dup_tag,
-                ], spacing=8))
+            row = ft.Row([
+                checkbox, track_cell, _format_pill(q),
+                ft.Text(cut, width=COL_CUT, size=12, color=TXT_DIM, font_family=FONT_MONO),
+                _band_pill(q), status_cell,
+            ], spacing=12, vertical_alignment=ft.CrossAxisAlignment.CENTER)
+            table_col.controls.append(ft.Container(
+                row, padding=ft.padding.symmetric(vertical=10, horizontal=4),
+                border=ft.border.only(bottom=ft.BorderSide(1, BORDER))))
+        _refresh_upgrade_count()
         page.update()
 
     def on_folder_picked(e) -> None:
         if e.path:
             folder_field.value = e.path
+            sort_folder_field.value = e.path
             state.folder = e.path
             config_mod.set_value("last_folder", e.path)
             page.update()
@@ -405,14 +567,21 @@ def main(page: ft.Page) -> None:
             try:
                 def prog(i: int, total: int, f: Path) -> None:
                     progress.value = i / total if total else None
-                    status.value = f"Scanning... {i}/{total}"
-                    page.update()
+                    if i == total or i % 20 == 0:    # throttle : pas de page.update() par fichier
+                        status.value = f"Scanning... {i}/{total}"
+                        try:
+                            progress.update()
+                            status.update()
+                        except Exception:  # noqa: BLE001
+                            pass
 
                 state.records = scan_library(folder, exclude_names=current_excludes(), progress=prog)
                 render_summary()
                 render_table()
+                _refresh_preset_label()
                 n_up = sum(1 for r in state.records if _is_upgradable(r.quality, _preset()))
                 status.value = f"{len(state.records)} files scanned - {n_up} to upgrade."
+                _refresh_footer()
             except Exception as ex:  # noqa: BLE001
                 status.value = f"Scan error: {ex}"
             finally:
@@ -448,7 +617,10 @@ def main(page: ft.Page) -> None:
                 def prog(*a) -> None:
                     if len(a) == 1:
                         status.value = str(a[0])[:90]
-                        page.update()
+                        try:
+                            status.update()
+                        except Exception:  # noqa: BLE001
+                            pass
 
                 on_item = make_on_item(state.row_status)
                 status.value = f"Upgrading {len(chosen)} files via Soulseek..."
@@ -476,8 +648,10 @@ def main(page: ft.Page) -> None:
                     summary = (f"Upgrade done: {ok} added to library (fakes -> trash), "
                                f"{rej} rejected, {nf} not found{dup_txt}.")
                 status.value = summary
+                state.last_upgraded += ok
                 show_buy_links(outcomes, Path(state.folder).name)
                 _banner(summary, bool(ok) and not state.cancel_requested)
+                _refresh_footer()
                 # Re-scanner pour refleter les nouveaux verdicts
                 if ok and not state.cancel_requested:
                     status.value = summary + " Re-scanning..."
@@ -486,6 +660,7 @@ def main(page: ft.Page) -> None:
                     state.records = scan_library(state.folder, exclude_names=current_excludes())
                     render_summary()
                     render_table()
+                    _refresh_footer()
                     status.value = summary + " Table refreshed."
             except soulseek.SoulseekError as e:
                 status.value = str(e)   # message clair (creds manquants / port occupe / login refuse)
@@ -512,30 +687,35 @@ def main(page: ft.Page) -> None:
     # --- Tri par genre : range les tracks EN VRAC du dossier dans des sous-dossiers
     #     de vibe (ACID/DEEPWATER/...) via lookup Discogs/MusicBrainz. Dry-run d'abord,
     #     l'user voit le plan, puis Apply deplace (le cache rend le 2e passage rapide).
+    sort_table_col = ft.ListView(expand=True, spacing=2)
+
     def render_sort_table(ops) -> None:
-        table_col.controls.clear()
+        sort_table_col.controls.clear()
         if not ops:
-            table_col.controls.append(ft.Text("No loose tracks to sort in this folder.", color=TXT_DIM))
+            sort_table_col.controls.append(
+                ft.Text("No loose tracks to sort in this folder.", color=TXT_DIM))
             page.update()
             return
         for o in ops:
             if o.action == organize_mod.MOVE:
-                label, color = o.folder, "#6E7F5B"
+                label, color = o.folder, theme.GREEN
             elif o.action == organize_mod.INBOX_ACT:
-                label, color = "_INBOX", "#8C7A5A"
+                label, color = "_INBOX", theme.TAN
             else:
-                label, color = "left as-is", "#6E6E6E"
+                label, color = "left as-is", theme.NEUTRAL
             badge = ft.Container(
-                content=ft.Text(label, size=11, color=TXT, no_wrap=True),
+                content=ft.Text(label, size=11, color="#FFFFFF", no_wrap=True, font_family=FONT_MONO),
                 bgcolor=color, padding=ft.padding.symmetric(vertical=2, horizontal=8),
-                border_radius=10, width=130)
-            styles = ft.Text(o.styles or "", size=11, color=TXT_DIM, width=200, no_wrap=True)
+                border_radius=8, width=140)
+            styles = ft.Text(o.styles or "", size=11, color=TXT_DIM, width=220, no_wrap=True)
             name = ft.Text(Path(o.src).name, expand=True, size=12, no_wrap=True, color=TXT)
-            table_col.controls.append(ft.Row([badge, styles, name], spacing=8))
+            sort_table_col.controls.append(
+                ft.Row([badge, styles, name], spacing=8,
+                       vertical_alignment=ft.CrossAxisAlignment.CENTER))
         page.update()
 
     def _run_sort(apply: bool) -> None:
-        folder = folder_field.value or state.folder
+        folder = sort_folder_field.value or folder_field.value or state.folder
         if not folder or not Path(folder).exists():
             status.value = "Pick a folder first (Browse)."
             page.update()
@@ -545,10 +725,10 @@ def main(page: ft.Page) -> None:
         def worker() -> None:
             set_busy(True)
             state.cancel_requested = False
-            lib_cancel_btn.visible = not apply       # le dry-run (lookups reseau) est annulable
-            lib_cancel_btn.disabled = False
+            sort_cancel_btn.visible = not apply      # le dry-run (lookups reseau) est annulable
+            sort_cancel_btn.disabled = False
             progress.value = None
-            table_col.controls.clear()               # vide la table -> page.update() leger pendant la boucle
+            sort_table_col.controls.clear()          # vide la table -> page.update() leger pendant la boucle
             cfg2 = config_mod.load()
             # Destination = l'ARBRE DDD (config library_root -> sinon la bibliotheque download_dir),
             # JAMAIS le dossier source : on transvase le tas vers DDD/ACID, DDD/DEEPWATER, ...
@@ -565,7 +745,11 @@ def main(page: ft.Page) -> None:
                     progress.value = i / total if total else None
                     if i == total or i % 20 == 0:    # throttle : pas de page.update() par fichier
                         status.value = f"{'Sorting' if apply else 'Looking up'}... {i}/{total}"
-                        page.update()
+                        try:
+                            progress.update()
+                            status.update()
+                        except Exception:  # noqa: BLE001
+                            pass
 
                 rep = organize_mod.sort_folder(
                     folder, library_root=lib_root, apply=apply, mapping=mapping,
@@ -592,7 +776,7 @@ def main(page: ft.Page) -> None:
             except Exception as ex:  # noqa: BLE001
                 status.value = f"Sort error: {ex}"
             finally:
-                lib_cancel_btn.visible = False
+                sort_cancel_btn.visible = False
                 set_busy(False)
 
         threading.Thread(target=worker, daemon=True).start()
@@ -611,51 +795,46 @@ def main(page: ft.Page) -> None:
     source_dd = ft.Dropdown(
         label="Source", width=200, value="discogs",
         options=[ft.dropdown.Option(key="discogs", text="Discogs"),
-                 ft.dropdown.Option(key="bandcamp", text="Bandcamp"),
-                 ft.dropdown.Option(key="djset", text="DJ set (URL)")])
+                 ft.dropdown.Option(key="bandcamp", text="Bandcamp")])
     discogs_collection_cb = ft.Checkbox(label="Include collection", value=False, visible=True)
     bandcamp_expand_cb = ft.Checkbox(label="Expand albums", value=True, visible=False)
     djset_url = ft.TextField(label="Set / channel / playlist URL (or 1001TL / tracklist file)",
-                             visible=False, width=480)
-    acquire_table_col = ft.Column(scroll=ft.ScrollMode.AUTO, expand=True, spacing=2)
+                             width=560, hint_text="YouTube set or playlist URL, 1001TL, or a file")
+    acquire_table_col = ft.ListView(expand=True, spacing=2)
+    djset_table_col = ft.ListView(expand=True, spacing=2)
 
     def on_source_change(_e) -> None:
         src = source_dd.value
         discogs_collection_cb.visible = src == "discogs"
         bandcamp_expand_cb.visible = src == "bandcamp"
-        djset_url.visible = src == "djset"
         page.update()
 
     source_dd.on_change = on_source_change
 
-    def render_acquire_table(rows) -> None:
-        acquire_table_col.controls.clear()
-        state.acquire_row_status = {}
+    def render_acquire_into(table_target, status_map: dict, rows) -> None:
+        """Rend une want-list dans le tableau passe (favoris OU YouTube set)."""
+        table_target.controls.clear()
+        status_map.clear()
         shown = [r for r in rows
                  if (r.get("Artist") or "").strip() and (r.get("Title") or "").strip()]
         if not shown:
-            acquire_table_col.controls.append(ft.Text("No usable tracks.", color=TXT_DIM))
+            table_target.controls.append(ft.Text("No usable tracks.", color=TXT_DIM))
             page.update()
             return
         for r in shown:
             artist, title = r["Artist"].strip(), r["Title"].strip()
             key = match_key(artist, title)   # MEME normalisation que upgrade._item_id
-            ring, txt, status_cell = make_status_cell("Queued...", ring_on=True)
-            state.acquire_row_status[key] = (ring, txt)
-            acquire_table_col.controls.append(
+            ring, txt, status_cell = make_status_cell("queued...", ring_on=True)
+            status_map[key] = (ring, txt)
+            table_target.controls.append(
                 ft.Row([status_cell,
                         ft.Text(f"{artist} - {title}", expand=True, size=12, no_wrap=True,
                                 color=TXT)], spacing=8))
         page.update()
 
-    def do_acquire(_e) -> None:
-        if state.busy:
-            return
-        source = source_dd.value
-        # Tous les identifiants vivent dans Reglages. On relit a chaud (l'user a pu
-        # les saisir apres le lancement) et on bloque avec un message clair si manquants.
+    def _resolve_acquire(source: str):
+        """(username, token) depuis Reglages (ou l'URL pour djset). (None, None) si manquant."""
         creds = config_mod.load()
-        token = ""
         if source == "discogs":
             username = (creds.get("discogs_username") or "").strip()
             token = (creds.get("discogs_token") or "").strip()
@@ -664,21 +843,25 @@ def main(page: ft.Page) -> None:
                                 "in Settings (gear, top right).")
                 settings_panel.visible = True
                 page.update()
-                return
-        elif source == "bandcamp":
+                return None, None
+            return username, token
+        if source == "bandcamp":
             username = (creds.get("bandcamp_username") or "").strip()
             if not username:
-                status.value = ("Bandcamp username missing - enter it "
-                                "in Settings (gear, top right).")
+                status.value = ("Bandcamp username missing - enter it in Settings (gear, top right).")
                 settings_panel.visible = True
                 page.update()
-                return
-        else:                                   # djset : pas de creds, juste l'URL / le fichier
-            username = (djset_url.value or "").strip()
-            if not username:
-                status.value = "Enter the set / channel / playlist URL (YouTube / 1001TL) or a tracklist file."
-                page.update()
-                return
+                return None, None
+            return username, ""
+        username = (djset_url.value or "").strip()      # djset : l'URL / le fichier
+        if not username:
+            status.value = "Enter the set / channel / playlist URL (YouTube / 1001TL) or a tracklist file."
+            page.update()
+            return None, None
+        return username, ""
+
+    def _start_acquire(source, username, token, table_target, status_map, cancel_btn) -> None:
+        """Worker partage scrape -> acquire (favoris Discogs/Bandcamp + YouTube set)."""
         # Acquire telecharge via Soulseek : on verifie les creds AVANT de scraper, sinon
         # djset scrape une longue playlist puis echoue seulement au moment du download.
         try:
@@ -694,10 +877,10 @@ def main(page: ft.Page) -> None:
             set_busy(True)
             state.cancel_requested = False
             state.active_proc = None
-            acq_cancel_btn.visible = True
-            acq_cancel_btn.disabled = False
+            cancel_btn.visible = True
+            cancel_btn.disabled = False
             progress.value = None
-            acquire_table_col.controls.clear()
+            table_target.controls.clear()
             page.update()
             try:
                 from .core import scrapers
@@ -705,7 +888,10 @@ def main(page: ft.Page) -> None:
                 def prog(*a) -> None:
                     if a:
                         status.value = str(a[0])[:90]
-                        page.update()
+                        try:
+                            status.update()
+                        except Exception:  # noqa: BLE001
+                            pass
 
                 status.value = f"Fetching {source}: {username[:60]}..."
                 page.update()
@@ -723,11 +909,11 @@ def main(page: ft.Page) -> None:
                     status.value = f"No tracks found for {username} on {source}."
                     return
                 state.acquire_rows = rows
-                render_acquire_table(rows)
+                render_acquire_into(table_target, status_map, rows)
                 status.value = f"{len(rows)} tracks -> downloading in real lossless..."
                 page.update()
 
-                on_item = make_on_item(state.acquire_row_status)
+                on_item = make_on_item(status_map)
                 outcomes = upgrade_mod.acquire_rows(
                     rows, root=paths.resource_base(), download_dir=dest,
                     staging_dir=paths.cache_dl_dir(),
@@ -741,17 +927,18 @@ def main(page: ft.Page) -> None:
                 dup = c.get(upgrade_mod.ACT_DUPLICATE, 0)
                 dup_txt = f", {dup} duplicates skipped" if dup else ""
                 if state.cancel_requested:
-                    for cell in state.acquire_row_status.values():
+                    for cell in status_map.values():
                         if cell[0].visible:
-                            cell[1].value, cell[1].color, cell[0].visible = "Cancelled", TXT_DIM, False
+                            cell[1].value, cell[1].color, cell[0].visible = "cancelled", TXT_DIM, False
                     summary = (f"Fetch cancelled: {acq} kept, {rej} rejected, "
                                f"{nf} not found{dup_txt} (partial).")
                 else:
                     summary = (f"Fetch done: {acq} in library, {rej} rejected "
                                f"(upscale/short/wrong match), {nf} not found{dup_txt}.")
                 status.value = summary
-                show_buy_links(outcomes, "acquire")
+                show_buy_links(outcomes, source)
                 _banner(summary, bool(acq) and not state.cancel_requested)
+                _refresh_footer()
             except ValueError as ex:  # token Discogs manquant, etc.
                 status.value = f"Can't fetch: {ex}"
                 if "token" in str(ex).lower():
@@ -762,11 +949,30 @@ def main(page: ft.Page) -> None:
             except Exception as ex:  # noqa: BLE001
                 status.value = f"Error: {ex}"
             finally:
-                acq_cancel_btn.visible = False
+                cancel_btn.visible = False
                 state.active_proc = None
                 set_busy(False)
 
         threading.Thread(target=worker, daemon=True).start()
+
+    def do_acquire(_e) -> None:
+        if state.busy:
+            return
+        source = source_dd.value
+        username, token = _resolve_acquire(source)
+        if username is None:
+            return
+        _start_acquire(source, username, token, acquire_table_col,
+                       state.acquire_row_status, acq_cancel_btn)
+
+    def do_acquire_djset(_e) -> None:
+        if state.busy:
+            return
+        username, _ = _resolve_acquire("djset")
+        if username is None:
+            return
+        _start_acquire("djset", username, "", djset_table_col,
+                       state.djset_row_status, dj_cancel_btn)
 
     # ====================================================================
     #  Reglages (panneau masque, declenche par l'engrenage)
@@ -834,6 +1040,8 @@ def main(page: ft.Page) -> None:
                 msg = f"Saved, but genre mapping NOT updated (invalid JSON: {e})."
         config_mod.set_many(vals)
         cfg.update(vals)   # garde le cache en memoire frais (relu aussi a chaud par do_acquire)
+        _refresh_slsk()           # creds peut-etre saisies -> le point passe au vert
+        _refresh_preset_label()   # le preset a pu changer -> "keep >= N kHz / PRESET"
         status.value = msg
         page.update()
 
@@ -859,15 +1067,15 @@ def main(page: ft.Page) -> None:
     def toggle_settings(_e) -> None:
         opening = not settings_panel.visible
         settings_panel.visible = opening
-        main_stack.visible = not opening      # Reglages prend toute la fenetre ; la croix ferme
+        main_view.visible = not opening       # Reglages prend toute la fenetre ; la croix ferme
         page.update()
 
     close_settings_btn = ft.IconButton(icon=ft.Icons.CLOSE, tooltip="Close settings",
                                         on_click=toggle_settings)
 
     # Panneau Reglages : pas de hauteur fixe (ne coupe plus le contenu). Il occupe la place
-    # via expand et scrolle si besoin ; quand il est ouvert, on cache les onglets derriere
-    # (main_stack.visible=False) -> plein ecran propre, ferme par la croix (le bouton X).
+    # via expand et scrolle si besoin ; quand il est ouvert, on cache la vue principale derriere
+    # (main_view.visible=False) -> plein ecran propre, ferme par la croix (le bouton X).
     settings_panel = ft.Container(
         content=ft.Column([
             ft.Row([ft.Icon(ft.Icons.SETTINGS, size=18, color=TXT_DIM),
@@ -882,80 +1090,206 @@ def main(page: ft.Page) -> None:
     # ====================================================================
     #  Boutons
     # ====================================================================
-    browse_btn = ft.FilledButton(text="Browse", icon=ft.Icons.FOLDER_OPEN, on_click=browse)
-    scan_btn = ft.FilledButton(text="Scan", icon=ft.Icons.SEARCH, on_click=do_scan)
-    upgrade_btn = ft.FilledButton(text="Upgrade selection", icon=ft.Icons.UPGRADE,
-                                  on_click=do_upgrade, disabled=True)
+    # Styles : Scan/Fetch = encre (presque noir), Upgrade/Apply = rose, Browse = contour.
+    _btn_shape = ft.RoundedRectangleBorder(radius=8)
+    _btn_pad = ft.padding.symmetric(horizontal=18, vertical=13)
+    _btn_txt = ft.TextStyle(weight=ft.FontWeight.BOLD, size=13)
+    _ink_style = ft.ButtonStyle(bgcolor=TXT, color=BG, shape=_btn_shape, padding=_btn_pad,
+                                text_style=_btn_txt)
+    _pink_style = ft.ButtonStyle(bgcolor=ACCENT, color="#FFFFFF", shape=_btn_shape,
+                                 padding=_btn_pad, text_style=_btn_txt)
+    _outline_style = ft.ButtonStyle(color=TXT, bgcolor=FIELD_BG, side=ft.BorderSide(1, BORDER),
+                                    shape=_btn_shape, padding=ft.padding.symmetric(horizontal=14,
+                                    vertical=13), text_style=_btn_txt)
+
+    browse_btn = ft.OutlinedButton(text="Browse", icon=ft.Icons.FOLDER_OPEN,
+                                   on_click=browse, style=_outline_style)
+    sort_browse_btn = ft.OutlinedButton(text="Browse", icon=ft.Icons.FOLDER_OPEN,
+                                        on_click=browse, style=_outline_style)
+    scan_btn = ft.FilledButton(text="Scan", icon=ft.Icons.SEARCH, on_click=do_scan,
+                               style=_ink_style)
+    upgrade_btn = ft.FilledButton(text="Upgrade selection · 0", icon=ft.Icons.UPGRADE,
+                                  on_click=do_upgrade, disabled=True, style=_pink_style)
     lib_cancel_btn = ft.OutlinedButton(text="Cancel", icon=ft.Icons.CANCEL,
                                        on_click=do_cancel, visible=False)
     sort_btn = ft.FilledButton(
-        text="Sort by genre", icon=ft.Icons.SORT, on_click=do_sort,
+        text="Sort by genre", icon=ft.Icons.SORT, on_click=do_sort, style=_ink_style,
         tooltip="File loose tracks into vibe subfolders (ACID, DEEPWATER, ...) here, by genre lookup")
     sort_apply_btn = ft.FilledButton(text="Apply sort", icon=ft.Icons.CHECK,
-                                     on_click=do_sort_apply, visible=False)
+                                     on_click=do_sort_apply, visible=False, style=_pink_style)
+    sort_cancel_btn = ft.OutlinedButton(text="Cancel", icon=ft.Icons.CANCEL,
+                                        on_click=do_cancel, visible=False)
     check_all_btn = ft.TextButton(text="Check all", on_click=select_all_visible)
     uncheck_all_btn = ft.TextButton(text="Uncheck all", on_click=clear_selection)
     filter_dd.on_change = lambda _e: render_table()
 
     acquire_btn = ft.FilledButton(text="Fetch & download", icon=ft.Icons.DOWNLOAD,
-                                  on_click=do_acquire)
+                                  on_click=do_acquire, style=_ink_style)
     acq_cancel_btn = ft.OutlinedButton(text="Cancel", icon=ft.Icons.CANCEL,
                                        on_click=do_cancel, visible=False)
-    feedback_btn = ft.IconButton(icon=ft.Icons.FAVORITE_BORDER,
-                                 tooltip="Like the app / a suggestion",
-                                 on_click=open_feedback)
-    settings_btn = ft.IconButton(icon=ft.Icons.SETTINGS, tooltip="Settings (credentials)",
-                                 on_click=toggle_settings)
+    djset_fetch_btn = ft.FilledButton(text="Fetch & download", icon=ft.Icons.DOWNLOAD,
+                                      on_click=do_acquire_djset, style=_ink_style)
+    dj_cancel_btn = ft.OutlinedButton(text="Cancel", icon=ft.Icons.CANCEL,
+                                      on_click=do_cancel, visible=False)
+    feedback_btn = ft.IconButton(icon=ft.Icons.FAVORITE_BORDER, icon_color=TXT_DIM,
+                                 tooltip="Like the app / a suggestion", on_click=open_feedback)
+    settings_btn = ft.IconButton(icon=ft.Icons.SETTINGS, icon_color=TXT_DIM,
+                                 tooltip="Settings (credentials)", on_click=toggle_settings)
 
     # ====================================================================
-    #  Layout : barre fine (engrenage) + onglets + barre d'etat
+    #  Header : wordmark slab + tagline + statut slsk + engrenage
+    # ====================================================================
+    wordmark = ft.Text("DIGDIGDIG", font_family=FONT_SLAB, size=30,
+                       weight=ft.FontWeight.BOLD, color=TXT,
+                       style=ft.TextStyle(letter_spacing=1))
+    tagline = ft.Text("the crate digger that digs x3", font_family=FONT_MONO,
+                      size=11, color=TXT_DIM)
+    header = ft.Container(
+        content=ft.Row([
+            # Anton (wordmark) a une grosse boite de ligne : en END-align sa boite-bas colle
+            # au bas, mais les capitales remontent. On releve la tagline d'un cran (padding bas
+            # sur un wrapper) pour que le bas des lettres des deux textes tombe sur la meme ligne.
+            ft.Row([wordmark, ft.Container(tagline, padding=ft.padding.only(bottom=5))],
+                   spacing=14, vertical_alignment=ft.CrossAxisAlignment.END),
+            ft.Container(expand=True),
+            ft.Row([slsk_dot, slsk_txt], spacing=7,
+                   vertical_alignment=ft.CrossAxisAlignment.CENTER),
+            feedback_btn, settings_btn,
+        ], vertical_alignment=ft.CrossAxisAlignment.CENTER, spacing=16),
+        padding=ft.padding.only(left=4, right=4, top=4, bottom=8))
+
+    # Zone table : FLUSH sur l'ivoire (PAS de carte grise) ; juste un filet sous l'en-tete
+    # et un divider faible par ligne (les lignes portent leur propre bordure basse).
+    def _table_surface(header_row, body) -> ft.Container:
+        inner = ([header_row, ft.Divider(height=1, thickness=1, color=BORDER), body]
+                 if header_row else [body])
+        return ft.Container(content=ft.Column(inner, spacing=0, expand=True),
+                            expand=True, bgcolor=BG)
+
+    # ====================================================================
+    #  Onglets
     # ====================================================================
     library_tab = ft.Container(
         content=ft.Column([
-            ft.Row([folder_field, browse_btn, scan_btn, sort_btn, sort_apply_btn]),
+            ft.Row([folder_field, browse_btn, scan_btn,
+                    ft.Container(expand=True), preset_label, upgrade_btn],
+                   vertical_alignment=ft.CrossAxisAlignment.CENTER, spacing=10),
             summary_row,
-            dup_text,
-            ft.Row([filter_dd, check_all_btn, uncheck_all_btn, upgrade_btn, lib_cancel_btn],
-                   wrap=True, spacing=8, run_spacing=8,
-                   vertical_alignment=ft.CrossAxisAlignment.CENTER),
-            ft.Container(table_col, expand=True, border=ft.border.all(1, BORDER),
-                         border_radius=8, padding=8),
+            quality_bar,
+            # PAS de wrap=True ici : un enfant expand (le spacer) dans un Wrap fait jeter
+            # un layout error a Flutter -> toute la zone table devient un carre gris
+            # (ErrorWidget release-mode #C3C3C2). Row normal -> l'expand est valide.
+            ft.Row([filter_dd, check_all_btn, uncheck_all_btn, lib_cancel_btn,
+                    ft.Container(expand=True), dup_text],
+                   spacing=8, vertical_alignment=ft.CrossAxisAlignment.CENTER),
+            _table_surface(table_header, table_col),
         ], expand=True, spacing=10),
-        padding=ft.padding.only(top=6))
+        padding=ft.padding.only(top=6), expand=True, bgcolor=BG)
 
     acquire_tab = ft.Container(
         content=ft.Column([
-            ft.Row([source_dd, djset_url, acquire_btn, acq_cancel_btn],
+            ft.Row([source_dd, acquire_btn, acq_cancel_btn],
                    wrap=True, spacing=8, run_spacing=8,
                    vertical_alignment=ft.CrossAxisAlignment.CENTER),
             ft.Row([discogs_collection_cb, bandcamp_expand_cb], wrap=True),
-            ft.Container(acquire_table_col, expand=True, border=ft.border.all(1, BORDER),
-                         border_radius=8, padding=8),
+            _table_surface(None, acquire_table_col),
         ], expand=True, spacing=10),
-        padding=ft.padding.only(top=6))
+        padding=ft.padding.only(top=6), expand=True, bgcolor=BG)
 
-    # L'engrenage Reglages est pose en HAUT A DROITE, superpose (Stack) sur la barre d'onglets.
-    # main_stack = les onglets ; on le cache quand le panneau Reglages s'ouvre (plein ecran).
-    main_stack = ft.Stack([
-        ft.Tabs(selected_index=0, expand=True, tabs=[
-            ft.Tab(text="Library", content=library_tab),
-            ft.Tab(text="Get favorites", content=acquire_tab),
-        ]),
-        ft.Container(ft.Row([feedback_btn, settings_btn], spacing=0), top=0, right=0),
-    ], expand=True)
+    djset_tab = ft.Container(
+        content=ft.Column([
+            ft.Text("Paste a YouTube set or playlist URL (each video = a track), a 1001TL page, "
+                    "or a tracklist file. DDD scrapes it, then downloads in real lossless.",
+                    size=12, color=TXT_DIM),
+            ft.Row([djset_url, djset_fetch_btn, dj_cancel_btn],
+                   wrap=True, spacing=8, run_spacing=8,
+                   vertical_alignment=ft.CrossAxisAlignment.CENTER),
+            _table_surface(None, djset_table_col),
+        ], expand=True, spacing=10),
+        padding=ft.padding.only(top=6), expand=True, bgcolor=BG)
+
+    sort_tab = ft.Container(
+        content=ft.Column([
+            ft.Text("File the loose tracks in this folder into your vibe subfolders "
+                    "(ACID, DEEPWATER, ...) by genre lookup. Preview first, then Apply.",
+                    size=12, color=TXT_DIM),
+            ft.Row([sort_folder_field, sort_browse_btn, sort_btn, sort_apply_btn, sort_cancel_btn],
+                   wrap=True, spacing=8, run_spacing=8,
+                   vertical_alignment=ft.CrossAxisAlignment.CENTER),
+            _table_surface(None, sort_table_col),
+        ], expand=True, spacing=10),
+        padding=ft.padding.only(top=6), expand=True, bgcolor=BG)
+
+    # Nav custom (PAS ft.Tabs : sa TabBarView donne une hauteur non bornee a son contenu
+    # -> expand casse et un fond gris Material transparait. Ici le contenu vit dans un
+    # Container creme que l'on pilote a la main -> fond uniforme + expand correct).
+    _tab_defs = [("Library", library_tab), ("Get favorites", acquire_tab),
+                 ("YouTube set", djset_tab), ("Sort by genre", sort_tab)]
+    tab_content = ft.Container(content=library_tab, expand=True, bgcolor=BG)
+    tab_texts: list = []
+    tab_buttons: list = []
+
+    def _select_tab(idx: int) -> None:
+        tab_content.content = _tab_defs[idx][1]
+        for j, t in enumerate(tab_texts):
+            active = j == idx
+            t.color = TXT if active else TXT_DIM
+            t.weight = ft.FontWeight.BOLD if active else ft.FontWeight.W_500
+            tab_buttons[j].border = ft.border.only(
+                bottom=ft.BorderSide(3, ACCENT if active else "transparent"))
+        page.update()
+
+    for _i, (_name, _) in enumerate(_tab_defs):
+        _t = ft.Text(_name, size=14, color=TXT if _i == 0 else TXT_DIM,
+                     weight=ft.FontWeight.BOLD if _i == 0 else ft.FontWeight.W_500)
+        _b = ft.Container(_t, on_click=(lambda e, k=_i: _select_tab(k)),
+                          padding=ft.padding.only(top=2, bottom=8),
+                          border=ft.border.only(bottom=ft.BorderSide(
+                              3, ACCENT if _i == 0 else "transparent")))
+        tab_texts.append(_t)
+        tab_buttons.append(_b)
+    nav = ft.Row(tab_buttons, spacing=26)
+
+    main_view = ft.Column([header, nav, tab_content], expand=True, spacing=10)
+
+    # ====================================================================
+    #  Pied de page : recap de session + dossier bibliotheque
+    # ====================================================================
+    footer_left = ft.Text("", size=11, color=TXT_DIM, font_family=FONT_MONO)
+    footer_right = ft.Text("", size=11, color=TXT_DIM, font_family=FONT_MONO)
+
+    def _refresh_footer() -> None:
+        scanned = len(state.records)
+        below = sum(1 for r in state.records if _is_upgradable(r.quality, _preset()))
+        footer_left.value = (f"{scanned} scanned · {below} below bar · "
+                             f"{state.last_upgraded} upgraded · {state.last_buylinks} -> buy-links")
+        try:
+            lib = paths.download_dir(config_mod.load())
+        except Exception:  # noqa: BLE001
+            lib = ""
+        footer_right.value = f"library: {lib}  ·  v{__version__}"
+
+    footer = ft.Row([footer_left, ft.Container(expand=True), footer_right],
+                    vertical_alignment=ft.CrossAxisAlignment.CENTER)
+
+    # Etat initial des libelles dynamiques (avant tout scan).
+    _refresh_slsk()
+    _refresh_preset_label()
+    _refresh_upgrade_count()
+    _refresh_footer()
 
     # 1er lancement sans identifiants : deplie Reglages (plein ecran) + invite.
     if not ((cfg.get("soulseek_user") or "").strip() and (cfg.get("soulseek_pass") or "")):
         settings_panel.visible = True
-        main_stack.visible = False
+        main_view.visible = False
         status.value = "Tip: enter your Soulseek credentials (gear) to start digging."
 
-    page.add(main_stack, progress, status, buy_btn, settings_panel)
+    page.add(main_view, progress, status, footer, buy_btn, settings_panel)
 
 
 def run() -> None:
     """Point d'entree : lance la fenetre native."""
-    ft.app(target=main)
+    ft.app(target=main, assets_dir=str(paths.gui_assets_dir()))
 
 
 if __name__ == "__main__":
