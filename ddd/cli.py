@@ -490,6 +490,39 @@ def _cmd_import(args: argparse.Namespace) -> int:
     return 0
 
 
+def _cmd_detector_shadow(args: argparse.Namespace) -> int:
+    """Mode SHADOW : montre ce que le detecteur 'forensic' changerait, sans rien modifier."""
+    from collections import Counter
+    from .core import detect as detect_mod
+
+    folder = Path(args.folder)
+    if not folder.exists():
+        print(f"folder not found: {folder}", file=sys.stderr)
+        return 2
+
+    def progress(i: int, f: Path) -> None:
+        if args.verbose or i % 25 == 0:
+            print(f"  [{i}] {Path(f).name}", file=sys.stderr)
+
+    print(f"Shadow scan {folder} (legacy vs forensic; nothing is modified) ...", file=sys.stderr)
+    n, diffs = detect_mod.diff_folder(folder, exclude_names=args.exclude,
+                                      limit=args.limit, progress=progress)
+
+    print(f"\n=== Detector shadow: {folder.name} ===")
+    print(f"{n} files analyzed, {len(diffs)} would change under 'forensic':\n")
+    for (lv, fv), c in Counter((d[1], d[2]) for d in diffs).most_common():
+        print(f"  {lv:<10} -> {fv:<10} {c:>5}")
+    if diffs:
+        print(f"\n  --- detail (first {min(len(diffs), 40)}) ---")
+        for path, lv, fv, conf, reason in diffs[:40]:
+            print(f"  {lv:<9} -> {fv:<9} [{conf:<9}] {Path(path).name}")
+            print(f"        {reason}")
+        if len(diffs) > 40:
+            print(f"  ... +{len(diffs) - 40} more")
+    print("\n(nothing was modified. To switch the app over: ddd config set detector forensic)")
+    return 0
+
+
 def _cmd_config(args: argparse.Namespace) -> int:
     if args.action == "show":
         cfg = config_mod.load()
@@ -610,6 +643,15 @@ def build_parser() -> argparse.ArgumentParser:
     p_buy.add_argument("-x", "--exclude", action="append", default=[], metavar="NAME",
                        help="subfolder to ignore (if source = folder)")
     p_buy.set_defaults(func=_cmd_buy)
+
+    p_sh = sub.add_parser("detector-shadow",
+                          help="preview what the forensic detector would change (modifies nothing)")
+    p_sh.add_argument("folder", help="folder to analyze")
+    p_sh.add_argument("-x", "--exclude", action="append", default=[], metavar="NAME",
+                      help="subfolder to ignore (repeatable)")
+    p_sh.add_argument("-n", "--limit", type=int, default=0, help="limit to N files")
+    p_sh.add_argument("-v", "--verbose", action="store_true", help="show each file")
+    p_sh.set_defaults(func=_cmd_detector_shadow)
 
     p_cfg = sub.add_parser("config", help="manage config (creds, target)")
     p_cfg.add_argument("action", choices=["show", "set"])

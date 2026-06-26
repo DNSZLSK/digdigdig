@@ -189,8 +189,11 @@ def _error(p: Path, ext: str, fclass: str, msg: str) -> QualityResult:
                          0, ERROR, "n/a", msg)
 
 
-def analyze_file(path) -> QualityResult:
-    """Analyse un fichier -> QualityResult."""
+def analyze_file(path, detector=None) -> QualityResult:
+    """Analyse un fichier -> QualityResult.
+
+    `detector` : 'legacy' (defaut) = bandes par cutoff ; 'forensic' = couche durcie
+    additive (cf detect.py). None -> lu en config ('detector'). Le defaut ne change RIEN."""
     p = Path(path)
     ext = p.suffix.lower()
     fclass = _format_class(ext)
@@ -214,6 +217,8 @@ def analyze_file(path) -> QualityResult:
         return _error(p, ext, fclass, "analyse spectrale impossible (lecture vide)")
     cutoff, std, hf = sp
     est = estimate_mp3_bitrate(cutoff)
+    if detector is None:
+        detector = _current_detector()
 
     if fclass == "lossy":
         # MP3/AAC/... : banni d'office sous 320 kbps (container_bitrate ~ debit reel),
@@ -223,6 +228,10 @@ def analyze_file(path) -> QualityResult:
             reason = f"{ext[1:]} {container_bitrate} kbps < 320 - banni"
         else:
             verdict, conf, reason = _band(cutoff, est)
+    elif detector == "forensic":
+        from . import detect as _detect      # import tardif : evite le cycle quality <-> detect
+        verdict, conf, reason, est, _sig = _detect.forensic_classify(
+            cutoff, std, hf, container_bitrate, info.samplerate, ext, fclass)
     else:
         verdict, conf, reason = _classify_lossless(cutoff, container_bitrate, ext)
 
@@ -253,6 +262,16 @@ def preset_from_config(default: str = DEFAULT_PRESET) -> str:
     except Exception:  # noqa: BLE001
         val = None
     return val if val in QUALITY_PRESETS else default
+
+
+def _current_detector() -> str:
+    """Moteur de detection courant (config 'detector'), valide, defaut 'legacy'."""
+    try:
+        from . import config as _config
+        val = _config.get("detector")
+    except Exception:  # noqa: BLE001
+        val = None
+    return val if val in ("legacy", "forensic") else "legacy"
 
 
 def is_accepted(qr: "QualityResult", preset: str = DEFAULT_PRESET) -> bool:
