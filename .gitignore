@@ -25,6 +25,7 @@ inputs/*.csv
 inputs/*.json
 outputs/*.csv
 outputs/*.json
+outputs/*.html
 
 # Local config with creds
 config/*.local.*

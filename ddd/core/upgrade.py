@@ -22,7 +22,7 @@ from . import quality
 from .fsutil import safe_move
 from .naming import match_key, parse_filename, normalize_artist_title, resolve_name, read_tags, search_title
 from .scan import scan_folder, scan_library, AUDIO_EXTS
-from .tokenize import get_tokens, token_coverage, core_title_tokens
+from .tokenize import get_tokens, token_coverage, core_title_tokens, loose_title_tokens, version_key
 from . import soulseek
 from . import trash
 from .soulseek import WantItem
@@ -76,31 +76,65 @@ def _existing_keys(folder) -> set:
     return keys
 
 
+def _title_coverage(req_title, cand_title):
+    """Couverture du titre demande dans le candidat (0..1), ou None si le titre demande
+    n'a aucun token jugeable meme en mode loose.
+
+    Le noyau (>=3 lettres, sans version/feat) est essaye d'abord ; repli loose (chiffres
+    + mots courts) pour les titres tres courts ('2 ME') qui sinon ne donneraient aucun
+    token et feraient sauter le check (l'ancien fail-open a -1)."""
+    core_req = core_title_tokens(req_title)
+    if core_req:
+        return token_coverage(core_req, core_title_tokens(cand_title))
+    loose_req = loose_title_tokens(req_title)
+    if not loose_req:
+        return None
+    return token_coverage(loose_req, loose_title_tokens(cand_title))
+
+
 def _reject_reason(it, dl, q, preset=quality.DEFAULT_PRESET):
     """Raison de rejet d'un download (action, note) ou None s'il est bon.
 
-    Ordre : trop court (preview) -> mauvais match (titre/artiste) -> sous le seuil
-    qualite du preset (upscale/lossy/MP3<320). Le re-audit spectral ne verifie QUE
-    la qualite, pas l'identite ni la duree.
+    Ordre : trop court (preview) -> mauvais match (identite) -> sous le seuil qualite du
+    preset (upscale/lossy/MP3<320). Le re-audit spectral ne verifie QUE la qualite, pas
+    l'identite ni la duree -> c'est ICI qu'on garantit qu'on ne remplace pas un fichier par
+    un autre track. Operation destructive : dans le doute, on garde l'original.
 
-    Identite : le TITRE est le discriminant principal -> couverture du noyau du titre
-    (sans (Original Mix)/feat) >= 60% ; ca reconnait "Andre Kraml - Safari" pour la requete
-    "Andre Kraml Feat ... - Safari (Original Mix)" et rejette "Aladdin's Other Lamp".
-    L'ARTISTE n'est qu'un garde-fou (eviter le meme titre par un autre artiste = reprise) :
-    on exige juste qu'AU MOINS un des artistes demandes (n'importe quel collaborateur)
-    soit present dans le nom -> tolere les collabs nommees par l'autre membre.
+    Identite comparee au candidat PARSE (artiste vs champ artiste, titre vs titre), pas au
+    stem entier melange -> un mot du TITRE du candidat ne peut plus valider l'artiste demande
+    (bug "DJ Schema - 2 ME" remplace par "Theo Meier - Schema (Remix)" parce que "schema"
+    etait present quelque part) :
+    - TITRE : couverture du noyau >= 60% (repli loose pour les titres tres courts) ;
+    - ARTISTE : au moins un artiste demande present dans le CHAMP ARTISTE du candidat (repli
+      sur le stem entier si le nom n'a pas de ' - ' exploitable) -> tolere les collabs
+      nommees par l'autre membre, rejette une reprise par un autre artiste ;
+    - VERSION : original != (X Remix) != Extended/Radio... (symetrique selon la demande).
     """
     dur = getattr(q, "duration_s", 0) or 0
     if 0 < dur < MIN_DURATION_S:
         return ACT_TOO_SHORT, f"too short ({dur:.0f}s < {MIN_DURATION_S}s): likely preview/sample"
 
-    found = set(get_tokens(Path(dl.filepath).stem))
-    t_cov = token_coverage(core_title_tokens(it.title), found)    # -1 = titre non jugeable
+    cand = parse_filename(dl.filepath)
+
+    t_cov = _title_coverage(it.title, cand.title)     # None = titre non jugeable
+    title_ok = t_cov is not None and t_cov >= MIN_TITLE_COVERAGE
+
     artist_req = get_tokens(it.artist)   # tous les collaborateurs (presence, pas couverture)
-    artist_ok = (not artist_req) or any(tok in found for tok in artist_req)
-    if (0 <= t_cov < MIN_TITLE_COVERAGE) or not artist_ok:
-        return ACT_WRONG_MATCH, (f"wrong match (title {t_cov:.0%}, artist "
-                                 f"{'ok' if artist_ok else 'missing'}): {Path(dl.filepath).name}")
+    cand_artist = set(get_tokens(cand.artist)) if cand.parseable \
+        else set(get_tokens(Path(dl.filepath).stem))
+    artist_ok = (not artist_req) or any(tok in cand_artist for tok in artist_req)
+
+    ver_ok = version_key(it.title) == version_key(cand.title)
+
+    if not (title_ok and artist_ok and ver_ok):
+        bits = []
+        if not title_ok:
+            bits.append("title n/a" if t_cov is None else f"title {t_cov:.0%}")
+        if not artist_ok:
+            bits.append("artist missing")
+        if not ver_ok:
+            bits.append(f"version {version_key(it.title) or 'orig'}!={version_key(cand.title) or 'orig'}")
+        return ACT_WRONG_MATCH, f"wrong match ({', '.join(bits)}): {Path(dl.filepath).name}"
 
     if not quality.is_accepted(q, preset):
         return ACT_REJECTED_FAKE, (f"download below the bar ({q.verdict}, "

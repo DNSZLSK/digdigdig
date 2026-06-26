@@ -103,6 +103,22 @@ def core_title_tokens(title: str) -> List[str]:
     return get_tokens(_PAREN.sub(" ", remove_feat_tail(title or "")))
 
 
+def loose_tokens(s: str) -> List[str]:
+    """Tokens permissifs : garde les chiffres et les mots < 3 lettres (vire juste les
+    stopwords). Repli pour les titres tres courts ('2 ME' -> ['2', 'me']) ou get_tokens
+    renvoie vide et laisserait l'identite non jugeable (fail-open)."""
+    if not s:
+        return []
+    s = remove_diacritics(s).lower()
+    s = _NON_ALNUM.sub(" ", s)
+    return [t for t in _WS.split(s) if t and t not in STOP_WORDS]
+
+
+def loose_title_tokens(title: str) -> List[str]:
+    """core_title_tokens en mode loose (meme base sans feat/version, tokenizer permissif)."""
+    return loose_tokens(_PAREN.sub(" ", remove_feat_tail(title or "")))
+
+
 def is_noise_token(tok: str) -> bool:
     if re.fullmatch(r"\d+", tok):
         return True

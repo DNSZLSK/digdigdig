@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import atexit
 import json
+import os
 import threading
 from pathlib import Path
 from typing import List, Optional
@@ -35,6 +36,7 @@ from .core import soulseek
 from .core import upgrade as upgrade_mod
 from .core import organize as organize_mod
 from .core import stores as stores_mod
+from .core import updates as updates_mod
 from .core.naming import match_key
 from .core.scan import ScanRecord, duplicate_groups, scan_library
 
@@ -51,6 +53,11 @@ TXT_FAINT = theme.INK_FAINT  # en-tetes de colonnes (capitales pales)
 ACCENT = theme.PINK         # accent crimson (Upgrade + onglet actif + coches)
 PINK = theme.PINK           # alias explicite (coches, bordure focus, statut probleme)
 SPIN = theme.PINK           # spinners / progress, sur l'accent
+
+# Plafond de lignes CONSTRUITES dans le tableau : le ListView virtualise l'affichage mais
+# pas la construction Python (~12 widgets/ligne) ni le page.update() -> a 10k-95k lignes ca
+# fige/OOM. On cappe l'AFFICHAGE (l'upgrade en masse, lui, traite tout state.records).
+MAX_TABLE_ROWS = 1000
 
 # Polices custom (servies depuis ddd/assets/fonts via ft.app(assets_dir=...)).
 FONT_SLAB = "Anton"         # wordmark DIGDIGDIG (display Anton, repli sur le defaut si absente)
@@ -260,6 +267,19 @@ def main(page: ft.Page) -> None:
             _banner("Feedback form not set up yet (see FEEDBACK_URL).", False)
             return
         _open_url(FEEDBACK_URL)
+
+    # --- Notification de mise a jour (notification SEULE, pas d'auto-update) -------------
+    update_banner_txt = ft.Text("", size=12, color=TXT, font_family=FONT_MONO)
+    update_banner = ft.Container(
+        ft.Row([ft.Icon(ft.Icons.SYSTEM_UPDATE_ALT, size=15, color=ACCENT),
+                update_banner_txt,
+                ft.Icon(ft.Icons.OPEN_IN_NEW, size=13, color=TXT_DIM)],
+               spacing=8, vertical_alignment=ft.CrossAxisAlignment.CENTER),
+        on_click=lambda _e: _open_url(updates_mod.RELEASES_PAGE),
+        tooltip="Open the download page (GitHub releases)",
+        visible=False, bgcolor=SURFACE, border=ft.border.all(1, ACCENT),
+        border_radius=8, padding=ft.padding.symmetric(horizontal=12, vertical=8),
+        margin=ft.margin.only(bottom=2))
 
     # --- Liens d'achat pour les introuvables (helper commun upgrade + acquire) ----
     buy_state = {"url": None}
@@ -510,7 +530,8 @@ def main(page: ft.Page) -> None:
             page.update()
             return
         preset = _preset()
-        for idx, rec in shown:
+        capped = shown[:MAX_TABLE_ROWS]   # ne pas construire des dizaines de milliers de lignes
+        for idx, rec in capped:
             q = rec.quality
             checkbox = ft.Container(
                 ft.Checkbox(value=idx in state.selected, disabled=not _is_upgradable(q, preset),
@@ -535,6 +556,12 @@ def main(page: ft.Page) -> None:
             table_col.controls.append(ft.Container(
                 row, padding=ft.padding.symmetric(vertical=10, horizontal=4),
                 border=ft.border.only(bottom=ft.BorderSide(1, BORDER))))
+        if len(shown) > len(capped):   # affichage tronque : on le DIT (jamais en silence)
+            table_col.controls.append(ft.Container(
+                ft.Text(f"Showing {len(capped)} of {len(shown)} matches. Narrow the filter to see "
+                        f"the rest - Upgrade still processes every match, not just shown rows.",
+                        size=12, color=TXT_DIM),
+                padding=ft.padding.symmetric(vertical=10, horizontal=4)))
         _refresh_upgrade_count()
         page.update()
 
@@ -563,17 +590,19 @@ def main(page: ft.Page) -> None:
         state.selected.clear()
 
         def worker() -> None:
-            set_busy(True)
+            progress.value = None              # barre animee pendant l'enumeration de l'arbre
+            status.value = "Listing files..."
+            set_busy(True)                     # rend la barre visible + push
             try:
                 def prog(i: int, total: int, f: Path) -> None:
                     progress.value = i / total if total else None
-                    if i == total or i % 20 == 0:    # throttle : pas de page.update() par fichier
-                        status.value = f"Scanning... {i}/{total}"
-                        try:
-                            progress.update()
-                            status.update()
-                        except Exception:  # noqa: BLE001
-                            pass
+                    status.value = f"Scanning... {i}/{total}"
+                    # maj a chaque fichier : 2 widgets via control.update(), jamais page.update() (cf throttle)
+                    try:
+                        progress.update()
+                        status.update()
+                    except Exception:  # noqa: BLE001
+                        pass
 
                 state.records = scan_library(folder, exclude_names=current_excludes(), progress=prog)
                 render_summary()
@@ -743,13 +772,13 @@ def main(page: ft.Page) -> None:
 
                 def prog(i: int, total: int, f: Path) -> None:
                     progress.value = i / total if total else None
-                    if i == total or i % 20 == 0:    # throttle : pas de page.update() par fichier
-                        status.value = f"{'Sorting' if apply else 'Looking up'}... {i}/{total}"
-                        try:
-                            progress.update()
-                            status.update()
-                        except Exception:  # noqa: BLE001
-                            pass
+                    status.value = f"{'Sorting' if apply else 'Looking up'}... {i}/{total}"
+                    # maj a chaque fichier (parite avec le scan) : 2 widgets via control.update()
+                    try:
+                        progress.update()
+                        status.update()
+                    except Exception:  # noqa: BLE001
+                        pass
 
                 rep = organize_mod.sort_folder(
                     folder, library_root=lib_root, apply=apply, mapping=mapping,
@@ -1018,10 +1047,20 @@ def main(page: ft.Page) -> None:
                          ensure_ascii=False, indent=2),
         multiline=True, min_lines=3, max_lines=6, expand=True, text_size=11)
 
+    # Statut inline du panneau Reglages : visible meme Reglages ouverts (contrairement au
+    # point slsk du header, masque avec main_view) -> feedback du Save (validation + connexion).
+    settings_status = ft.Text("", size=12, color=TXT_DIM)
+
     def save_settings(_e) -> None:
+        su, sp = slsk_user.value.strip(), slsk_pass.value
+        if bool(su) != bool(sp):   # un seul des deux champs rempli -> creds inutilisables
+            settings_status.value = "Soulseek: username AND password required (or leave both empty)."
+            settings_status.color = ACCENT
+            settings_status.update()
+            return
         vals = {
-            "soulseek_user": slsk_user.value.strip(),
-            "soulseek_pass": slsk_pass.value,
+            "soulseek_user": su,
+            "soulseek_pass": sp,
             "discogs_username": discogs_user.value.strip(),
             "discogs_token": discogs_tok.value.strip(),
             "bandcamp_username": bandcamp_user.value.strip(),
@@ -1042,6 +1081,10 @@ def main(page: ft.Page) -> None:
         cfg.update(vals)   # garde le cache en memoire frais (relu aussi a chaud par do_acquire)
         _refresh_slsk()           # creds peut-etre saisies -> le point passe au vert
         _refresh_preset_label()   # le preset a pu changer -> "keep >= N kHz / PRESET"
+        connected = _slsk_connected()   # feedback visible sans fermer Reglages (le point est cache)
+        settings_status.value = ("Soulseek: connected." if connected
+                                 else "Soulseek: offline - check username + password.")
+        settings_status.color = theme.DOT_GREEN if connected else TXT_DIM
         status.value = msg
         page.update()
 
@@ -1062,6 +1105,7 @@ def main(page: ft.Page) -> None:
                 size=12, color=TXT_DIM),
         ft.Row([mapping_field]),
         ft.FilledButton(text="Save", on_click=save_settings),
+        settings_status,
     ], spacing=10)
 
     def toggle_settings(_e) -> None:
@@ -1152,8 +1196,11 @@ def main(page: ft.Page) -> None:
             ft.Row([wordmark, ft.Container(tagline, padding=ft.padding.only(bottom=5))],
                    spacing=14, vertical_alignment=ft.CrossAxisAlignment.END),
             ft.Container(expand=True),
-            ft.Row([slsk_dot, slsk_txt], spacing=7,
-                   vertical_alignment=ft.CrossAxisAlignment.CENTER),
+            ft.Container(
+                ft.Row([slsk_dot, slsk_txt], spacing=7,
+                       vertical_alignment=ft.CrossAxisAlignment.CENTER),
+                on_click=toggle_settings, tooltip="Configure Soulseek (settings)",
+                padding=ft.padding.symmetric(horizontal=4, vertical=2), border_radius=6),
             feedback_btn, settings_btn,
         ], vertical_alignment=ft.CrossAxisAlignment.CENTER, spacing=16),
         padding=ft.padding.only(left=4, right=4, top=4, bottom=8))
@@ -1250,7 +1297,7 @@ def main(page: ft.Page) -> None:
         tab_buttons.append(_b)
     nav = ft.Row(tab_buttons, spacing=26)
 
-    main_view = ft.Column([header, nav, tab_content], expand=True, spacing=10)
+    main_view = ft.Column([header, update_banner, nav, tab_content], expand=True, spacing=10)
 
     # ====================================================================
     #  Pied de page : recap de session + dossier bibliotheque
@@ -1285,6 +1332,22 @@ def main(page: ft.Page) -> None:
         status.value = "Tip: enter your Soulseek credentials (gear) to start digging."
 
     page.add(main_view, progress, status, footer, buy_btn, settings_panel)
+
+    # Notif de mise a jour au lancement : thread daemon, timeout court, fail-silent. Gate sur
+    # build fige (ou env DDD_UPDATE_CHECK=1 pour tester en dev) -> pas de ping a chaque run dev.
+    def _check_updates() -> None:
+        tag = updates_mod.check_for_update(__version__)
+        if not tag:
+            return
+        update_banner_txt.value = f"Version {tag} available - click to download (you have v{__version__})"
+        update_banner.visible = True
+        try:
+            update_banner.update()
+        except Exception:  # noqa: BLE001
+            pass
+
+    if paths.is_frozen() or os.environ.get("DDD_UPDATE_CHECK"):
+        threading.Thread(target=_check_updates, daemon=True).start()
 
 
 def run() -> None:

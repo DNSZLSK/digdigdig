@@ -165,6 +165,27 @@ def main():
     assert up._reject_reason(collab, _dl("Stardust - Music Sounds Better With You"), q_ok) is None, "collab -> garde"
     print("OK _reject_reason : court / mauvais match / renomme / collab")
 
+    # === _reject_reason durci : artiste vs CHAMP du candidat, titres courts, version ===
+    from ddd.core.tokenize import loose_tokens
+    assert loose_tokens("2 ME") == ["2", "me"], "loose garde chiffres + mots courts"
+    # data-loss reel : 'DJ Schema - 2 ME' ne doit PAS etre remplace par 'Theo Meier - Schema (Remix)'
+    # ('schema' est dans le TITRE du candidat, pas son artiste -> ne doit plus valider)
+    schema = WantItem("DJ Schema", "2 ME", None, "")
+    assert up._reject_reason(schema, _dl("Theo Meier - Schema (T.M.A Remix)"), q_ok)[0] == up.ACT_WRONG_MATCH, \
+        "un mot du titre du candidat ne doit plus valider l'artiste demande"
+    # mais le BON fichier (titre court identique, bon artiste) passe via le repli loose
+    assert up._reject_reason(schema, _dl("DJ Schema - 2 ME"), q_ok) is None, \
+        "le vrai fichier a titre court doit passer (repli loose)"
+    # original demande, remix recu -> rejet sur la version
+    bedouin = WantItem("Bedouin", "Safari", None, "")
+    assert up._reject_reason(bedouin, _dl("Bedouin - Safari (Pete Tong Remix)"), q_ok)[0] == up.ACT_WRONG_MATCH, \
+        "original demande != remix recu"
+    # meme titre, autre artiste (reprise) -> rejet sur l'artiste
+    closer = WantItem("Gerd Janson", "Closer", None, "")
+    assert up._reject_reason(closer, _dl("Aphex Twin - Closer"), q_ok)[0] == up.ACT_WRONG_MATCH, \
+        "meme titre par un autre artiste (reprise) rejete"
+    print("OK _reject_reason durci : bug Schema, titre court, version, reprise")
+
     # === normalize_artist_title : VA / prefixe vinyle / dedup / idempotent ===
     from ddd.core.naming import normalize_artist_title as _norm
     assert _norm("Various Artists", "Zumo - Iamthecomputer") == ("Zumo", "Iamthecomputer")
