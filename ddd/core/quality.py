@@ -111,7 +111,8 @@ def _window_cutoff(data: np.ndarray, sr: int) -> Tuple[Optional[float], float]:
 
 
 def _spectral(path: Path, info: "sf._SoundFileInfo") -> Optional[Tuple[float, float, float]]:
-    """Analyse 3 fenetres (debut/milieu/fin) -> (cutoff_min, cutoff_std, hf_min)."""
+    """Analyse 3 fenetres (debut/milieu/fin) -> (cutoff, cutoff_std, hf) de la fenetre la
+    plus revelatrice (cf _aggregate_windows)."""
     sr = info.samplerate
     total = info.frames
     dur = float(info.duration)
@@ -143,9 +144,21 @@ def _spectral(path: Path, info: "sf._SoundFileInfo") -> Optional[Tuple[float, fl
 
     if not cutoffs:
         return None
-    cutoff_min = min(cutoffs)
+    return _aggregate_windows(cutoffs, hfs)
+
+
+def _aggregate_windows(cutoffs: List[float], hfs: List[float]) -> Tuple[float, float, float]:
+    """Agrege les fenetres en (cutoff, cutoff_std, hf) de la fenetre LA PLUS REVELATRICE.
+
+    On prend le MAX du cutoff, pas le min : une seule fenetre plein spectre prouve que le
+    fichier porte vraiment les aigus -> vrai lossless. Un transcode ne peut PAS fabriquer une
+    fenetre a cutoff haut (les aigus sont jetes a l'encodage), donc le max ne laisse pas passer
+    de faux ; le min, lui, rejetait a tort les morceaux dynamiques (un breakdown filtre ou une
+    intro calme = fenetre pauvre en HF qui tirait tout le fichier sous la barre). Le hf suit la
+    meme fenetre que le cutoff retenu (coherence pour un futur detecteur de resample)."""
+    best = max(range(len(cutoffs)), key=cutoffs.__getitem__)
     cutoff_std = float(np.std(cutoffs)) if len(cutoffs) > 1 else 0.0
-    return cutoff_min, cutoff_std, min(hfs)
+    return cutoffs[best], cutoff_std, hfs[best]
 
 
 def _band(cutoff: float, est: int) -> Tuple[str, str, str]:

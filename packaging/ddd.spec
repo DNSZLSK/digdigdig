@@ -52,7 +52,20 @@ a = Analysis(
     hiddenimports=hiddenimports,
     hookspath=[],
     runtime_hooks=[],
-    excludes=["tkinter", "matplotlib", "PyInstaller"],
+    excludes=[
+        "tkinter", "matplotlib", "PyInstaller",
+        # Poids mort verifie (chemin runtime reel : flac_detective = numpy/scipy/soundfile,
+        # inference = onnxruntime core, scrape = cloudscraper/yt-dlp). A CONFIRMER par un
+        # rebuild + smoke test (scan, sort by genre = onnxruntime, un scrape). Volontairement
+        # PAS exclus : setuptools (pkg_resources au runtime par des libs tierces) et les moteurs
+        # JS de cloudscraper (a tester d'abord).
+        "pytest", "_pytest",            # framework de test, jamais en prod
+        "onnxruntime.transformers",     # outils d'optim transformers ; DDD ne fait qu'une
+        "onnxruntime.tools",            #   inference EfficientNet (audioml.py)
+        # numba + llvmlite = ~129 Mo (LLVM) tires UNIQUEMENT par onnxruntime.transformers.
+        # benchmark (via collect_all), jamais a l'inference ni par flac_detective -> on coupe.
+        "numba", "llvmlite",
+    ],
     noarchive=False,
 )
 
