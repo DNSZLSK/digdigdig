@@ -108,6 +108,8 @@ def status_oneliner(rec, preset: str) -> tuple:
     ext = (q.ext or "").lower()
     if v in (quality.SKIPPED, quality.ERROR):
         return (q.reason or "not analysed"), False
+    if q.confidence == "suspect":          # plein spectre mais artefacts codec -> a verifier
+        return "suspect: codec artifacts -> verify", True
     if quality.is_accepted(q, preset):
         if v == quality.LOSSLESS:
             if ext == ".wav":

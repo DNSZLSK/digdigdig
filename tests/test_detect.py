@@ -95,6 +95,15 @@ def test_forensic_single_artifact_not_suspect():
     assert v == quality.LOSSLESS and conf != "suspect"
 
 
+def test_forensic_requires_codec_anchor():
+    # pre-echo + collapse stereo SANS aliasing/comb (le faux positif electro) -> PAS suspect :
+    # un signal codec fiable est requis comme ancre.
+    arts = {"aliasing": 0.1, "mp3_comb": False, "preecho": 80.0, "stereo": 0.95}
+    v, conf, _r, _e, _s = detect.forensic_classify(
+        22050, 100, 0.1, 900, 44100, ".flac", "lossless_container", artifacts=arts)
+    assert v == quality.LOSSLESS and conf != "suspect"
+
+
 def test_is_accepted_suspect_flagged_for_puriste_kept_for_djclub():
     # plein spectre mais SUSPECT (artefacts) : jouable club, mais refuse en puriste (a verifier).
     qr = quality.QualityResult(
@@ -104,3 +113,28 @@ def test_is_accepted_suspect_flagged_for_puriste_kept_for_djclub():
         container_bitrate=900, verdict=quality.LOSSLESS, confidence="suspect", reason="test")
     assert quality.is_accepted(qr, "dj_club")
     assert not quality.is_accepted(qr, "puriste")
+
+
+def test_stereo_collapse_genuine_vs_joint():
+    rng = np.random.default_rng(2)
+    sr, n = 44100, 44100 * 3
+    # vrai stereo : L/R independants partout -> Side ~ Mid -> pas de collapse.
+    genuine = np.stack([rng.standard_normal(n), rng.standard_normal(n)], axis=1)
+    assert detect.stereo_collapse(genuine, sr) < detect.STEREO_STRONG
+    # joint-stereo : independants en bas, mais HF de R == HF de L (mono au-dessus de 8 kHz)
+    # -> Side HF effondree -> collapse net.
+    L = rng.standard_normal(n)
+    XR = np.fft.rfft(rng.standard_normal(n))
+    XL = np.fft.rfft(L)
+    hf = np.fft.rfftfreq(n, 1.0 / sr) >= 8000
+    XR[hf] = XL[hf]
+    joint = np.stack([L, np.fft.irfft(XR, n=n)], axis=1)
+    assert detect.stereo_collapse(joint, sr) > detect.STEREO_STRONG
+
+
+def test_stereo_collapse_mono_abstains():
+    # un fichier mono (ou quasi) ne doit PAS declencher le signal (Side faible partout).
+    rng = np.random.default_rng(3)
+    mono_sig = rng.standard_normal(44100 * 3)
+    stereo_mono = np.stack([mono_sig, mono_sig], axis=1)   # L == R -> Side = 0 partout
+    assert detect.stereo_collapse(stereo_mono, 44100) == 0.0

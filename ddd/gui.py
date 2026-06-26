@@ -497,9 +497,14 @@ def main(page: ft.Page) -> None:
 
     def _band_pill(q) -> ft.Container:
         v = q.verdict
+        label = theme.band_label(v)
+        col = theme.BAND_TEXT.get(v, theme.NEUTRAL)
+        if getattr(q, "confidence", "") in ("suspect", "uncertain"):
+            label += " ?"                 # plein spectre mais douteux (artefacts / zone grise)
+            col = theme.BAND_TAN
         pill = ft.Container(
-            ft.Text(theme.band_label(v), size=10, weight=ft.FontWeight.W_600,
-                    color=theme.BAND_TEXT.get(v, theme.NEUTRAL), font_family=FONT_MONO, no_wrap=True),
+            ft.Text(label, size=10, weight=ft.FontWeight.W_600,
+                    color=col, font_family=FONT_MONO, no_wrap=True),
             padding=ft.padding.symmetric(vertical=3, horizontal=8),
             bgcolor=BAND_BG.get(v, SURFACE), border_radius=4)
         return ft.Container(pill, width=COL_BAND, alignment=ft.alignment.center_left)
@@ -596,7 +601,7 @@ def main(page: ft.Page) -> None:
             try:
                 def prog(i: int, total: int, f: Path) -> None:
                     progress.value = i / total if total else None
-                    status.value = f"Scanning... {i}/{total}"
+                    status.value = f"Scanning {Path(f).parent.name}  {i}/{total}"
                     # maj a chaque fichier : 2 widgets via control.update(), jamais page.update() (cf throttle)
                     try:
                         progress.update()
@@ -1041,6 +1046,14 @@ def main(page: ft.Page) -> None:
             ft.dropdown.Option(key="puriste", text="Purist (pure lossless)"),
         ])
 
+    detector_dd = ft.Dropdown(
+        label="Detection engine", width=320,
+        value=cfg.get("detector", "legacy"),
+        options=[
+            ft.dropdown.Option(key="legacy", text="Legacy (spectral cutoff)"),
+            ft.dropdown.Option(key="forensic", text="Forensic (cutoff + codec artifacts)"),
+        ])
+
     mapping_field = ft.TextField(
         label="Genre -> folder mapping (JSON, advanced)",
         value=json.dumps(cfg.get("genre_mapping") or organize_mod.DEFAULT_GENRE_MAPPING,
@@ -1066,6 +1079,7 @@ def main(page: ft.Page) -> None:
             "bandcamp_username": bandcamp_user.value.strip(),
             "download_dir": (dl_dir_field.value or "").strip(),
             "quality_preset": preset_dd.value,
+            "detector": detector_dd.value,
         }
         msg = "Settings saved."
         raw = (mapping_field.value or "").strip()
@@ -1100,7 +1114,7 @@ def main(page: ft.Page) -> None:
         ft.Row([dl_dir_field, dl_browse_btn]),
         ft.Text("Quality bar: below it, a file is a candidate for upgrade.",
                 size=12, color=TXT_DIM),
-        ft.Row([preset_dd], wrap=True),
+        ft.Row([preset_dd, detector_dd], wrap=True),
         ft.Text("Sort: genre -> your vibe folders. Edit only to retune; the default covers most.",
                 size=12, color=TXT_DIM),
         ft.Row([mapping_field]),

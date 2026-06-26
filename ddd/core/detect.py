@@ -21,6 +21,8 @@ from __future__ import annotations
 
 from typing import List, Tuple
 
+import numpy as np
+
 from flac_detective.analysis.new_scoring.bitrate import estimate_mp3_bitrate
 from flac_detective.analysis.new_scoring.rules.spectral import (
     apply_rule_1_mp3_bitrate,
@@ -41,10 +43,11 @@ def subtype_to_bit_depth(subtype: str) -> int:
     return _SUBTYPE_BITS.get((subtype or "").upper(), 0)
 
 
-# --- Tier 1 : seuils d'artefacts codec ---------------------------------------------------
+# --- Tier 1/2 : seuils d'artefacts codec -------------------------------------------------
 ALIASING_STRONG = 0.5        # detect_hf_aliasing : correlation > 0.5 = signal fort
 PREECHO_STRONG_PCT = 10.0    # detect_preecho_artifacts : > 10% de transitoires affectees
-ARTIFACT_CONSENSUS = 2       # nb de signaux forts requis pour DEMOTER (un seul ne condamne pas)
+STEREO_STRONG = 0.7          # stereo_collapse : > 0.7 = largeur stereo HF effondree (joint-stereo)
+ARTIFACT_CONSENSUS = 2       # nb de signaux forts requis pour FLAGGER suspect (un seul ne suffit pas)
 
 
 def forensic_classify(
@@ -88,14 +91,25 @@ def forensic_classify(
     # (non separable de facon certaine) : on garde le verdict du cutoff (honnete) et la confiance
     # porte le doute -> flagge pour revue (refuse en puriste), pas "faux".
     if artifacts:
-        strong = []
-        if artifacts.get("aliasing", 0.0) > ALIASING_STRONG:
-            strong.append(f"HF aliasing {artifacts['aliasing']:.2f}")
-        if artifacts.get("mp3_comb"):
-            strong.append("comb de bruit MP3")
-        if artifacts.get("preecho", 0.0) > PREECHO_STRONG_PCT:
-            strong.append(f"pre-echo {artifacts['preecho']:.0f}%")
-        if len(strong) >= ARTIFACT_CONSENSUS and base_v in (q.LOSSLESS, q.HQ, q.DOUTEUX):
+        aliasing_hit = artifacts.get("aliasing", 0.0) > ALIASING_STRONG
+        comb_hit = bool(artifacts.get("mp3_comb"))
+        preecho_hit = artifacts.get("preecho", 0.0) > PREECHO_STRONG_PCT
+        stereo_hit = artifacts.get("stereo", 0.0) > STEREO_STRONG
+        # Un signal codec FIABLE (aliasing/comb) est REQUIS comme ancre : pre-echo et stereo se
+        # declenchent a tort sur l'electro (transitoires denses, aigus retrecis) -> seuls ils ne
+        # condamnent jamais, ils ne font que corroborer (valide en shadow sur biblio reelle).
+        anchor = aliasing_hit or comb_hit
+        total = sum((aliasing_hit, comb_hit, preecho_hit, stereo_hit))
+        if anchor and total >= ARTIFACT_CONSENSUS and base_v in (q.LOSSLESS, q.HQ, q.DOUTEUX):
+            strong = []
+            if aliasing_hit:
+                strong.append(f"HF aliasing {artifacts['aliasing']:.2f}")
+            if comb_hit:
+                strong.append("comb de bruit MP3")
+            if preecho_hit:
+                strong.append(f"pre-echo {artifacts['preecho']:.0f}%")
+            if stereo_hit:
+                strong.append(f"collapse stereo {artifacts['stereo']:.2f}")
             reason = (f"artefacts codec ({', '.join(strong)}) malgre cutoff {cutoff:.0f} Hz "
                       f"-> source lossy possible, a verifier")
             return base_v, "suspect", reason, est, signals + strong
@@ -120,29 +134,72 @@ def forensic_classify(
     return base_v, base_c, base_r, est, signals
 
 
-def artifact_signals(mono, sample_rate) -> dict:
-    """Signaux d'artefacts codec (fonctions PURES de flac_detective) sur une fenetre mono
-    deja en memoire : {aliasing: 0..1, mp3_comb: bool, preecho: %}. Tout echoue en douceur.
+def stereo_collapse(window, sample_rate) -> float:
+    """Collapse joint-stereo : largeur stereo normale en medium mais EFFONDREE en HF.
+
+    L'intensity stereo (MP3/AAC bas/moyen debit) code les aigus en quasi-mono -> l'energie
+    Side (L-R) s'effondre en HF alors qu'elle est presente plus bas. Renvoie 0..1 (1 =
+    collapse net). On s'ABSTIENT (0) sur un mix quasi-mono (Side faible partout = pas un
+    signal de transcode), ce qui evite le faux positif classique de cette mesure."""
+    w = np.asarray(window)
+    if w.ndim < 2 or w.shape[1] < 2:
+        return 0.0
+    n = w.shape[0]
+    if n < 4096:
+        return 0.0
+    L = w[:, 0].astype(np.float64)
+    R = w[:, 1].astype(np.float64)
+    win = np.hanning(n)
+    freq = np.fft.rfftfreq(n, 1.0 / sample_rate)
+    p_mid = np.abs(np.fft.rfft((L + R) * 0.5 * win)) ** 2
+    p_side = np.abs(np.fft.rfft((L - R) * 0.5 * win)) ** 2
+
+    def side_over_mid(lo, hi):
+        m = (freq >= lo) & (freq < hi)
+        em = float(p_mid[m].sum())
+        return float(p_side[m].sum()) / (em + 1e-12)
+
+    mid_ratio = side_over_mid(1000.0, 5000.0)
+    if mid_ratio < 0.05:               # mix quasi-mono -> abstention (signal non fiable)
+        return 0.0
+    hf_ratio = side_over_mid(10000.0, 16000.0)
+    return max(0.0, 1.0 - hf_ratio / mid_ratio)
+
+
+def artifact_signals(window, sample_rate) -> dict:
+    """Signaux d'artefacts codec (fonctions PURES) sur la fenetre deja en memoire :
+    {aliasing: 0..1, mp3_comb: bool, preecho: %, stereo: 0..1}. Accepte mono OU stereo
+    (les 3 premiers detecteurs downmixent ; stereo_collapse a besoin du L/R). Tout echoue
+    en douceur.
 
     Import tardif : artifacts.py tire transitivement audio_loader (subprocess), mais on
     n'appelle QUE les detecteurs purs (np.ndarray) -> aucun subprocess `flac` ne tourne."""
-    out = {"aliasing": 0.0, "mp3_comb": False, "preecho": 0.0}
-    if mono is None:
+    out = {"aliasing": 0.0, "mp3_comb": False, "preecho": 0.0, "stereo": 0.0}
+    if window is None:
         return out
     from flac_detective.analysis.new_scoring.artifacts import (
         detect_hf_aliasing, detect_mp3_noise_pattern, detect_preecho_artifacts)
+    # 1) ANCRES codec fiables (specifiques au codec, peu de faux positifs).
     try:
-        out["aliasing"] = float(detect_hf_aliasing(mono, sample_rate))
+        out["aliasing"] = float(detect_hf_aliasing(window, sample_rate))
     except Exception:  # noqa: BLE001
         pass
     try:
-        out["mp3_comb"] = bool(detect_mp3_noise_pattern(mono, sample_rate))
+        out["mp3_comb"] = bool(detect_mp3_noise_pattern(window, sample_rate))
     except Exception:  # noqa: BLE001
         pass
-    try:
-        out["preecho"] = float(detect_preecho_artifacts(mono, sample_rate)[0])
-    except Exception:  # noqa: BLE001
-        pass
+    # 2) CORROBORATEURS (pre-echo LENT + stereo genre-prone) : SEULEMENT si une ancre a firme.
+    #    -> perf (on saute le couteux sur la plupart des fichiers) ET pas de faux positif
+    #    pre-echo+stereo seuls.
+    if out["aliasing"] > ALIASING_STRONG or out["mp3_comb"]:
+        try:
+            out["preecho"] = float(detect_preecho_artifacts(window, sample_rate)[0])
+        except Exception:  # noqa: BLE001
+            pass
+        try:
+            out["stereo"] = float(stereo_collapse(window, sample_rate))
+        except Exception:  # noqa: BLE001
+            pass
     return out
 
 
