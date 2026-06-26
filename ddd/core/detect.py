@@ -41,6 +41,12 @@ def subtype_to_bit_depth(subtype: str) -> int:
     return _SUBTYPE_BITS.get((subtype or "").upper(), 0)
 
 
+# --- Tier 1 : seuils d'artefacts codec ---------------------------------------------------
+ALIASING_STRONG = 0.5        # detect_hf_aliasing : correlation > 0.5 = signal fort
+PREECHO_STRONG_PCT = 10.0    # detect_preecho_artifacts : > 10% de transitoires affectees
+ARTIFACT_CONSENSUS = 2       # nb de signaux forts requis pour DEMOTER (un seul ne condamne pas)
+
+
 def forensic_classify(
     cutoff: float,
     cutoff_std: float,
@@ -49,15 +55,23 @@ def forensic_classify(
     sample_rate: int,
     ext: str,
     fclass: str,
+    artifacts=None,
 ) -> Tuple[str, str, str, int, List[str]]:
-    """Verdict forensique Tier 0 -> (verdict, confidence, reason, est, signals).
+    """Verdict forensique -> (verdict, confidence, reason, est, signals).
 
     Ne durcit que les conteneurs lossless (le probleme fake-FLAC) ; pour le reste, renvoie
-    le verdict legacy inchange. Ne descend JAMAIS sous le verdict legacy.
+    le verdict legacy inchange.
+
+    Tier 0 (sans `artifacts`) : promote-only, ne descend JAMAIS sous le verdict legacy.
+    Tier 1 (avec `artifacts`) : une empreinte codec FORTE (>= ARTIFACT_CONSENSUS signaux parmi
+    HF-aliasing / comb MP3 / pre-echo) marque le fichier SUSPECT (confidence='suspect') meme a
+    cutoff plein -- c'est le cas 320/resample, la zone grise NON separable de facon certaine :
+    on garde le verdict du cutoff (honnete) et on FLAGGE pour revue (refuse en puriste,
+    cf is_accepted), on ne condamne pas. Un seul signal ne suffit pas (anti-faux-positif).
     """
     est = estimate_mp3_bitrate(cutoff)
 
-    # Baseline legacy = le plancher : on ne descend jamais en-dessous en Tier 0.
+    # Baseline legacy = le plancher (Tier 0 ne descend jamais en-dessous).
     if fclass != "lossless_container":
         v, c, r = q._band(cutoff, est)
         return v, c, r, est, []
@@ -68,6 +82,23 @@ def forensic_classify(
         cutoff, container_bitrate, cutoff_std, sample_rate, hf_energy_ratio)
     _s8, r8 = apply_rule_8_nyquist_exception(cutoff, sample_rate, est1, None)
     signals = list(r1) + list(r8)
+
+    # Tier 1 : artefacts codec. Une empreinte forte (>= consensus) sur un fichier qui passerait
+    # sinon -> SUSPECT, PAS une condamnation. Plein spectre + artefacts = zone grise 320/resample
+    # (non separable de facon certaine) : on garde le verdict du cutoff (honnete) et la confiance
+    # porte le doute -> flagge pour revue (refuse en puriste), pas "faux".
+    if artifacts:
+        strong = []
+        if artifacts.get("aliasing", 0.0) > ALIASING_STRONG:
+            strong.append(f"HF aliasing {artifacts['aliasing']:.2f}")
+        if artifacts.get("mp3_comb"):
+            strong.append("comb de bruit MP3")
+        if artifacts.get("preecho", 0.0) > PREECHO_STRONG_PCT:
+            strong.append(f"pre-echo {artifacts['preecho']:.0f}%")
+        if len(strong) >= ARTIFACT_CONSENSUS and base_v in (q.LOSSLESS, q.HQ, q.DOUTEUX):
+            reason = (f"artefacts codec ({', '.join(strong)}) malgre cutoff {cutoff:.0f} Hz "
+                      f"-> source lossy possible, a verifier")
+            return base_v, "suspect", reason, est, signals + strong
 
     nyquist = sample_rate / 2.0
     near_nyquist = cutoff >= 0.95 * nyquist          # zone bonus Rule 8 = anti-aliasing authentique
@@ -87,6 +118,32 @@ def forensic_classify(
 
     # Sinon : legacy inchange (MP3 confirme, ou deja LOSSLESS, ou MAUVAIS red flag).
     return base_v, base_c, base_r, est, signals
+
+
+def artifact_signals(mono, sample_rate) -> dict:
+    """Signaux d'artefacts codec (fonctions PURES de flac_detective) sur une fenetre mono
+    deja en memoire : {aliasing: 0..1, mp3_comb: bool, preecho: %}. Tout echoue en douceur.
+
+    Import tardif : artifacts.py tire transitivement audio_loader (subprocess), mais on
+    n'appelle QUE les detecteurs purs (np.ndarray) -> aucun subprocess `flac` ne tourne."""
+    out = {"aliasing": 0.0, "mp3_comb": False, "preecho": 0.0}
+    if mono is None:
+        return out
+    from flac_detective.analysis.new_scoring.artifacts import (
+        detect_hf_aliasing, detect_mp3_noise_pattern, detect_preecho_artifacts)
+    try:
+        out["aliasing"] = float(detect_hf_aliasing(mono, sample_rate))
+    except Exception:  # noqa: BLE001
+        pass
+    try:
+        out["mp3_comb"] = bool(detect_mp3_noise_pattern(mono, sample_rate))
+    except Exception:  # noqa: BLE001
+        pass
+    try:
+        out["preecho"] = float(detect_preecho_artifacts(mono, sample_rate)[0])
+    except Exception:  # noqa: BLE001
+        pass
+    return out
 
 
 def diff_folder(folder, exclude_names=(), limit: int = 0, progress=None):

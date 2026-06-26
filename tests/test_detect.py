@@ -3,6 +3,8 @@
 import sys
 from pathlib import Path
 
+import numpy as np
+
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
@@ -63,3 +65,42 @@ def test_never_worse_than_legacy():
                 lv, _lc, _lr = quality._classify_lossless(c, br, ".flac")
                 fv, _fc2, _fr, _fe, _fs = _fc(c, std=st, container=br)
                 assert _RANK[fv] >= _RANK[lv], f"regression cutoff={c} br={br} std={st}: {lv}->{fv}"
+
+
+# --- Tier 1 : artefacts codec ------------------------------------------------------------
+
+def test_artifact_signals_clean_on_white_noise():
+    # GARDE anti-faux-positif : du bruit blanc plein-spectre ne doit declencher aucun signal.
+    rng = np.random.default_rng(0)
+    mono = rng.standard_normal(44100 * 3)
+    sig = detect.artifact_signals(mono, 44100)
+    assert sig["aliasing"] < detect.ALIASING_STRONG
+    assert not sig["mp3_comb"]
+    assert sig["preecho"] <= detect.PREECHO_STRONG_PCT
+
+
+def test_forensic_flags_suspect_on_strong_artifacts():
+    # >=2 signaux forts -> SUSPECT (pas une condamnation), le verdict du cutoff est GARDE.
+    arts = {"aliasing": 0.7, "mp3_comb": True, "preecho": 0.0}
+    v, conf, _r, _e, _s = detect.forensic_classify(
+        22050, 100, 0.1, 900, 44100, ".flac", "lossless_container", artifacts=arts)
+    assert v == quality.LOSSLESS and conf == "suspect"
+
+
+def test_forensic_single_artifact_not_suspect():
+    # un seul signal ne flagge pas : plein-spectre reste LOSSLESS, confiance non suspecte.
+    arts = {"aliasing": 0.7, "mp3_comb": False, "preecho": 0.0}
+    v, conf, _r, _e, _s = detect.forensic_classify(
+        22050, 100, 0.1, 900, 44100, ".flac", "lossless_container", artifacts=arts)
+    assert v == quality.LOSSLESS and conf != "suspect"
+
+
+def test_is_accepted_suspect_flagged_for_puriste_kept_for_djclub():
+    # plein spectre mais SUSPECT (artefacts) : jouable club, mais refuse en puriste (a verifier).
+    qr = quality.QualityResult(
+        path="x", filename="x.flac", ext=".flac", format_class="lossless_container",
+        sample_rate=44100, channels=2, duration_s=200.0, cutoff_hz=22050.0,
+        cutoff_std_hz=100.0, hf_energy_ratio=0.1, est_source_bitrate=0,
+        container_bitrate=900, verdict=quality.LOSSLESS, confidence="suspect", reason="test")
+    assert quality.is_accepted(qr, "dj_club")
+    assert not quality.is_accepted(qr, "puriste")

@@ -110,9 +110,10 @@ def _window_cutoff(data: np.ndarray, sr: int) -> Tuple[Optional[float], float]:
     return float(cutoff), float(hf)
 
 
-def _spectral(path: Path, info: "sf._SoundFileInfo") -> Optional[Tuple[float, float, float]]:
-    """Analyse 3 fenetres (debut/milieu/fin) -> (cutoff, cutoff_std, hf) de la fenetre la
-    plus revelatrice (cf _aggregate_windows)."""
+def _spectral(path: Path, info: "sf._SoundFileInfo") -> Optional[Tuple]:
+    """Analyse 3 fenetres (debut/milieu/fin) -> (cutoff, cutoff_std, hf, mono_best) de la
+    fenetre la plus revelatrice (cf _aggregate_windows). mono_best alimente les detecteurs
+    d'artefacts du mode forensic (sans relire le fichier)."""
     sr = info.samplerate
     total = info.frames
     dur = float(info.duration)
@@ -124,6 +125,7 @@ def _spectral(path: Path, info: "sf._SoundFileInfo") -> Optional[Tuple[float, fl
 
     cutoffs: List[float] = []
     hfs: List[float] = []
+    monos: List[np.ndarray] = []
     for i in range(num):
         center = (dur / (num + 1)) * (i + 1)
         start = max(0, int((center - win_s / 2) * sr))
@@ -141,10 +143,13 @@ def _spectral(path: Path, info: "sf._SoundFileInfo") -> Optional[Tuple[float, fl
         if c is not None:
             cutoffs.append(c)
             hfs.append(hf)
+            monos.append(data.mean(axis=1) if data.ndim > 1 else data)
 
     if not cutoffs:
         return None
-    return _aggregate_windows(cutoffs, hfs)
+    cutoff, std, hf = _aggregate_windows(cutoffs, hfs)
+    best = max(range(len(cutoffs)), key=cutoffs.__getitem__)   # fenetre la plus revelatrice
+    return cutoff, std, hf, monos[best]
 
 
 def _aggregate_windows(cutoffs: List[float], hfs: List[float]) -> Tuple[float, float, float]:
@@ -215,7 +220,7 @@ def analyze_file(path, detector=None) -> QualityResult:
     sp = _spectral(p, info)
     if sp is None:
         return _error(p, ext, fclass, "analyse spectrale impossible (lecture vide)")
-    cutoff, std, hf = sp
+    cutoff, std, hf, best_mono = sp
     est = estimate_mp3_bitrate(cutoff)
     if detector is None:
         detector = _current_detector()
@@ -230,8 +235,9 @@ def analyze_file(path, detector=None) -> QualityResult:
             verdict, conf, reason = _band(cutoff, est)
     elif detector == "forensic":
         from . import detect as _detect      # import tardif : evite le cycle quality <-> detect
+        arts = _detect.artifact_signals(best_mono, info.samplerate)
         verdict, conf, reason, est, _sig = _detect.forensic_classify(
-            cutoff, std, hf, container_bitrate, info.samplerate, ext, fclass)
+            cutoff, std, hf, container_bitrate, info.samplerate, ext, fclass, artifacts=arts)
     else:
         verdict, conf, reason = _classify_lossless(cutoff, container_bitrate, ext)
 
@@ -288,8 +294,8 @@ def is_accepted(qr: "QualityResult", preset: str = DEFAULT_PRESET) -> bool:
     if preset not in QUALITY_PRESETS:
         preset = DEFAULT_PRESET
     floor = QUALITY_PRESETS[preset]
-    if floor is None:                      # puriste
-        return qr.verdict == LOSSLESS
+    if floor is None:                      # puriste : plein spectre ET non suspect (artefacts)
+        return qr.verdict == LOSSLESS and qr.confidence != "suspect"
     return qr.verdict == LOSSLESS or qr.cutoff_hz >= floor
 
 
