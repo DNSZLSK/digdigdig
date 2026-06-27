@@ -14,13 +14,23 @@ Build :  pyinstaller packaging/ddd.spec --noconfirm
 Sortie : dist/DDD/DDD.exe   (+ dossier de support a cote)
 """
 
+import platform
+import re
 from pathlib import Path
 from PyInstaller.utils.hooks import collect_all
 
 SPECPATH_ = Path(SPECPATH)            # packaging/
 ROOT = SPECPATH_.parent               # racine du repo
+IS_MAC = platform.system() == "Darwin"
 
-ICON = ROOT / "ddd" / "assets" / "ddd.ico"
+# Version = source unique (ddd/__init__.py), reutilisee pour le plist du .app macOS.
+VERSION = re.search(r'__version__\s*=\s*"([^"]+)"',
+                    (ROOT / "ddd" / "__init__.py").read_text(encoding="utf-8")).group(1)
+
+# Icone fenetre/app : .icns pour le bundle macOS, .ico pour Windows. Absente ->
+# PyInstaller met une icone generique (non bloquant).
+_icon = ROOT / "ddd" / "assets" / ("ddd.icns" if IS_MAC else "ddd.ico")
+ICON = _icon if _icon.exists() else None
 
 # Ressources embarquees (lecture seule) : sldl + profils + icone (pour la fenetre Flet)
 datas = [
@@ -82,7 +92,7 @@ exe = EXE(
     strip=False,
     upx=False,
     console=False,                    # appli fenetre (pas de console)
-    icon=str(ICON) if ICON.exists() else None,
+    icon=str(ICON) if ICON else None,
 )
 
 coll = COLLECT(
@@ -93,3 +103,20 @@ coll = COLLECT(
     upx=False,
     name="DDD",
 )
+
+# macOS : emballe le COLLECT en .app double-cliquable (Finder/Gatekeeper le voient
+# comme une appli, pas un binaire nu). Sur Windows/Linux, le dossier COLLECT suffit.
+if IS_MAC:
+    app = BUNDLE(
+        coll,
+        name="DDD.app",
+        icon=str(ICON) if ICON else None,
+        bundle_identifier="com.dnszlsk.ddd",
+        info_plist={
+            "CFBundleName": "DDD",
+            "CFBundleDisplayName": "DDD - DigDigDig",
+            "CFBundleShortVersionString": VERSION,
+            "CFBundleVersion": VERSION,
+            "NSHighResolutionCapable": True,
+        },
+    )

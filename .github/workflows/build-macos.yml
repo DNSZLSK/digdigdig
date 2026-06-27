@@ -1,0 +1,71 @@
+name: build-macos
+
+# Build le .app macOS (Apple Silicon) de DDD avec PyInstaller.
+#  - Manuel : onglet Actions -> "build-macos" -> Run workflow (zip en artifact).
+#  - Auto   : a chaque release publiee, attache DDD-macos-AppleSilicon.zip a la release.
+# Intel (x64) non couvert : runners GitHub Intel (macos-13) en fin de vie + parc Mac
+# quasi 100% Apple Silicon. Ajoutable via une matrice macos-13 + sldl_osx-x64.zip.
+on:
+  workflow_dispatch:
+  release:
+    types: [published]
+
+permissions:
+  contents: write   # upload de l'asset sur la release
+
+jobs:
+  build:
+    name: DDD.app (Apple Silicon)
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install build deps
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install ".[gui,build,ml]"
+
+      - name: Fetch sldl v2.6.0 (osx-arm64, meme version que le build Windows)
+        run: |
+          set -euo pipefail
+          curl -L -o /tmp/sldl.zip \
+            "https://github.com/fiso64/sockseek/releases/download/v2.6.0/sldl_osx-arm64.zip"
+          unzip -o /tmp/sldl.zip -d /tmp/sldl_extract
+          SLDL_BIN="$(find /tmp/sldl_extract -type f -name sldl | head -n1)"
+          test -n "$SLDL_BIN"
+          mkdir -p bin/sldl
+          cp "$SLDL_BIN" bin/sldl/sldl
+          chmod +x bin/sldl/sldl
+          find /tmp/sldl_extract -iname 'LICENSE*' -exec cp {} bin/sldl/ \; || true
+          ls -la bin/sldl
+
+      - name: Build .app (PyInstaller)
+        run: |
+          set -euo pipefail
+          python -m PyInstaller packaging/ddd.spec --noconfirm --distpath dist --workpath build
+          test -d "dist/DDD.app"
+          ls -la dist
+
+      - name: Zip the .app
+        run: |
+          set -euo pipefail
+          ditto -c -k --keepParent "dist/DDD.app" "DDD-macos-AppleSilicon.zip"
+          ls -la "DDD-macos-AppleSilicon.zip"
+
+      - name: Upload artifact (runs manuels)
+        uses: actions/upload-artifact@v4
+        with:
+          name: DDD-macos-AppleSilicon
+          path: DDD-macos-AppleSilicon.zip
+
+      - name: Attach to release (runs sur release)
+        if: github.event_name == 'release'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release upload "${{ github.event.release.tag_name }}" \
+            "DDD-macos-AppleSilicon.zip" --clobber
