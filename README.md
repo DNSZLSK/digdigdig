@@ -13,6 +13,9 @@
   <a href="https://github.com/DNSZLSK/digdigdig/releases/latest/download/DDD-windows.zip">
     <img src="https://img.shields.io/badge/DOWNLOAD--ME-Windows%20.exe-1DB954?style=for-the-badge&logo=windows&logoColor=white" alt="Download DDD for Windows">
   </a>
+  <a href="https://github.com/DNSZLSK/digdigdig/releases/latest/download/DDD-macos-AppleSilicon.zip">
+    <img src="https://img.shields.io/badge/DOWNLOAD--ME-macOS%20Apple%20Silicon-1DB954?style=for-the-badge&logo=apple&logoColor=white" alt="Download DDD for macOS">
+  </a>
   <br>
   <sub>Double-click, no install. <a href="https://dnszlsk.github.io/digdigdig/">Landing page</a></sub>
 </p>
@@ -71,7 +74,7 @@ No need to be a developer: download the `.exe`, double-click, it's a window.
 
 > **You need a free Soulseek account** to download - create one in 30 seconds at [slsknet.org](https://www.slsknet.org/). DDD logs into Soulseek to fetch the upgrades; without it, DDD still scans and rates your files, but can't download anything. (sldl, the Soulseek client, is bundled in the `.exe` - nothing else to install.)
 
-1. [**Download the exe**](https://github.com/DNSZLSK/digdigdig/releases/latest/download/DDD-windows.zip), unzip, double-click `DDD.exe`.
+1. **Download** [Windows `.exe`](https://github.com/DNSZLSK/digdigdig/releases/latest/download/DDD-windows.zip) or [macOS `.app`](https://github.com/DNSZLSK/digdigdig/releases/latest/download/DDD-macos-AppleSilicon.zip) (Apple Silicon), unzip, double-click. On macOS, first launch: **right-click -> Open** (the app is unsigned).
 2. Open **Settings** (gear, top right) and fill in:
    - your **Soulseek** login (required to download),
    - your **Discogs token** + username, and/or your **Bandcamp** username (to pull your favorites),

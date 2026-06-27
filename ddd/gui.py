@@ -175,7 +175,7 @@ def main(page: ft.Page) -> None:
     def _preset() -> str:
         return config_mod.load().get("quality_preset", quality.DEFAULT_PRESET)
 
-    page.title = "DDD.exe - DigDigDig"
+    page.title = "DDD - DigDigDig"
     _set_window_size(page, 1120, 780)
     _icon = paths.app_icon()
     if _icon.exists():
