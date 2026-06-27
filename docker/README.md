@@ -1,8 +1,8 @@
 # DDD dans Docker
 
-Image **CLI headless** pour faire tourner DDD sur un NAS / serveur Linux sans
-ecran. Cas d'usage premier : **`ddd scan`**, l'audit lossless / anti-faux-FLAC
-d'une grosse librairie montee en volume.
+Image **CLI headless** : tout le pipeline DDD (DIG / DOWNLOAD / DETECT) sur un
+NAS / serveur Linux sans ecran, sans la fenetre graphique. Le binaire Soulseek
+`sldl` est embarque, donc `upgrade` / `acquire` marchent aussi.
 
 ## Build
 
@@ -10,7 +10,9 @@ d'une grosse librairie montee en volume.
 docker build -t ddd .
 ```
 
-## Scanner une librairie
+Image x86_64 (le binaire `sldl` upstream n'existe qu'en linux-x64).
+
+## Scanner une librairie (audit lossless / anti-faux-FLAC)
 
 ```sh
 docker run --rm -v /mnt/musique:/music ddd scan /music -o /music/ddd-scan.csv
@@ -24,22 +26,34 @@ docker run --rm -v /mnt/musique:/music ddd scan /music -o /music/ddd-scan.csv
 Le rapport CSV/JSON liste, par fichier : verdict qualite (LOSSLESS / HQ / douteux
 / mauvais, par cutoff spectral), nom vs tags ID3, et les doublons.
 
-## Ce qui marche dans cette image
+## Telecharger en vrai lossless via Soulseek (upgrade / acquire)
 
-`scan`, `rename`, `sort`, `buy`, `scrape` : tout le coeur qui ne touche pas
-Soulseek. Pour les commandes qui interrogent Discogs (`scrape`, `sort`), passe
-ton token par l'environnement :
+Passe tes creds Soulseek par l'environnement, et pointe la bibliotheque de sortie
+sur ton volume monte avec `--download-dir` pour recuperer les fichiers :
+
+```sh
+docker run --rm \
+  -e DDD_SOULSEEK_USER=tonuser -e DDD_SOULSEEK_PASS=tonpass \
+  -v /mnt/musique:/music \
+  ddd upgrade /music --download-dir /music --apply
+```
+
+`upgrade` re-audite chaque download et ne garde que le vrai AUTHENTIC (les filtres
+sldl ne voient pas les upscales, le re-audit si). Sans `--download-dir`, la sortie
+va dans `~/Music/DDD` *dans* le conteneur (donc perdue a la sortie). `acquire
+<wantlist.csv>` telecharge une want-list (issue de `scrape`) de la meme facon.
+
+Note : les downloads Soulseek sont volontairement throttle (anti-ban), un gros run
+prend du temps - c'est normal, pas un blocage.
+
+## Tout ce qui marche
+
+`scan`, `upgrade`, `acquire`, `scrape`, `rename`, `sort`, `buy`. Les commandes qui
+interrogent Discogs (`scrape`, `sort`) prennent le token par l'environnement :
 
 ```sh
 docker run --rm -e DISCOGS_TOKEN=xxxx -v /mnt/musique:/music ddd sort /music --apply
 ```
-
-## Ce qui ne marche PAS (encore)
-
-`upgrade` et `acquire` passent par Soulseek (binaire **sldl**), non embarque ici.
-Une image "full pipeline" suivra : sldl Linux + creds par env
-(`DDD_SOULSEEK_USER` / `DDD_SOULSEEK_PASS`) + mapping de ports + PUID/PGID pour
-les droits des fichiers ecrits sur le NAS.
 
 ## Garder les rapports / donnees hors du conteneur
 
