@@ -1,0 +1,25 @@
+# On ne COPY que pyproject / README / ddd / config, mais on evite d'envoyer le
+# reste au daemon (vitesse du build) et toute fuite si un COPY s'elargit un jour.
+.git
+.github
+.venv
+dist
+build
+*.egg-info
+**/__pycache__
+**/*.pyc
+bin
+docs
+tests
+packaging
+lib
+inputs
+outputs
+staging
+logs
+.cache-dl
+.genre-cache
+*.log
+pipeline.ps1
+.DS_Store
+Thumbs.db
