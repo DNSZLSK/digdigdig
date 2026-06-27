@@ -25,7 +25,14 @@ dependencies = [
 # Phase 4 (GUI + packaging) - non requis pour le coeur CLI.
 # Pin sur la ligne stable 0.28.x : la 0.85+ ("Flet 1.0", alpha) a des constructeurs
 # incompatibles (TextField sans label, boutons sans label positionnel).
-gui = ["flet>=0.24,<0.30"]
+# Cap a <0.28.3 : la 0.28.3 casse le FilePicker natif sur macOS (regression Flet
+# #5334, 0.28.2 = derniere version OK). flet est eclate en 3 paquets verrouilles
+# a la meme version (flet / flet-desktop / flet-cli) ; flet-desktop est le client
+# natif qui embarque le picker. flet ne depend PAS des deux autres, donc on cappe
+# les TROIS, sinon pip laisse flet-desktop en 0.28.3 (picker reste casse) et
+# flet-cli en 0.28.3 (warning d'incompatibilite a l'install). 0.28.2 marche aussi
+# sur Windows.
+gui = ["flet>=0.24,<0.28.3", "flet-desktop>=0.24,<0.28.3", "flet-cli>=0.24,<0.28.3"]
 build = ["pyinstaller>=6.0"]
 # Classif genre par l'AUDIO pour `ddd sort` (modele Discogs-EffNet en ONNX, local).
 # Optionnel : sans, le tri degrade gracieusement (tag ID3 + Discogs seuls).

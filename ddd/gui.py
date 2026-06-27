@@ -385,12 +385,12 @@ def main(page: ft.Page) -> None:
     # ====================================================================
     #  Onglet 1 : Bibliotheque (scan + upgrade)
     # ====================================================================
-    folder_field = ft.TextField(width=360, read_only=True, dense=True, text_size=13, color=TXT,
+    folder_field = ft.TextField(width=360, dense=True, text_size=13, color=TXT,
                                 prefix_icon=ft.Icons.FOLDER, hint_text="~/Music/incoming",
                                 value=cfg.get("last_folder", ""), bgcolor=FIELD_BG,
                                 border_color=BORDER, border_radius=8, focused_border_color=PINK)
-    # Miroir read-only du dossier pour l'onglet Sort (un controle ne vit que dans un onglet).
-    sort_folder_field = ft.TextField(width=360, read_only=True, dense=True, text_size=13, color=TXT,
+    # Miroir du dossier pour l'onglet Sort (un controle ne vit que dans un onglet).
+    sort_folder_field = ft.TextField(width=360, dense=True, text_size=13, color=TXT,
                                      prefix_icon=ft.Icons.FOLDER, hint_text="folder to sort",
                                      value=cfg.get("last_folder", ""), bgcolor=FIELD_BG,
                                      border_color=BORDER, border_radius=8, focused_border_color=PINK)
@@ -570,15 +570,27 @@ def main(page: ft.Page) -> None:
         _refresh_upgrade_count()
         page.update()
 
+    def _sync_folder(value: str) -> None:
+        # Aligne les deux onglets (Library/Sort) + state + config quand le chemin
+        # est saisi/colle a la main, pas seulement via Browse (le picker natif Flet
+        # est KO sur certains macOS -> il faut pouvoir taper le chemin).
+        folder_field.value = value
+        sort_folder_field.value = value
+        state.folder = value
+        config_mod.set_value("last_folder", value)
+
     def on_folder_picked(e) -> None:
         if e.path:
-            folder_field.value = e.path
-            sort_folder_field.value = e.path
-            state.folder = e.path
-            config_mod.set_value("last_folder", e.path)
+            _sync_folder(e.path)
             page.update()
 
+    def on_folder_typed(e) -> None:
+        _sync_folder((e.control.value or "").strip())
+        page.update()
+
     file_picker.on_result = on_folder_picked
+    folder_field.on_blur = on_folder_typed
+    sort_folder_field.on_blur = on_folder_typed
 
     def browse(_e) -> None:
         file_picker.get_directory_path(dialog_title="Choose the music folder")
@@ -1021,7 +1033,7 @@ def main(page: ft.Page) -> None:
     bandcamp_user = ft.TextField(label="Bandcamp username", value=cfg.get("bandcamp_username", ""),
                                  width=240)
     dl_dir_field = ft.TextField(
-        label="Library folder (lossless downloads)", expand=True, read_only=True,
+        label="Library folder (lossless downloads)", expand=True,
         value=cfg.get("download_dir", "") or str(paths.default_download_dir()))
 
     def on_dl_picked(e) -> None:
