@@ -10,6 +10,7 @@ dist/
 .venv/
 __pycache__/
 *.pyc
+*.egg-info/
 
 # PyInstaller build artifacts
 build/
