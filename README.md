@@ -162,6 +162,26 @@ in the title are normalized before the search.
 Output: `dist\DDD\DDD.exe`. sldl, the profiles, the GUI client and the audio decoding
 (libsndfile) are bundled. Details + Mac/Linux build: `packaging/README.md`.
 
+### Docker (NAS / headless Linux)
+
+The whole pipeline as a CLI image (no GUI): scan, upgrade, acquire, scrape, rename, sort, buy.
+sldl is bundled, so Soulseek downloads work too - creds via environment variables.
+
+```sh
+docker build -t ddd .
+
+# scan a mounted library (spectral audit)
+docker run --rm -v /mnt/music:/music ddd scan /music -o /music/ddd-scan.csv
+
+# upgrade via Soulseek (creds by env, output into the mounted library)
+docker run --rm \
+  -e DDD_SOULSEEK_USER=you -e DDD_SOULSEEK_PASS=secret \
+  -v /mnt/music:/music \
+  ddd upgrade /music --download-dir /music --apply
+```
+
+x86_64 only. Details: `docker/README.md`.
+
 ### Legacy PowerShell pipeline (still available)
 
 The project started as a PowerShell pipeline (`pipeline.ps1` + `lib/`), which still works:

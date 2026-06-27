@@ -164,6 +164,12 @@ sur quoi on construit désormais.
 - ✅ **`ddd gui`** : fenêtre native Flet (dossier, scan, tableau filtrable, upgrade, réglages).
 - ✅ **`.exe` autonome** : `packaging/build.ps1` → `dist/DDD/DDD.exe` (255 Mo, embarque
   sldl + profils + client Flet + libsndfile ; **pas de ffmpeg requis**). Lancé et vérifié.
+- ✅ **Image Docker** (`Dockerfile` + `docker/README.md`) : pipeline complet CLI headless
+  (scan/upgrade/acquire/scrape/rename/sort/buy) pour NAS/serveur Linux, sans GUI. Multi-stage :
+  sldl linux-x64 (fiso64/sockseek v2.6.0, self-contained .NET) récupéré dans `/app/bin/sldl/`
+  là où `paths.sldl_exe()` l'attend (`resource_base()` == `/app` hors-frozen) ; libicu installé
+  dynamiquement (le plus haut `libicuNN`, résiste aux bumps Debian bookworm→trixie) ; creds
+  Soulseek par env `DDD_SOULSEEK_USER/PASS`. Buildé + sldl prouvé en conteneur (722 Mo, x86_64).
 - ✅ Tests : `tests/test_quality.py`, `test_scan_merge.py`, `test_upgrade_logic.py`, `test_gui_build.py`,
   `test_organize_mapping.py`, `test_organize_logic.py`, `test_genre_lookup.py`, `test_cli_sort.py`.
 
