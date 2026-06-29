@@ -27,7 +27,7 @@ KNOWN_KEYS = (
     "default_excludes",   # liste de sous-dossiers a ignorer au scan
     "download_dir",       # bibliotheque lossless verifiee (upgrade + acquire deposent ici)
     "last_inbox",         # (legacy) ancien dossier de destination acquire
-    "quality_preset",     # seuil qualite : dj_club (defaut) | audiophile | puriste
+    "quality_preset",     # mode qualite/cible : dj_club (def) | audiophile | puriste | mp3_320 | wav_aiff | flac_only
     "detector",           # moteur de detection : legacy (defaut) | forensic (en rodage)
     "library_root",       # racine du tri par vibe (dossiers ACID/DEEPWATER/... + _INBOX)
     "genre_mapping",      # dict {dossier: [mots-cles style/genre]} pour `ddd sort`

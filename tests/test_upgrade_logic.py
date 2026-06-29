@@ -286,6 +286,48 @@ def main():
     soulseek.run_sldl = real_run
     print("OK repli MP3 320 : 2e passe recupere un introuvable en lossless")
 
+    # === modes "cible format" : le preset choisit le profil de recherche sldl ===
+    assert quality.search_profiles_for("dj_club") == ("lossless-strict", "mp3-fallback")
+    assert quality.search_profiles_for("puriste") == ("lossless-strict", None), "Purist durci : pas de repli"
+    assert quality.search_profiles_for("mp3_320") == ("mp3-only", None)
+    assert quality.search_profiles_for("wav_aiff") == ("wav-aiff-only", None)
+    assert quality.search_profiles_for("flac_only") == ("flac-only", None)
+    assert quality.search_profiles_for("inconnu") == ("lossless-strict", "mp3-fallback"), "inconnu -> defaut"
+
+    # is_accepted : mp3_320 garde le 320 (>= 18 kHz) ; wav_aiff/flac_only ne gardent que le plein
+    # spectre (un 320 reste candidat -> re-cherche dans le format cible) ; un vrai lossless est garde
+    # par tous (jamais transcode).
+    mp3_320_ok = _qr(r"C:\lib\hi.mp3", quality.HQ, cutoff=20000.0, fclass="lossy")
+    mp3_320_ok.container_bitrate = 320
+    assert quality.is_accepted(mp3_320_ok, "mp3_320"), "MP3 320 garde en mode MP3 320"
+    assert not quality.is_accepted(mp3_320_ok, "flac_only"), "un 320 reste candidat en FLAC only"
+    assert not quality.is_accepted(mp3_320_ok, "wav_aiff"), "un 320 reste candidat en WAV/AIFF only"
+    real_loss = _qr(r"C:\lib\real.flac", quality.LOSSLESS, cutoff=22050.0)
+    real_loss.est_source_bitrate = 0
+    assert all(quality.is_accepted(real_loss, p) for p in ("mp3_320", "wav_aiff", "flac_only")), \
+        "un vrai lossless est garde par tous les modes"
+
+    # spy : run_upgrade derive le profil sldl du preset (mp3_320 -> mp3-only ; flac_only -> flac-only),
+    # sans repli (un seul appel sldl).
+    seen_profiles = []
+    def spy_profile(*a, **k):
+        seen_profiles.append(k.get("profile"))
+        return 0
+    soulseek.run_sldl = spy_profile
+    soulseek.read_index = lambda _idx: []     # rien trouve -> NOT_FOUND, pas d'audit
+    lib6 = base / "_lib6"
+    lib6.mkdir(exist_ok=True)
+    up.run_upgrade("C:\\lib", root=ROOT, staging_dir=cache, download_dir=lib6,
+                   scan_results=[_qr(r"C:\lib\X - Y.mp3", quality.MAUVAIS, fclass="lossy")],
+                   preset="mp3_320")
+    assert seen_profiles == ["mp3-only"], f"mp3_320 -> mp3-only sans repli : {seen_profiles}"
+    seen_profiles.clear()
+    up.run_upgrade("C:\\lib", root=ROOT, staging_dir=cache, download_dir=lib6,
+                   scan_results=[_qr(r"C:\lib\X - Z.mp3", quality.MAUVAIS, fclass="lossy")],
+                   preset="flac_only")
+    assert seen_profiles == ["flac-only"], f"flac_only -> flac-only : {seen_profiles}"
+    print("OK modes cible format : search_profiles_for + is_accepted + profil derive du preset")
+
     # --- cleanup ---
     import shutil
     shutil.rmtree(base, ignore_errors=True)

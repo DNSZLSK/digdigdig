@@ -357,7 +357,7 @@ def _acquire_rows_now(rows) -> int:
     print(f"\nStarting acquire on {len(rows)} tracks -> {dl_dir}", file=sys.stderr)
     outcomes = upgrade_mod.acquire_rows(
         rows, root=root, download_dir=dl_dir, staging_dir=paths.cache_dl_dir(),
-        limit=0, profile="lossless-strict", progress=progress, log_path=log_path)
+        limit=0, progress=progress, log_path=log_path)
     counts = Counter(o.action for o in outcomes)
     print("\n=== Acquire ===")
     for action, n in counts.most_common():
@@ -448,10 +448,12 @@ def _cmd_acquire(args: argparse.Namespace) -> int:
         if len(a) == 1:
             print(a[0], file=sys.stderr)
 
+    preset = args.preset if getattr(args, "preset", None) else quality_mod.preset_from_config()
     print(f"Acquire {len(rows)} tracks -> library {dl_dir}", file=sys.stderr)
     outcomes = upgrade_mod.acquire_rows(
         rows, root=root, download_dir=dl_dir, staging_dir=paths.cache_dl_dir(),
-        limit=args.limit, profile=args.profile, progress=progress, log_path=log_path)
+        preset=preset, limit=args.limit, profile=args.profile,
+        progress=progress, log_path=log_path)
 
     counts = Counter(o.action for o in outcomes)
     print(f"\n=== Acquire: {src.name} ===")
@@ -565,13 +567,13 @@ def build_parser() -> argparse.ArgumentParser:
     p_up.add_argument("--download-dir", help="target lossless library (default: config / ~/Music/DDD)")
     p_up.add_argument("-x", "--exclude", action="append", default=["PROD"],
                       metavar="NAME", help="subfolder to ignore (default: PROD). Repeatable.")
-    p_up.add_argument("--preset", choices=["dj_club", "audiophile", "puriste"],
-                      help="quality bar (default: config, dj_club)")
+    p_up.add_argument("--preset", choices=list(quality_mod.QUALITY_PRESETS),
+                      help="quality / target mode (default: config, dj_club)")
     p_up.add_argument("-n", "--limit", type=int, default=0,
                       help="limit to N tracks (smoke test)")
     p_up.add_argument("--staging", help="transient download cache (default: .cache-dl)")
-    p_up.add_argument("--profile", default="lossless-strict",
-                      help="sldl profile (default: lossless-strict = FLAC only)")
+    p_up.add_argument("--profile", default=None,
+                      help="force a sldl profile (default: derived from --preset)")
     p_up.add_argument("-v", "--verbose", action="store_true", help="show each scanned file")
     p_up.set_defaults(func=_cmd_upgrade)
 
@@ -592,7 +594,10 @@ def build_parser() -> argparse.ArgumentParser:
     p_ac.add_argument("csv", help="CSV want-list (scrape output)")
     p_ac.add_argument("--download-dir", help="target library (default: config / ~/Music/DDD)")
     p_ac.add_argument("-n", "--limit", type=int, default=0, help="limit to N tracks")
-    p_ac.add_argument("--profile", default="lossless-strict", help="sldl profile")
+    p_ac.add_argument("--preset", choices=list(quality_mod.QUALITY_PRESETS),
+                      help="quality / target mode (default: config, dj_club)")
+    p_ac.add_argument("--profile", default=None,
+                      help="force a sldl profile (default: derived from --preset)")
     p_ac.set_defaults(func=_cmd_acquire)
 
     p_im = sub.add_parser("import",

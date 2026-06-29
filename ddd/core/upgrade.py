@@ -1,11 +1,12 @@
 """Boucle d'upgrade : scan -> want-list -> sldl -> re-audit -> remplacement.
 
-Le coeur de la feature #3 : prendre tout ce qui est sous le seuil de qualite choisi
-(preset DJ Club / Audiophile / Puriste) dans une bibliotheque, chercher mieux sur
-Soulseek, et NE garder que ce qui repasse le detecteur AU-DESSUS du seuil (les
-filtres min-bitrate/format de sldl ne detectent PAS un upscale - d'ou le re-audit
-obligatoire). Si rien n'est trouve en lossless/WAV/AIFF, une 2e passe automatique
-retente en MP3 320 (jouable club), jamais sous 320.
+Le coeur de la feature #3 : prendre tout ce qui est sous le plancher de qualite choisi
+(preset : DJ Club / Audiophile / Puriste, ou un mode cible-format MP3 320 / WAV-AIFF / FLAC)
+dans une bibliotheque, chercher mieux sur Soulseek, et NE garder que ce qui repasse le detecteur
+AU-DESSUS du plancher (les filtres min-bitrate/format de sldl ne detectent PAS un upscale - d'ou
+le re-audit obligatoire). Le preset fixe AUSSI la cible de recherche (cf quality.search_profiles_for) :
+en DJ Club/Audiophile, si rien n'est trouve en lossless, une 2e passe retente en MP3 320 (jamais
+sous 320) ; les modes cible-format cherchent directement leur format, sans repli.
 
 Le remplacement est opt-in (apply=True). Par defaut : telecharge en staging,
 re-audite, et rapporte ce qui SERAIT remplace, sans toucher la bibliotheque.
@@ -29,8 +30,10 @@ from .soulseek import WantItem
 
 logger = logging.getLogger(__name__)
 
-# Profil sldl de repli (2e passe) quand rien n'est trouve en lossless/WAV/AIFF.
-FALLBACK_PROFILE = "mp3-fallback"
+# Sentinelle : profil/repli non fournis par l'appelant -> derives du preset
+# (quality.search_profiles_for). A distinguer de fallback_profile=None, qui DESACTIVE le
+# repli (ce que font les tests, et ce que la CLI --profile peut forcer).
+_DERIVE = object()
 
 # Actions du rapport d'upgrade
 ACT_REPLACED = "REPLACED"
@@ -327,8 +330,8 @@ def run_upgrade(
     preset: Optional[str] = None,
     exclude_names: Sequence[str] = (),
     limit: int = 0,
-    profile: str = "lossless-strict",
-    fallback_profile: Optional[str] = FALLBACK_PROFILE,
+    profile: Optional[str] = None,
+    fallback_profile=_DERIVE,
     scan_results=None,
     progress: Optional[Callable] = None,
     on_item: Optional[Callable] = None,
@@ -347,6 +350,12 @@ def run_upgrade(
     download_dir = Path(download_dir)
     download_dir.mkdir(parents=True, exist_ok=True)
     preset = preset or quality.preset_from_config()
+    # Profil de recherche + repli derives du preset, sauf si l'appelant les force.
+    _dp, _df = quality.search_profiles_for(preset)
+    if profile is None:
+        profile = _dp
+    if fallback_profile is _DERIVE:
+        fallback_profile = _df
 
     if scan_results is None:
         scan_results = scan_folder(folder, exclude_names=exclude_names, progress=progress)
@@ -453,8 +462,8 @@ def acquire_rows(
     staging_dir=None,
     limit: int = 0,
     preset: Optional[str] = None,
-    profile: str = "lossless-strict",
-    fallback_profile: Optional[str] = FALLBACK_PROFILE,
+    profile: Optional[str] = None,
+    fallback_profile=_DERIVE,
     progress: Optional[Callable] = None,
     on_item: Optional[Callable] = None,
     on_proc: Optional[Callable] = None,
@@ -471,6 +480,12 @@ def acquire_rows(
     download_dir.mkdir(parents=True, exist_ok=True)
     staging_dir = Path(staging_dir) if staging_dir else (download_dir / ".cache-dl")
     preset = preset or quality.preset_from_config()
+    # Profil de recherche + repli derives du preset, sauf si l'appelant les force.
+    _dp, _df = quality.search_profiles_for(preset)
+    if profile is None:
+        profile = _dp
+    if fallback_profile is _DERIVE:
+        fallback_profile = _df
 
     outcomes: List[UpgradeOutcome] = []
     existing = _existing_keys(download_dir)   # already in library -> on saute

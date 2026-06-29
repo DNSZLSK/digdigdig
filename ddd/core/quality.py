@@ -59,10 +59,43 @@ AUDIOPHILE_CUTOFF_HZ = 20000    # seuil du preset "audiophile"
 # partout, quel que soit le preset (un MP3 < 320 ne rentre jamais dans la bibliotheque).
 MIN_LOSSY_BITRATE = 310
 
-# Presets de qualite : cutoff minimum (Hz) pour ACCEPTER un fichier.
-# "puriste" = None -> on exige le plein spectre (verdict LOSSLESS, = l'ancien AUTHENTIC).
-QUALITY_PRESETS = {"dj_club": HQ_CUTOFF_HZ, "audiophile": AUDIOPHILE_CUTOFF_HZ, "puriste": None}
+# Presets de qualite : cutoff minimum (Hz) pour ACCEPTER un fichier (le PLANCHER, ce qu'on
+# GARDE au re-audit). None -> on exige le plein spectre (verdict LOSSLESS, = l'ancien AUTHENTIC).
+# Ce plancher est DISTINCT de la cible de recherche (PRESET_SEARCH ci-dessous, ce que sldl va
+# telecharger) : les modes "cible format" (mp3_320/wav_aiff/flac_only) changent ce qu'on cherche,
+# pas la facon de juger le resultat - le re-audit spectral reste seul juge.
+QUALITY_PRESETS = {
+    "dj_club": HQ_CUTOFF_HZ,             # jouable club, MP3 320 inclus (defaut)
+    "audiophile": AUDIOPHILE_CUTOFF_HZ,  # >= 20 kHz
+    "puriste": None,                     # plein spectre uniquement
+    "mp3_320": HQ_CUTOFF_HZ,             # cible MP3 320 (vieux matos / mobile) ; garde >= 18 kHz
+    "wav_aiff": None,                    # cible WAV/AIFF (non compresse) ; plein spectre uniquement
+    "flac_only": None,                   # cible FLAC ; plein spectre uniquement
+}
 DEFAULT_PRESET = "dj_club"
+
+# Cible de recherche sldl par preset : (profil 1ere passe, profil de repli OU None = aucun repli).
+# dj_club/audiophile : lossless d'abord, repli MP3 320 si introuvable. puriste : lossless sans
+# repli (un 320 serait rejete au re-audit -> autant filer direct vers les liens d'achat). Les modes
+# "cible format" cherchent directement leur format, sans repli. Les noms renvoient des sections de
+# config/sldl.conf.
+PRESET_SEARCH = {
+    "dj_club":    ("lossless-strict", "mp3-fallback"),
+    "audiophile": ("lossless-strict", "mp3-fallback"),
+    "puriste":    ("lossless-strict", None),
+    "mp3_320":    ("mp3-only", None),
+    "wav_aiff":   ("wav-aiff-only", None),
+    "flac_only":  ("flac-only", None),
+}
+
+
+def search_profiles_for(preset: str = DEFAULT_PRESET):
+    """(profil de recherche sldl, profil de repli) pour un preset. Repli None = aucun.
+
+    Distinct du plancher (QUALITY_PRESETS) : ce tuple decide ce que sldl VA CHERCHER, pas ce que
+    le re-audit GARDE. Preset inconnu -> celui par defaut.
+    """
+    return PRESET_SEARCH.get(preset, PRESET_SEARCH[DEFAULT_PRESET])
 
 
 @dataclass
@@ -287,9 +320,10 @@ def _current_detector() -> str:
 def is_accepted(qr: "QualityResult", preset: str = DEFAULT_PRESET) -> bool:
     """Le fichier passe-t-il la porte du preset ? (a garder vs a upgrader)
 
-    - puriste : seulement le plein spectre (verdict LOSSLESS).
-    - dj_club / audiophile : cutoff >= seuil du preset.
-    Dans tous les cas un MP3 (conteneur lossy) sous 320 kbps est refuse.
+    Plancher None (puriste / wav_aiff / flac_only) : seulement le plein spectre (verdict LOSSLESS).
+    Plancher en Hz (dj_club & mp3_320 = 18 kHz, audiophile = 20 kHz) : cutoff >= seuil.
+    Dans tous les cas un MP3 (conteneur lossy) sous 320 kbps est refuse. NB : c'est le PLANCHER
+    (ce qu'on garde), pas la cible de recherche (cf search_profiles_for).
     """
     if qr.verdict in (SKIPPED, ERROR):
         return False

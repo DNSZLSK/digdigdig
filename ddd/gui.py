@@ -412,10 +412,16 @@ def main(page: ft.Page) -> None:
 
     def _refresh_preset_label() -> None:
         p = _preset()
-        hz = quality.QUALITY_PRESETS.get(p)
-        preset_l1.value = "pure lossless" if hz is None else f"keep >= {hz / 1000:.0f} kHz"
-        preset_l2.value = {"dj_club": "DJ CLUB", "audiophile": "AUDIOPHILE",
-                           "puriste": "PURIST"}.get(p, str(p).upper())
+        # Ligne 1 = ce que DDD vise/garde, ligne 2 = nom court du mode (cf Reglages).
+        l1, l2 = {
+            "dj_club":    ("keep >= 18 kHz", "DJ CLUB"),
+            "audiophile": ("keep >= 20 kHz", "AUDIOPHILE"),
+            "puriste":    ("pure lossless", "PURIST"),
+            "mp3_320":    ("target MP3 320", "MP3 320"),
+            "wav_aiff":   ("target WAV/AIFF", "WAV/AIFF"),
+            "flac_only":  ("target FLAC", "FLAC ONLY"),
+        }.get(p, ("keep >= 18 kHz", "DJ CLUB"))
+        preset_l1.value, preset_l2.value = l1, l2
 
     def _upgrade_count() -> int:
         if state.selected:
@@ -1050,12 +1056,15 @@ def main(page: ft.Page) -> None:
 
     dl_browse_btn = ft.FilledButton(text="Browse", icon=ft.Icons.FOLDER_OPEN, on_click=browse_dl)
     preset_dd = ft.Dropdown(
-        label="Minimum quality", width=320,
+        label="Quality / target", width=320,
         value=cfg.get("quality_preset", "dj_club"),
         options=[
             ft.dropdown.Option(key="dj_club", text="DJ Club (>=18 kHz, MP3 320 included)"),
             ft.dropdown.Option(key="audiophile", text="Audiophile (>=20 kHz)"),
             ft.dropdown.Option(key="puriste", text="Purist (pure lossless)"),
+            ft.dropdown.Option(key="mp3_320", text="MP3 320 only (vintage / mobile)"),
+            ft.dropdown.Option(key="wav_aiff", text="WAV/AIFF only (uncompressed)"),
+            ft.dropdown.Option(key="flac_only", text="FLAC only"),
         ])
 
     detector_dd = ft.Dropdown(
@@ -1124,7 +1133,8 @@ def main(page: ft.Page) -> None:
         ft.Text("Everything DDD validates (upgrade + favorites) lands here; fakes/rejects "
                 "go to the trash.", size=12, color=TXT_DIM),
         ft.Row([dl_dir_field, dl_browse_btn]),
-        ft.Text("Quality bar: below it, a file is a candidate for upgrade.",
+        ft.Text("Quality bar (what DDD keeps); the MP3 320 / WAV-AIFF / FLAC modes also set "
+                "what it searches for. Below the bar -> candidate for upgrade.",
                 size=12, color=TXT_DIM),
         ft.Row([preset_dd, detector_dd], wrap=True),
         ft.Text("Sort: genre -> your vibe folders. Edit only to retune; the default covers most.",

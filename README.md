@@ -17,6 +17,10 @@
     <img src="https://img.shields.io/badge/DOWNLOAD--ME-macOS%20Apple%20Silicon-1DB954?style=for-the-badge&logo=apple&logoColor=white" alt="Download DDD for macOS">
   </a>
   <br>
+  <a href="https://github.com/DNSZLSK/digdigdig/releases">
+    <img src="https://img.shields.io/github/downloads/DNSZLSK/digdigdig/total?style=for-the-badge&label=downloads&color=1DB954" alt="Total downloads">
+  </a>
+  <br>
   <sub>Double-click, no install. <a href="https://dnszlsk.github.io/digdigdig/">Landing page</a></sub>
 </p>
 
@@ -57,11 +61,13 @@ No need to be a developer: download the `.exe`, double-click, it's a window.
   - **HQ** (blue): >= 18 kHz, playable on a big system (includes MP3 320).
   - **Iffy** (yellow): 16-18 kHz, borderline.
   - **Bad** (red): < 16 kHz, mush.
-- **Three quality presets** (minimum bar to keep, in Settings):
+- **Quality / target modes** (in Settings) - the bar DDD keeps to, and what it goes hunting for:
   - **DJ Club** (>= 18 kHz) - *default*: keeps anything club-playable, MP3 320 included.
   - **Audiophile** (>= 20 kHz): rejects MP3s below 320.
-  - **Purist** (pure lossless): real full-spectrum lossless only.
-- **Upgrade**: replaces your below-the-bar files with something better, found on Soulseek. DDD looks for FLAC, WAV and AIFF (lots of DJs share in WAV/AIFF), with an **automatic MP3 320 fallback** for tracks that can't be found in lossless. MP3s below 320 kbps are **banned across the board**, whatever the preset.
+  - **Purist** (pure lossless): real full-spectrum lossless only; if it's not on Soulseek -> buy links, no MP3 fallback.
+  - **MP3 320** (vintage / mobile): hunts MP3 320 straight, skips FLAC - for old gear that won't read FLAC, or syncing over mobile data. Bumps your sub-320s up to 320; leaves the lossless you already have untouched.
+  - **WAV/AIFF only** / **FLAC only**: target a single lossless container (old CDJs/samplers that won't read FLAC, or a FLAC-homogeneous library). DDD never transcodes what you already own - the mode just picks the format of what it fetches.
+- **Upgrade**: replaces your below-the-bar files with something better, found on Soulseek. In **DJ Club / Audiophile** it looks for FLAC, WAV and AIFF (lots of DJs share in WAV/AIFF), with an **automatic MP3 320 fallback** for tracks that can't be found in lossless. MP3s below 320 kbps are **banned across the board**, whatever the mode.
 - **Get favorites**: scrapes your Discogs wantlist / Bandcamp wishlist and downloads it.
 - **YouTube set / playlist**: paste a set URL (YouTube / 1001Tracklists) or a **YouTube playlist** (each video = a track) -> DDD extracts the tracklist into a want-list (CSV).
 - **Single library**: everything that passes lands in `~/Music/DDD` (changeable in Settings), de-duplicated. Rejects go to the **trash** (recoverable), never hard-deleted.
