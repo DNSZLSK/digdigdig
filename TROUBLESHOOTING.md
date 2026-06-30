@@ -1,69 +1,69 @@
-# DDD - Playbook de support Soulseek (login / connexion)
+# DDD - Soulseek support playbook (login / connection)
 
-Quand un testeur dit "je n'arrive pas a me connecter / a telecharger", suis ce
-playbook au lieu de deviner. La regle d'or : **ne JAMAIS se fier au message affiche
-dans la fenetre seul, lire le log.** C'est lui qui dit la vraie cause.
-
----
-
-## Triage en 30 secondes
-
-1. Recuperer la **vraie ligne d'erreur** : lui faire ouvrir le log et copier les ~15
-   dernieres lignes (chemins plus bas).
-2. Y chercher la ligne `---> Soulseek.XxxException: <raison>`. C'est elle qui tranche :
-   - `Soulseek.ListenException` / "start listening" / "port may be in use" -> **Cas A : port 50300 occupe**
-   - `Soulseek.LoginRejectedException` / "rejected the login" / "username or password" -> **Cas B : mauvais identifiants**
-   - autre chose -> lire la raison brute, appliquer le bon sens
-3. Appliquer le fix du cas. Lui renvoyer le bloc EN correspondant.
+When a tester says "I can't connect / download", follow this playbook instead of
+guessing. The golden rule: **NEVER trust the message shown in the window alone,
+read the log.** That's what tells you the real cause.
 
 ---
 
-## Ou est le log
+## 30-second triage
 
-Le testeur est sur le `.exe`, donc :
+1. Get the **real error line**: have them open the log and copy the last ~15
+   lines (paths below).
+2. Look for the line `---> Soulseek.XxxException: <reason>`. That's the decider:
+   - `Soulseek.ListenException` / "start listening" / "port may be in use" -> **Case A: port 50300 in use**
+   - `Soulseek.LoginRejectedException` / "rejected the login" / "username or password" -> **Case B: wrong credentials**
+   - anything else -> read the raw reason, use common sense
+3. Apply the case's fix. Send them the matching EN block.
 
-| OS | Chemin |
+---
+
+## Where the log is
+
+The tester is on the `.exe`, so:
+
+| OS | Path |
 |----|--------|
-| Windows | `%APPDATA%\ddd\logs\ddd_upgrade.log` (ou `ddd_acquire.log` pour un scrape/acquire) |
+| Windows | `%APPDATA%\ddd\logs\ddd_upgrade.log` (or `ddd_acquire.log` for a scrape/acquire) |
 | macOS | `~/Library/Application Support/ddd/logs/ddd_upgrade.log` |
 | Linux | `~/.local/share/ddd/logs/ddd_upgrade.log` |
 
-(En dev depuis le repo : `./logs/`.) Sur Windows, coller le chemin dans la barre
-d'adresse de l'Explorateur ouvre directement le dossier.
+(In dev from the repo: `./logs/`.) On Windows, pasting the path into Explorer's
+address bar opens the folder directly.
 
 ---
 
-## Le piege historique : le mot "slskd"
+## The historical trap: the word "slskd"
 
-Avant le fix, DDD affichait **toujours** `invalid credentials, or another session
-(slskd) is already connected` des que sldl ecrivait "Login failed" - meme quand la
-vraie cause etait le port 50300. Le mot "slskd" etait du **texte code en dur** dans
-`ddd/core/soulseek.py`, **pas** un retour du serveur Soulseek. Plusieurs jours ont ete
-perdus a chasser un slskd qui n'existait pas.
+Before the fix, DDD **always** showed `invalid credentials, or another session
+(slskd) is already connected` as soon as sldl wrote "Login failed" - even when the
+real cause was port 50300. The word "slskd" was **hard-coded text** in
+`ddd/core/soulseek.py`, **not** a response from the Soulseek server. Several days
+were lost chasing an slskd that didn't exist.
 
-Depuis le fix, la fenetre montre la vraie raison entre crochets, ex.
-`... [sldl: Failed to start listening on 0.0.0.0:50300 ...]`. Lis ce qu'il y a dans
-les crochets, et au moindre doute, le log.
+Since the fix, the window shows the real reason in brackets, e.g.
+`... [sldl: Failed to start listening on 0.0.0.0:50300 ...]`. Read what's in the
+brackets, and when in doubt, the log.
 
 ---
 
-## Cas A - Port 50300 occupe (le plus frequent)
+## Case A - Port 50300 in use (most common)
 
-**Signe** : `Soulseek.ListenException` / "Failed to start listening on 0.0.0.0:50300".
+**Sign**: `Soulseek.ListenException` / "Failed to start listening on 0.0.0.0:50300".
 
-**Cause** : un autre process tient le port d'ecoute 50300 : un `sldl.exe` zombie d'un
-run precedent, un `slskd`, ou deux actions DDD lancees en parallele. DDD tue deja
-`slskd.exe` et `sldl.exe` avant chaque run, mais **pas** SoulseekQt ni un slskd
-installe en service.
+**Cause**: another process is holding listen port 50300: a zombie `sldl.exe` from a
+previous run, an `slskd`, or two DDD actions launched in parallel. DDD already kills
+`slskd.exe` and `sldl.exe` before each run, but **not** SoulseekQt or an slskd
+installed as a service.
 
-**Fix** :
-- Fermer toute autre app Soulseek. SoulseekQt : clic droit sur l'icone du **system
-  tray** -> Quit (fermer la fenetre ne suffit pas, il reste dans le tray).
-- Task Manager (Ctrl+Shift+Echap) -> tuer les `sldl.exe` / `slskd.exe` restants.
-- Ne pas lancer deux actions DDD en meme temps.
-- Si ca persiste juste apres un run : attendre 30 s (socket en TIME_WAIT) ou rebooter.
+**Fix**:
+- Close any other Soulseek app. SoulseekQt: right-click its **system tray** icon ->
+  Quit (closing the window isn't enough, it stays in the tray).
+- Task Manager (Ctrl+Shift+Esc) -> kill any leftover `sldl.exe` / `slskd.exe`.
+- Don't run two DDD actions at the same time.
+- If it persists right after a run: wait 30s (socket in TIME_WAIT) or reboot once.
 
-**A coller au testeur (EN)** :
+**To paste to the tester (EN)**:
 ```
 That's a port conflict, not a login problem. Something is still holding
 Soulseek's port 50300:
@@ -76,29 +76,29 @@ Then try again. If it still happens right after a run, wait 30s or reboot once.
 
 ---
 
-## Cas B - Login refuse (mauvais identifiants)
+## Case B - Login refused (wrong credentials)
 
-**Signe** : `Soulseek.LoginRejectedException` / "rejected the login" / "username or password".
+**Sign**: `Soulseek.LoginRejectedException` / "rejected the login" / "username or password".
 
-**Rappels Soulseek a connaitre** :
-- Le compte Soulseek du **reseau P2P** se cree **dans un client** (SoulseekQt,
-  Nicotine+) au tout premier login. Il n'y a **pas** d'inscription web pour le reseau.
-- `slsknet.org` = compte de **forum**, systeme separe. S'inscrire la ne cree **pas**
-  de compte reseau utilisable dans DDD.
-- Un username deja pris par quelqu'un d'autre -> login refuse (le mot de passe ne
-  correspond pas). Frequent avec un pseudo court.
+**Soulseek facts to know**:
+- The **P2P network** Soulseek account is created **inside a client** (SoulseekQt,
+  Nicotine+) on the very first login. There is **no** web signup for the network.
+- `slsknet.org` = **forum** account, a separate system. Signing up there does **not**
+  create a usable network account for DDD.
+- A username already taken by someone else -> login refused (the password doesn't
+  match). Common with a short handle.
 
-**Fix** :
-- Verifier user/pass dans Reglages : pas d'espace en trop, pas de majuscule parasite,
-  pas de caractere exotique copie de travers.
-- Tester **les memes** creds directement dans SoulseekQt :
-  - SoulseekQt refuse aussi -> les creds sont en cause. Choisir un **nouveau** username
-    simple (lettres + chiffres), se logger une fois dans SoulseekQt pour l'enregistrer,
-    puis mettre ces creds dans DDD.
-  - SoulseekQt se connecte bien -> alors SoulseekQt tenait la connexion (un seul login
-    par compte) : le **quitter completement**, puis relancer DDD.
+**Fix**:
+- Check user/pass in Settings: no extra space, no stray capital, no exotic character
+  pasted wrong.
+- Test **the same** creds directly in SoulseekQt:
+  - SoulseekQt also refuses -> the creds are the problem. Pick a **new** simple
+    username (letters + numbers), log in once in SoulseekQt to register it, then put
+    those creds in DDD.
+  - SoulseekQt connects fine -> then SoulseekQt was holding the connection (one login
+    per account): **fully quit it**, then relaunch DDD.
 
-**A coller au testeur (EN)** :
+**To paste to the tester (EN)**:
 ```
 Soulseek refused the login - it's a credentials issue, not slskd.
 Two things:
@@ -116,31 +116,31 @@ Two things:
 
 ---
 
-## Cas C - "another session is already connected"
+## Case C - "another session is already connected"
 
-Detail protocole : sur Soulseek, un 2e login **kicke** le 1er (il ne se fait pas
-refuser). Une vraie collision se traduit donc plutot par des deconnexions / de
-l'instabilite que par un login refuse **permanent**. Si l'echec persiste meme apres
-reboot, ce n'est probablement pas une collision : repartir sur le **Cas A** (port) ou
-le **Cas B** (creds), log a l'appui.
-
----
-
-## Faux problemes (ne pas debugger)
-
-- **"wrong match"** : normal et voulu. L'audit a rejete un fichier telecharge qui ne
-  correspondait pas (artiste / titre / version differente). C'est le filet de securite
-  anti-mauvais-remplacement. Le fichier d'origine n'est pas touche. Rien a faire.
-- **Run lent ou qui semble fige** : c'est le throttle anti-ban de sldl (~34 recherches
-  par 220 s), pas un bug. Seule la reduction du volume accelere. Ne pas toucher au
-  `search-timeout` ni reduire les chunks.
+Protocol detail: on Soulseek, a 2nd login **kicks** the 1st (it isn't refused). A
+real collision therefore shows up as disconnects / instability rather than a
+**permanent** login refusal. If the failure persists even after a reboot, it's
+probably not a collision: go back to **Case A** (port) or **Case B** (creds), log in
+hand.
 
 ---
 
-## Pour le mainteneur
+## False alarms (don't debug)
 
-- Le message d'erreur vient de `ddd/core/soulseek.py` : `_fatal_message()` +
-  `_extract_sldl_reason()` lisent la cascade sldl et remontent la vraie raison.
-- Non-regression verrouillee par `tests/test_soulseek_fatal.py` (cascade port vs creds)
-  et `tests/test_soulseek_nowindow.py`.
-- Cascade sldl de reference : voir `logs/ddd_upgrade.log` (un echec port complet y est).
+- **"wrong match"**: normal and intended. The audit rejected a downloaded file that
+  didn't match (different artist / title / version). It's the anti-bad-replacement
+  safety net. The original file isn't touched. Nothing to do.
+- **Slow run or one that looks frozen**: that's sldl's anti-ban throttle (~34
+  searches per 220s), not a bug. Only reducing the volume speeds it up. Don't touch
+  `search-timeout` or shrink the chunks.
+
+---
+
+## For the maintainer
+
+- The error message comes from `ddd/core/soulseek.py`: `_fatal_message()` +
+  `_extract_sldl_reason()` read the sldl cascade and surface the real reason.
+- Non-regression locked by `tests/test_soulseek_fatal.py` (port vs creds cascade)
+  and `tests/test_soulseek_nowindow.py`.
+- Reference sldl cascade: see `logs/ddd_upgrade.log` (a full port failure is in there).
