@@ -74,14 +74,59 @@ _FATAL_MARKERS = (
 )
 
 
-def _fatal_message(line: str) -> str:
-    if "listening" in line or "port may be in use" in line:
-        return ("Soulseek port 50300 already in use (an sldl/slskd is already running). "
-                "Close it and try again.")
-    if "Login failed" in line or "login failed" in line:
-        return ("Soulseek login refused: invalid credentials, or another session "
-                "(slskd) is already connected with this account.")
-    return f"Soulseek error (sldl): {line.strip()[:120]}"
+def _extract_sldl_reason(lines: Sequence[str]) -> str:
+    """Tire la VRAIE raison de l'echec depuis la cascade sldl.
+
+    sldl loggue en cascade : une ligne generique ('Login failed definitively') PUIS la
+    raison reelle ('Failed to ensure ... : <reason>') PUIS l'exception interne
+    ('---> Soulseek.XxxException: <reason>'). On veut cette derniere, la plus precise :
+    c'est elle qui dit si c'est un port occupe (ListenException) ou un login refuse.
+    """
+    for ln in lines:
+        m = re.search(r"Soulseek\.\w+Exception:\s*(.+)$", ln)
+        if m:
+            return m.group(1).strip()
+    for key in ("Failed to ensure Soulseek connection and login:",
+                "Failed to initialize Soulseek client:"):
+        for ln in lines:
+            if key in ln:
+                tail = ln.split(key, 1)[1].strip()
+                pre = "Soulseek login failed:"   # prefixe redondant a virer si present
+                return tail[len(pre):].strip() if tail.startswith(pre) else tail
+    return ""
+
+
+def _fatal_message(line: str, context: Optional[Sequence[str]] = None) -> str:
+    """Traduit l'echec fatal sldl en message clair, en montrant la VRAIE raison.
+
+    `context` = les lignes de la cascade autour de l'echec, pas seulement la 1ere ligne
+    generique ('Login failed definitively') : c'est plus bas que sldl ecrit la cause
+    reelle (port occupe vs creds refuses). On ne devine plus 'slskd' au pif, on lit.
+    """
+    lines = list(context) if context else [line]
+    reason = _extract_sldl_reason(lines) or line.strip()
+    reason_short = reason[:160]
+    low = " \n".join(lines).lower()
+
+    # Port d'ecoute 50300 occupe (ListenException) : un autre Soulseek/sldl tient le port.
+    if "listenexception" in low or "start listening" in low or "port may be in use" in low:
+        return ("Soulseek can't start: port 50300 is already in use. Close any other "
+                "Soulseek app (sldl/slskd, or a previous DDD run still running - check "
+                f"the system tray and Task Manager), then retry. [sldl: {reason_short}]")
+
+    # Login refuse par le serveur : identifiants faux.
+    if "loginrejected" in low or "rejected the login" in low or "invalid username or password" in low:
+        return ("Soulseek refused the login: wrong username or password. Re-check your "
+                "credentials in Settings (no typo, no stray space), or create a fresh "
+                f"account in a Soulseek client and use those. [sldl: {reason_short}]")
+
+    # Echec de login, raison non reconnue : on montre la vraie ligne sldl, sans inventer.
+    if "login failed" in low or "login" in low:
+        return ("Soulseek login failed. Usually wrong username/password, or the same "
+                "account is logged in from another Soulseek client (one login per "
+                f"account - quit it and retry). [sldl: {reason_short}]")
+
+    return f"Soulseek error (sldl): {reason_short}"
 
 
 def default_sldl_exe(root: Path = None) -> Path:
@@ -256,6 +301,7 @@ def run_sldl(
         if on_proc:
             on_proc(proc)   # remet le handle a l'appelant (bouton Annuler -> proc.terminate())
         fatal_line = None
+        fatal_context: List[str] = []   # la cascade autour de l'echec (vraie raison dedans)
         for line in proc.stdout:
             line = line.rstrip("\n")
             if on_line:
@@ -266,9 +312,15 @@ def run_sldl(
                 log_fh.write(line + "\n")
             if fatal_line is None and any(m in line for m in _FATAL_MARKERS):
                 fatal_line = line   # 1ere ligne d'echec fatal (port/login/crash)
+            # Une fois l'echec repere, on collecte les lignes de raison qui suivent (sldl
+            # ecrit la cause reelle APRES la ligne generique), en sautant la stack .NET.
+            if fatal_line is not None and len(fatal_context) < 8:
+                stripped = line.lstrip()
+                if stripped and not stripped.startswith("at ") and "--- End of inner" not in line:
+                    fatal_context.append(line)
         proc.wait()
         if fatal_line is not None:
-            raise SoulseekError(_fatal_message(fatal_line))
+            raise SoulseekError(_fatal_message(fatal_line, fatal_context))
         return proc.returncode
     finally:
         if log_fh:
