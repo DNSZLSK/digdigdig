@@ -42,10 +42,11 @@ CREDS_CASCADE = [
 def main():
     # 1. Port occupe : message doit pointer le PORT 50300, pas les creds.
     msg = soulseek._fatal_message(PORT_CASCADE[0], PORT_CASCADE)
-    assert "50300" in msg, msg
-    assert "port" in msg.lower() and "already in use" in msg.lower(), msg
-    assert "wrong username" not in msg.lower(), f"un port occupe n'est PAS un probleme de creds : {msg}"
-    print("OK - cascade port -> message 'port 50300 occupe' (plus de faux 'creds')")
+    assert "50300" in msg, msg   # la vraie raison sldl (le port qui a echoue) est remontee
+    assert "listen port" in msg.lower(), msg
+    assert "reserved by the os" in msg.lower(), msg   # n'affirme plus juste "occupe" : aussi reserve OS
+    assert "wrong username" not in msg.lower(), f"un echec de port n'est PAS un probleme de creds : {msg}"
+    print("OK - cascade port -> message pointe le port (occupe OU reserve par l'OS), pas les creds")
 
     # 2. Login refuse : message doit pointer les CREDS et NE PAS accuser slskd au pif.
     msg = soulseek._fatal_message(CREDS_CASCADE[0], CREDS_CASCADE)

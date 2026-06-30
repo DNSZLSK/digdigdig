@@ -13,6 +13,7 @@ import os
 import platform
 import re
 import shutil
+import socket
 import subprocess
 import sys
 from dataclasses import dataclass
@@ -110,9 +111,11 @@ def _fatal_message(line: str, context: Optional[Sequence[str]] = None) -> str:
 
     # Port d'ecoute 50300 occupe (ListenException) : un autre Soulseek/sldl tient le port.
     if "listenexception" in low or "start listening" in low or "port may be in use" in low:
-        return ("Soulseek can't start: port 50300 is already in use. Close any other "
-                "Soulseek app (sldl/slskd, or a previous DDD run still running - check "
-                f"the system tray and Task Manager), then retry. [sldl: {reason_short}]")
+        return ("Soulseek can't open its listen port. DDD already auto-tries several "
+                "ports, so this is unusual: a port is either held by another Soulseek app "
+                "(sldl/slskd or a previous DDD run - check the tray and Task Manager) or "
+                "reserved by the OS (Hyper-V/WSL/Docker; check with 'netsh int ipv4 show "
+                f"excludedportrange protocol=tcp'). [sldl: {reason_short}]")
 
     # Login refuse par le serveur : identifiants faux.
     if "loginrejected" in low or "rejected the login" in low or "invalid username or password" in low:
@@ -214,6 +217,65 @@ def stop_orphan_sldl() -> bool:
         return False
 
 
+# --- Choix du port d'ecoute Soulseek -----------------------------------------
+# sldl/slskd ecoutent par defaut sur 50300, qui tombe dans la plage ephemere Windows
+# (49152-65535) que Hyper-V/WSL/Docker RESERVENT par blocs. Le bind y echoue alors
+# (WSAEACCES) avec 'Failed to start listening', meme si netstat ne montre rien. On
+# bind-teste avant de lancer sldl et on retombe sur un port libre SOUS la plage
+# ephemere, passe a sldl via --listen-port (la CLI override le config) -> plus besoin
+# de faire editer le .conf a la main (ce qui debloquait le testeur Windows).
+DEFAULT_LISTEN_PORT = 50300
+_LISTEN_PORT_FALLBACKS = (21300, 31300, 41300, 2234, 11733)
+
+
+def _port_bindable(port: int) -> bool:
+    """True si un nouveau socket d'ecoute peut s'ouvrir sur ce port maintenant.
+
+    Bind sur 0.0.0.0 SANS SO_REUSEADDR, exactement comme sldl : si ce bind passe, celui
+    de sldl passera ; s'il echoue (port pris OU reserve par l'OS), sldl echouerait pareil.
+    """
+    s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    try:
+        s.bind(("0.0.0.0", port))
+        return True
+    except OSError:
+        return False
+    finally:
+        s.close()
+
+
+def pick_listen_port(preferred: int = DEFAULT_LISTEN_PORT) -> int:
+    """Port d'ecoute bindable pour sldl : le prefere s'il marche, sinon un repli.
+
+    Essaie `preferred`, puis des ports fixes sous la plage ephemere (a l'abri des
+    reservations Hyper-V/WSL/Docker), puis en dernier recours un port libre attribue
+    par l'OS. Evite l'echec 'Failed to start listening' sans rien faire editer a l'user.
+    """
+    if _port_bindable(preferred):
+        return preferred
+    for p in _LISTEN_PORT_FALLBACKS:
+        if p != preferred and _port_bindable(p):
+            return p
+    s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    try:
+        s.bind(("0.0.0.0", 0))   # 0 -> l'OS attribue un port libre (forcement bindable la)
+        return s.getsockname()[1]
+    finally:
+        s.close()
+
+
+def _configured_listen_port(config_path, default: int = DEFAULT_LISTEN_PORT) -> int:
+    """Lit `listen-port = N` du config sldl (respecte un port choisi a la main)."""
+    try:
+        txt = Path(config_path).read_text(encoding="utf-8", errors="ignore")
+        m = re.search(r"(?m)^\s*listen-port\s*=\s*(\d+)", txt)
+        if m:
+            return int(m.group(1))
+    except OSError:
+        pass
+    return default
+
+
 def clear_run_staging(staging_dir, *csv_names) -> None:
     """Supprime les dossiers de travail sldl d'un run TERMINE (et leurs CSV d'entree).
 
@@ -287,6 +349,14 @@ def run_sldl(
         "--profile", profile,
         "--path", str(staging_dir),
     ]
+    # Port d'ecoute : auto-pick d'un port bindable (anti 50300 reserve par l'OS) que
+    # l'on impose via --listen-port (override le listen-port du config).
+    preferred_port = _configured_listen_port(config_path)
+    listen_port = pick_listen_port(preferred_port)
+    args += ["--listen-port", str(listen_port)]
+    if listen_port != preferred_port:
+        logger.info("listen-port %s indisponible (occupe ou reserve par l'OS) -> bascule sur %s",
+                    preferred_port, listen_port)
     if limit > 0:
         args += ["-n", str(limit)]
 
