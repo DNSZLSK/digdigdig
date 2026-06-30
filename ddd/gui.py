@@ -688,6 +688,9 @@ def main(page: ft.Page) -> None:
             return
         chosen = [state.records[i] for i in sorted(state.selected)] if state.selected else \
                  [r for r in state.records if _is_upgradable(r.quality, _preset())]
+        # Clic manuel (au moins une case cochee) = override : DDD cherche mieux meme pour une
+        # track deja bonne ou deja dans la lib (bypass is_accepted + dedup, depot in-place).
+        forced = bool(state.selected)
         if not chosen:
             status.value = "Nothing to upgrade (check files or change the filter)."
             page.update()
@@ -723,7 +726,7 @@ def main(page: ft.Page) -> None:
                 outcomes = upgrade_mod.run_upgrade(
                     state.folder, root=paths.resource_base(), staging_dir=staging,
                     download_dir=dl_dir, scan_results=chosen, progress=prog, on_item=on_item,
-                    on_proc=on_proc, cancel=is_cancelled, log_path=log_path)
+                    on_proc=on_proc, cancel=is_cancelled, log_path=log_path, forced=forced)
                 from collections import Counter
                 c = Counter(o.action for o in outcomes)
                 ok = c.get(upgrade_mod.ACT_REPLACED, 0)

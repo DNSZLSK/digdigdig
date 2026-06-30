@@ -15,6 +15,7 @@ re-audite, et rapporte ce qui SERAIT remplace, sans toucher la bibliotheque.
 from __future__ import annotations
 
 import logging
+import os
 from dataclasses import dataclass, asdict, field
 from pathlib import Path
 from typing import Callable, Dict, List, Optional, Sequence
@@ -180,7 +181,7 @@ class UpgradePlan:
     already_good: List[UpgradeOutcome] = field(default_factory=list)  # deja au-dessus de la barre
 
 
-def build_plan(scan_results, preset: str = quality.DEFAULT_PRESET) -> UpgradePlan:
+def build_plan(scan_results, preset: str = quality.DEFAULT_PRESET, forced: bool = False) -> UpgradePlan:
     """A partir des resultats de scan, construit la want-list (fichiers a upgrader).
 
     Sont candidats tous les fichiers analysables qui NE passent PAS le seuil du
@@ -193,10 +194,11 @@ def build_plan(scan_results, preset: str = quality.DEFAULT_PRESET) -> UpgradePla
         q = getattr(r, "quality", r)   # ScanRecord -> .quality ; QualityResult -> lui-meme
         if q.verdict in (quality.SKIPPED, quality.ERROR):
             continue                   # pas un fichier audio exploitable
-        if quality.is_accepted(q, preset):
-            # Deja au-dessus du seuil : rien a upgrader. On l'ENREGISTRE (au lieu de la
-            # dropper en silence) pour que l'appelant remonte un statut clair sur la ligne
-            # ("already good") au lieu de la laisser figee sur "queued..." cote GUI.
+        if not forced and quality.is_accepted(q, preset):
+            # Deja au-dessus du seuil : rien a upgrader -- SAUF clic manuel (`forced`), qui
+            # override (l'user dit "je veux mieux" meme sur une track deja bonne). Sinon on
+            # l'ENREGISTRE (au lieu de la dropper en silence) pour que l'appelant remonte un
+            # statut clair ("already good") au lieu de la laisser figee sur "queued..." cote GUI.
             plan.already_good.append(UpgradeOutcome(
                 action=ACT_ALREADY_GOOD, artist="", title=q.filename,
                 original=q.path, note="already above the quality bar"))
@@ -223,6 +225,16 @@ def build_plan(scan_results, preset: str = quality.DEFAULT_PRESET) -> UpgradePla
         plan.origin_by_key.setdefault(key, q.path)
         plan.items.append(WantItem(artist, title, length, q.path))
     return plan
+
+
+def _is_within(path, parent) -> bool:
+    """True si `path` est sous `parent` (resolu, insensible a la casse -> Windows-safe)."""
+    try:
+        p = os.path.normcase(str(Path(path).resolve()))
+        par = os.path.normcase(str(Path(parent).resolve()))
+        return p == par or p.startswith(par + os.sep)
+    except (OSError, ValueError):
+        return False
 
 
 def _deposit(src, download_dir) -> Path:
@@ -252,13 +264,23 @@ def _finalize_download(it, dl, q, *, preset, download_dir, existing, trash_origi
         base.action, base.note = rej
         trash.send_to_trash(dl.filepath)          # candidat rejete -> corbeille
         return base, False
-    final = _deposit(dl.filepath, download_dir)
+    # Depot : par defaut a la racine de la bibliotheque. Mais si le SOURCE est deja DANS la
+    # bibliotheque (upgrade d'une track deja rangee -> typiquement un clic manuel), on REMPLACE
+    # sur place dans SON dossier au lieu de l'eparpiller a la racine. On vide la place AVANT le
+    # move (corbeille, recuperable) pour garder le bon nom (pas de suffixe ' (1)').
+    in_place = bool(trash_origin and it.origin_path and _is_within(it.origin_path, download_dir))
+    if in_place:
+        trash.send_to_trash(it.origin_path)
+        final = _deposit(dl.filepath, Path(it.origin_path).parent)
+    else:
+        final = _deposit(dl.filepath, download_dir)
+        if trash_origin:
+            trash.send_to_trash(it.origin_path)   # le faux source -> corbeille
     existing.add(match_key(it.artist, it.title))
     base.new_file = str(final)
     if trash_origin:
-        trash.send_to_trash(it.origin_path)       # le faux source -> corbeille
         base.action = ACT_REPLACED
-        base.note = "added to the library; original to trash"
+        base.note = "upgraded in place" if in_place else "added to the library; original to trash"
     else:
         base.action = ACT_ACQUIRED
         base.note = f"added to the library: {final}"
@@ -347,6 +369,7 @@ def run_upgrade(
     cancel: Optional[Callable] = None,
     log_path=None,
     on_chunk: Optional[Callable] = None,
+    forced: bool = False,
 ) -> List[UpgradeOutcome]:
     """Upgrade : pour chaque faux/lossy, telecharge un vrai lossless valide, le DEPOSE
     dans la bibliotheque `download_dir`, et envoie le fichier source (le faux) a la
@@ -368,7 +391,7 @@ def run_upgrade(
     if scan_results is None:
         scan_results = scan_folder(folder, exclude_names=exclude_names, progress=progress)
 
-    plan = build_plan(scan_results, preset)
+    plan = build_plan(scan_results, preset, forced=forced)
     # Pistes jamais telechargees -> statut final immediat (sinon la ligne GUI reste figee
     # sur "queued...") : noms illisibles ET pistes deja au-dessus de la barre.
     skipped = plan.unparseable + plan.already_good
@@ -383,7 +406,9 @@ def run_upgrade(
     existing = _existing_keys(download_dir)
     to_dl: List[WantItem] = []
     for it in plan.items:
-        if match_key(it.artist, it.title) in existing:
+        if not forced and match_key(it.artist, it.title) in existing:
+            # forced (clic manuel) = override total : on ne dedoublonne PAS contre la lib, sinon
+            # une track deja rangee dedans se ferait jeter en "already in library" sans chercher.
             outcomes.append(UpgradeOutcome(action=ACT_DUPLICATE, artist=it.artist, title=it.title,
                                            original=it.origin_path, note="already in library"))
             if on_item:
