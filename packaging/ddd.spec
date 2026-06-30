@@ -81,9 +81,24 @@ a = Analysis(
 
 pyz = PYZ(a.pure)
 
+# Splash de demarrage (Windows/Linux ; PyInstaller ne le supporte PAS sur macOS). S'affiche
+# des le depliage du bootloader, AVANT meme que Python charge numpy/onnxruntime/Flet -> retour
+# visuel immediat sur un PC lent, ce qui coupe le 2e double-clic de panique. Ferme par
+# gui.main() (pyi_splash.close()) quand la fenetre native est prete.
+splash = None
+_splash_img = ROOT / "packaging" / "splash.png"
+if not IS_MAC and _splash_img.exists():
+    splash = Splash(
+        str(_splash_img),
+        binaries=a.binaries,
+        datas=a.datas,
+        always_on_top=False,
+    )
+
 exe = EXE(
     pyz,
     a.scripts,
+    *([splash] if splash else []),
     [],
     exclude_binaries=True,
     name="DDD",
@@ -99,6 +114,7 @@ coll = COLLECT(
     exe,
     a.binaries,
     a.datas,
+    *([splash.binaries] if splash else []),
     strip=False,
     upx=False,
     name="DDD",

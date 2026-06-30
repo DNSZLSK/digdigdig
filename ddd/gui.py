@@ -169,6 +169,14 @@ class AppState:
 
 
 def main(page: ft.Page) -> None:
+    # La fenetre est prete : on ferme le splash de demarrage affiche par le .exe
+    # (pyi_splash). Absent en dev / build sans splash (macOS) -> on ignore.
+    try:
+        import pyi_splash
+        pyi_splash.close()
+    except Exception:  # noqa: BLE001
+        pass
+
     state = AppState()
     cfg = config_mod.load()
 
@@ -1388,6 +1396,11 @@ def main(page: ft.Page) -> None:
 
 def run() -> None:
     """Point d'entree : lance la fenetre native."""
+    from .core import singleton
+    # Couvre aussi le lancement dev (`ddd gui`) ; idempotent si entry.py a deja verrouille.
+    if not singleton.acquire("DDD"):
+        singleton.focus_existing()
+        return
     ft.app(target=main, assets_dir=str(paths.gui_assets_dir()))
 
 
