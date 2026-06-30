@@ -148,6 +148,26 @@ def _set_window_icon(page, ico) -> None:
         pass
 
 
+def _center_window(page) -> None:
+    """Centre la fenetre a l'ecran, API recente (page.window.center()) ou ancienne.
+
+    Le splash PyInstaller s'affiche deja centre ; sans ca la fenetre Flet s'ouvrait en
+    haut-gauche (position par defaut de l'OS) -> saut visuel a la fermeture du splash.
+    A appeler APRES _set_window_size pour que le centrage tienne compte de la bonne taille.
+    """
+    win = getattr(page, "window", None)
+    if win is not None and callable(getattr(win, "center", None)):
+        try:
+            win.center()
+            return
+        except Exception:  # noqa: BLE001
+            pass
+    try:
+        page.window_center()   # Flet ancien : methode portee par la page
+    except Exception:  # noqa: BLE001
+        pass
+
+
 def _font_map() -> dict:
     """Polices custom presentes dans ddd/assets/fonts -> {nom logique: chemin relatif}.
 
@@ -197,6 +217,7 @@ def main(page: ft.Page) -> None:
 
     page.title = "DDD - DigDigDig"
     _set_window_size(page, 1120, 780)
+    _center_window(page)        # comme le splash : au milieu, pas en haut-gauche
     _icon = paths.app_icon()
     if _icon.exists():
         _set_window_icon(page, _icon)
