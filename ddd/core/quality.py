@@ -322,18 +322,25 @@ def is_accepted(qr: "QualityResult", preset: str = DEFAULT_PRESET) -> bool:
 
     Plancher None (puriste / wav_aiff / flac_only) : seulement le plein spectre (verdict LOSSLESS).
     Plancher en Hz (dj_club & mp3_320 = 18 kHz, audiophile = 20 kHz) : cutoff >= seuil.
-    Dans tous les cas un MP3 (conteneur lossy) sous 320 kbps est refuse. NB : c'est le PLANCHER
-    (ce qu'on garde), pas la cible de recherche (cf search_profiles_for).
+    Dans tous les cas un MP3 (conteneur lossy) sous 320 kbps est refuse, et un fichier que le
+    forensic flague SUSPECT (artefacts ancres) n'est JAMAIS "deja bon", meme a cutoff haut : le
+    spectre prime, il reste candidat a l'upgrade. NB : c'est le PLANCHER (ce qu'on garde), pas la
+    cible de recherche (cf search_profiles_for).
     """
     if qr.verdict in (SKIPPED, ERROR):
         return False
     if qr.ext in LOSSY_EXTS and 0 < qr.container_bitrate < MIN_LOSSY_BITRATE:
         return False
+    # Le spectre est law : un SUSPECT forensic (artefacts ANCRES HF-aliasing/comb -> probable
+    # upscale/fake) n'est pas accepte quel que soit le cutoff/preset -> reste candidat a l'upgrade.
+    # ('uncertain' = zone grise, garde clemente : ne pas churner sur les faux positifs electro.)
+    if qr.confidence == "suspect":
+        return False
     if preset not in QUALITY_PRESETS:
         preset = DEFAULT_PRESET
     floor = QUALITY_PRESETS[preset]
-    if floor is None:                      # puriste : plein spectre ET non suspect (artefacts)
-        return qr.verdict == LOSSLESS and qr.confidence != "suspect"
+    if floor is None:                      # puriste / wav_aiff / flac_only : plein spectre uniquement
+        return qr.verdict == LOSSLESS
     return qr.verdict == LOSSLESS or qr.cutoff_hz >= floor
 
 

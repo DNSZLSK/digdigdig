@@ -253,6 +253,18 @@ def main():
     assert plan_hq.already_good[0].original == hq.path, "origin = chemin source (cle ligne GUI)"
     print("OK is_accepted : HQ accepte DJ Club / refuse Audiophile+Puriste ; build_plan suit le preset")
     print("OK already_good : track acceptee enregistree (plus de drop silencieux -> plus de ligne figee)")
+    # forensic "?" : un HQ SUSPECT (artefacts ancres) n'est PAS "deja bon" en dj_club malgre le
+    # cutoff -> il redevient candidat (le spectre prime). 'uncertain' reste clement (accepte).
+    hq_susp = _qr(r"C:\lib\Some Artist - Sketchy.mp3", quality.HQ, cutoff=19000.0, fclass="lossy")
+    hq_susp.container_bitrate = 320
+    hq_susp.confidence = "suspect"
+    assert not quality.is_accepted(hq_susp, "dj_club"), "HQ suspect ne doit PAS etre accepte en dj_club"
+    assert up.build_plan([hq_susp], preset="dj_club").items, "HQ suspect -> candidat a l'upgrade"
+    hq_unc = _qr(r"C:\lib\Some Artist - GreyZone.mp3", quality.HQ, cutoff=19000.0, fclass="lossy")
+    hq_unc.container_bitrate = 320
+    hq_unc.confidence = "uncertain"
+    assert quality.is_accepted(hq_unc, "dj_club"), "HQ uncertain reste accepte (clement) en dj_club"
+    print("OK forensic suspect : HQ suspect -> candidat ; HQ uncertain reste accepte (clement)")
 
     # === ban universel MP3 < 320 (jamais accepte, meme en DJ Club) ===
     mp3_192 = _qr(r"C:\lib\lo.mp3", quality.MAUVAIS, cutoff=19000.0, fclass="lossy")

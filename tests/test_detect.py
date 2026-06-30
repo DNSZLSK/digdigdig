@@ -104,15 +104,23 @@ def test_forensic_requires_codec_anchor():
     assert v == quality.LOSSLESS and conf != "suspect"
 
 
-def test_is_accepted_suspect_flagged_for_puriste_kept_for_djclub():
-    # plein spectre mais SUSPECT (artefacts) : jouable club, mais refuse en puriste (a verifier).
+def test_is_accepted_suspect_flagged_on_all_presets():
+    # plein spectre mais SUSPECT (artefacts ancres) : le spectre prime sur le cutoff -> ce n'est
+    # PAS "deja bon", meme en dj_club ; il reste candidat a l'upgrade (le re-audit fait garde-fou).
     qr = quality.QualityResult(
         path="x", filename="x.flac", ext=".flac", format_class="lossless_container",
         sample_rate=44100, channels=2, duration_s=200.0, cutoff_hz=22050.0,
         cutoff_std_hz=100.0, hf_energy_ratio=0.1, est_source_bitrate=0,
         container_bitrate=900, verdict=quality.LOSSLESS, confidence="suspect", reason="test")
-    assert quality.is_accepted(qr, "dj_club")
+    assert not quality.is_accepted(qr, "dj_club")
     assert not quality.is_accepted(qr, "puriste")
+    # 'uncertain' (zone grise) reste clement -> accepte en dj_club (pas de churn faux-positif electro).
+    qr_unc = quality.QualityResult(
+        path="y", filename="y.flac", ext=".flac", format_class="lossless_container",
+        sample_rate=44100, channels=2, duration_s=200.0, cutoff_hz=22050.0,
+        cutoff_std_hz=100.0, hf_energy_ratio=0.1, est_source_bitrate=0,
+        container_bitrate=900, verdict=quality.LOSSLESS, confidence="uncertain", reason="test")
+    assert quality.is_accepted(qr_unc, "dj_club")
 
 
 def test_stereo_collapse_genuine_vs_joint():
