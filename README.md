@@ -78,7 +78,7 @@ No need to be a developer: download the `.exe`, double-click, it's a window.
 
 ## Getting started (user)
 
-> **You need a free Soulseek account** to download - create one in 30 seconds at [slsknet.org](https://www.slsknet.org/). DDD logs into Soulseek to fetch the upgrades; without it, DDD still scans and rates your files, but can't download anything. (sldl, the Soulseek client, is bundled in the `.exe` - nothing else to install.)
+> **You need a free Soulseek account** to download - and there's **no website signup**: you just pick a username + password in DDD's **Settings** and your first login creates the account (or set them in a client like SoulseekQt and reuse them). Heads-up: the `slsknet.org` **site** login is only the **forum**, a separate system that won't work on the network - don't register there expecting it to log DDD in. Without an account DDD still scans and rates your files, but can't download. (sldl, the Soulseek client, is bundled in the `.exe` - nothing else to install.) **Can't connect / login fails?** -> [TROUBLESHOOTING.md](TROUBLESHOOTING.md).
 
 1. **Download** [Windows `.exe`](https://github.com/DNSZLSK/digdigdig/releases/latest/download/DDD-windows.zip) or [macOS `.app`](https://github.com/DNSZLSK/digdigdig/releases/latest/download/DDD-macos-AppleSilicon.zip) (Apple Silicon), unzip, double-click. On macOS, first launch: **right-click -> Open** (the app is unsigned).
 2. Open **Settings** (gear, top right) and fill in:

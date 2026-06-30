@@ -164,6 +164,15 @@ sur quoi on construit désormais.
 - ✅ **`ddd gui`** : fenêtre native Flet (dossier, scan, tableau filtrable, upgrade, réglages).
 - ✅ **`.exe` autonome** : `packaging/build.ps1` → `dist/DDD/DDD.exe` (255 Mo, embarque
   sldl + profils + client Flet + libsndfile ; **pas de ffmpeg requis**). Lancé et vérifié.
+  - **Splash de démarrage** (`pyi_splash`, `packaging/splash.png`, Windows/Linux ; macOS non
+    supporté par PyInstaller) : feedback visuel immédiat pendant le cold-start (numpy/onnxruntime/
+    Flet à charger). Fermé par `gui.main()` quand la fenêtre est prête. **À valider au rebuild.**
+  - **Garde-fou single-instance** (`ddd/core/singleton.py` : mutex nommé Windows / `flock` POSIX,
+    posé tôt dans `entry.py` + `gui.run()`) : un 2e double-clic pendant le démarrage lent ne lance
+    plus une 2e fenêtre ni un 2e sldl (qui clasherait sur le **port 50300** → ListenException).
+    Testé pour de vrai (sous-process refusé) dans `tests/test_singleton.py`.
+  - Option différée (validée user, pas encore faite) : **lazy-import d'`onnxruntime`** (le plus
+    lourd) pour que la fenêtre apparaisse plus vite pour de vrai, pas juste le ressenti.
 - ✅ **Image Docker** (`Dockerfile` + `docker/README.md`) : pipeline complet CLI headless
   (scan/upgrade/acquire/scrape/rename/sort/buy) pour NAS/serveur Linux, sans GUI. Multi-stage :
   sldl linux-x64 (fiso64/sockseek v2.6.0, self-contained .NET) récupéré dans `/app/bin/sldl/`
@@ -216,6 +225,11 @@ sur quoi on construit désormais.
     `-NoPrecisionCheck`, `-NoShortTitleGuard`, `-DurationTolerancePct` (10), `-MaxDurationOutlier` (720).
 
 ### Risques connus
+- **Support testeurs : login/connexion Soulseek** -> voir `TROUBLESHOOTING.md` (playbook).
+  Le message d'erreur ne devine plus "slskd" au pif : `soulseek._fatal_message()` lit la
+  cascade sldl et remonte la VRAIE raison (port 50300 occupe vs creds refuses), affichee
+  entre crochets `[sldl: ...]`. Au moindre doute sur un testeur : lire son log
+  (`%APPDATA%\ddd\logs\ddd_upgrade.log`), pas le seul message de la fenetre.
 - Soulseek refus si ratio compte bas → slskd peut auto-partager le `staging/` (déjà configuré dans slskd.yml)
 - Tracks vraiment rares → `unfindable.txt` final, fallback Beatport/Bandcamp paid
 - Bandcamp scraping → dépend de cloudscraper, peut breaker si Bandcamp change
