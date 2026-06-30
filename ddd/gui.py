@@ -108,6 +108,7 @@ ACTION_LABEL = {
     upgrade_mod.ACT_WOULD_REPLACE: ("found ✓", theme.GREEN, False),
     upgrade_mod.ACT_KEPT_BESIDE: ("kept beside ✓", theme.GREEN, False),
     upgrade_mod.ACT_ACQUIRED: ("kept in inbox ✓", theme.GREEN, False),
+    upgrade_mod.ACT_ALREADY_GOOD: ("already good ✓", theme.BLUE, False),
     upgrade_mod.ACT_REJECTED_FAKE: ("upscale -> trash ✗", theme.PINK, False),
     upgrade_mod.ACT_TOO_SHORT: ("too short ✗", theme.PINK, False),
     upgrade_mod.ACT_WRONG_MATCH: ("wrong match ✗", theme.PINK, False),
@@ -730,16 +731,18 @@ def main(page: ft.Page) -> None:
                 nf = c.get(upgrade_mod.ACT_NOT_FOUND, 0)
                 dup = c.get(upgrade_mod.ACT_DUPLICATE, 0)
                 dup_txt = f", {dup} already in library" if dup else ""
+                ag = c.get(upgrade_mod.ACT_ALREADY_GOOD, 0)
+                ag_txt = f", {ag} already good (above the bar)" if ag else ""
                 if state.cancel_requested:
                     for rec in chosen:   # lignes jamais finies (ring encore actif) -> Annule
                         cell = state.row_status.get(rec.quality.path)
                         if cell and cell[0].visible:
                             set_cell(state.row_status, rec.quality.path, *PHASE_LABEL["cancelled"])
                     summary = (f"Upgrade cancelled: {ok} in library, {rej} rejected, "
-                               f"{nf} not found{dup_txt} (partial).")
+                               f"{nf} not found{dup_txt}{ag_txt} (partial).")
                 else:
                     summary = (f"Upgrade done: {ok} added to library (fakes -> trash), "
-                               f"{rej} rejected, {nf} not found{dup_txt}.")
+                               f"{rej} rejected, {nf} not found{dup_txt}{ag_txt}.")
                 status.value = summary
                 state.last_upgraded += ok
                 show_buy_links(outcomes, Path(state.folder).name)
@@ -761,9 +764,18 @@ def main(page: ft.Page) -> None:
             except Exception as ex:  # noqa: BLE001
                 status.value = f"Upgrade error: {ex}"
             finally:
+                # Filet anti-ligne-figee : aucune track cochee ne doit rester sur
+                # "queued..." a l'infini. Si run_upgrade n'a pas remonte de statut final
+                # (ne devrait plus arriver), on neutralise la ligne ici.
+                stuck = PHASE_LABEL["queued"][0]
+                for rec in chosen:
+                    cell = state.row_status.get(rec.quality.path)
+                    if cell and cell[1].value == stuck:
+                        set_cell(state.row_status, rec.quality.path, "skipped", TXT_DIM, False)
                 lib_cancel_btn.visible = False
                 state.active_proc = None
                 set_busy(False)
+                page.update()
 
         threading.Thread(target=worker, daemon=True).start()
 

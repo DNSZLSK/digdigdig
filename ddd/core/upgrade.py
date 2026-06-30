@@ -46,6 +46,7 @@ ACT_ACQUIRED = "ACQUIRED"               # nouvelle piste authentique gardee en i
 ACT_TOO_SHORT = "TOO_SHORT"             # download trop court (preview/sample) -> jete
 ACT_WRONG_MATCH = "WRONG_MATCH"         # mauvais titre/artiste (match fuzzy foireux) -> jete
 ACT_DUPLICATE = "DUPLICATE"             # deja present (dans la liste ou deja dans l'inbox) -> saute
+ACT_ALREADY_GOOD = "ALREADY_GOOD"       # cochee a la main mais deja au-dessus de la barre -> rien a upgrader
 
 # Garde-fous post-download (sldl tourne en fuzzy ; c'est DDD qui filtre intelligemment)
 MIN_DURATION_S = 90        # < 90 s = quasi sûr un extrait / preview Soulseek
@@ -176,6 +177,7 @@ class UpgradePlan:
     items: List[WantItem] = field(default_factory=list)
     origin_by_key: Dict[str, str] = field(default_factory=dict)
     unparseable: List[UpgradeOutcome] = field(default_factory=list)
+    already_good: List[UpgradeOutcome] = field(default_factory=list)  # deja au-dessus de la barre
 
 
 def build_plan(scan_results, preset: str = quality.DEFAULT_PRESET) -> UpgradePlan:
@@ -192,7 +194,13 @@ def build_plan(scan_results, preset: str = quality.DEFAULT_PRESET) -> UpgradePla
         if q.verdict in (quality.SKIPPED, quality.ERROR):
             continue                   # pas un fichier audio exploitable
         if quality.is_accepted(q, preset):
-            continue                   # deja au-dessus du seuil -> rien a faire
+            # Deja au-dessus du seuil : rien a upgrader. On l'ENREGISTRE (au lieu de la
+            # dropper en silence) pour que l'appelant remonte un statut clair sur la ligne
+            # ("already good") au lieu de la laisser figee sur "queued..." cote GUI.
+            plan.already_good.append(UpgradeOutcome(
+                action=ACT_ALREADY_GOOD, artist="", title=q.filename,
+                original=q.path, note="already above the quality bar"))
+            continue
         # Resolveur de nom commun (nom propre -> tag-titre 'Artiste - Titre' -> tags -> deslug).
         # Coupe le cas piege ou l'artist tag est un compilateur ("Tibor Tury") et le vrai
         # couple est dans le tag titre ("John Kano - Havana Funk") -> recherche enfin valide.
@@ -361,9 +369,12 @@ def run_upgrade(
         scan_results = scan_folder(folder, exclude_names=exclude_names, progress=progress)
 
     plan = build_plan(scan_results, preset)
-    outcomes: List[UpgradeOutcome] = list(plan.unparseable)
-    if on_item:   # statut final immediat pour les noms illisibles (jamais telecharges)
-        for o in plan.unparseable:
+    # Pistes jamais telechargees -> statut final immediat (sinon la ligne GUI reste figee
+    # sur "queued...") : noms illisibles ET pistes deja au-dessus de la barre.
+    skipped = plan.unparseable + plan.already_good
+    outcomes: List[UpgradeOutcome] = list(skipped)
+    if on_item:
+        for o in skipped:
             on_item(o.original, "done", o.action)
 
     # Dedoublonnage a l'entree : ce qui est already in library -> DUPLICATE.

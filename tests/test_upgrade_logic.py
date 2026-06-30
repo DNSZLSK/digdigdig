@@ -98,7 +98,10 @@ def main():
     assert any(o.original == r"C:\lib\groove 2 me.wav" for o in outcomes), \
         "un fichier sans ' - ' doit etre cherche (titre-seul), pas ignore"
     assert all(o.action != up.ACT_UNPARSEABLE for o in outcomes), "plus de skip sur nom sans separateur"
-    assert all(o.original != r"C:\lib\Artist D - Real.flac" for o in outcomes), "le deja-accepte (LOSSLESS) hors want-list"
+    # le deja-accepte (LOSSLESS) n'est PAS telecharge, mais est desormais REPORTE
+    # (ACT_ALREADY_GOOD) au lieu d'etre droppe en silence -> la ligne GUI ne reste plus figee.
+    d_out = [o for o in outcomes if o.original == r"C:\lib\Artist D - Real.flac"]
+    assert d_out and d_out[0].action == up.ACT_ALREADY_GOOD, "le deja-accepte (LOSSLESS) -> already_good"
     print("OK run_upgrade : accepte depose, source sous seuil + upscale a la corbeille, fallback titre-seul")
 
     # === dedup : un fichier deja dans la bibliotheque -> DUPLICATE, source intacte ===
@@ -243,7 +246,13 @@ def main():
     # build_plan : le MEME HQ est skippe en dj_club (accepte) mais candidat en puriste
     assert not up.build_plan([hq], preset="dj_club").items, "HQ accepte en DJ Club -> pas de candidat"
     assert up.build_plan([hq], preset="puriste").items, "HQ candidat en Puriste"
+    # Fix anti-ligne-figee : une track acceptee n'est plus droppee en silence -> already_good
+    plan_hq = up.build_plan([hq], preset="dj_club")
+    assert plan_hq.already_good and not plan_hq.items, "HQ dj_club -> already_good (pas items)"
+    assert plan_hq.already_good[0].action == up.ACT_ALREADY_GOOD
+    assert plan_hq.already_good[0].original == hq.path, "origin = chemin source (cle ligne GUI)"
     print("OK is_accepted : HQ accepte DJ Club / refuse Audiophile+Puriste ; build_plan suit le preset")
+    print("OK already_good : track acceptee enregistree (plus de drop silencieux -> plus de ligne figee)")
 
     # === ban universel MP3 < 320 (jamais accepte, meme en DJ Club) ===
     mp3_192 = _qr(r"C:\lib\lo.mp3", quality.MAUVAIS, cutoff=19000.0, fclass="lossy")
