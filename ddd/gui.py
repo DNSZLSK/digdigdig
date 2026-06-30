@@ -80,8 +80,20 @@ COL_BAND = 84
 COL_STATUS = 232
 
 
+def _is_audio_row(qr) -> bool:
+    """Vrai si la ligne est un vrai fichier audio analysable (pas un SKIPPED/ERROR).
+
+    Les checkboxes ne sont verrouillees que pour ces non-audio. Tout vrai fichier reste
+    cochable a la main, MEME s'il passe deja la barre du preset : l'user veut pouvoir
+    choisir track par track (re-grab une track qu'il juge mauvaise a l'oreille meme si
+    le cutoff la dit bonne). `_is_upgradable` reste le "sous la barre" (selection par
+    defaut + compteur + filtre 'upgradable'), il ne pilote plus le disabled.
+    """
+    return qr.verdict not in (quality.SKIPPED, quality.ERROR)
+
+
 def _is_upgradable(qr, preset):
-    return qr.verdict not in (quality.SKIPPED, quality.ERROR) and not quality.is_accepted(qr, preset)
+    return _is_audio_row(qr) and not quality.is_accepted(qr, preset)
 
 # Statut live par ligne. Tuple = (libelle, couleur, ring_anime).
 # ring_anime=True -> petit spinner visible (phase en cours) ; False -> etat final fige.
@@ -553,7 +565,7 @@ def main(page: ft.Page) -> None:
         for idx, rec in capped:
             q = rec.quality
             checkbox = ft.Container(
-                ft.Checkbox(value=idx in state.selected, disabled=not _is_upgradable(q, preset),
+                ft.Checkbox(value=idx in state.selected, disabled=not _is_audio_row(q),
                             data=idx, on_change=_on_check, fill_color=PINK, check_color=BG),
                 width=COL_CHECK)
             title, artist = theme.track_title_artist(rec)
@@ -735,8 +747,11 @@ def main(page: ft.Page) -> None:
         threading.Thread(target=worker, daemon=True).start()
 
     def select_all_visible(_e) -> None:
+        # "Check all" coche toutes les lignes audio visibles (coherent avec les
+        # checkboxes maintenant toutes actives). Le "juste sous la barre" reste le
+        # defaut quand RIEN n'est coche (do_upgrade), pas ce bouton.
         for i, rec in enumerate(state.records):
-            if _visible(rec) and _is_upgradable(rec.quality, _preset()):
+            if _visible(rec) and _is_audio_row(rec.quality):
                 state.selected.add(i)
         render_table()
 
