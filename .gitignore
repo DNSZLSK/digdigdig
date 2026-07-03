@@ -1,5 +1,6 @@
 # Binaries downloaded
 bin/sldl/
+bin/fpcalc/
 bin/*.zip
 
 # PyInstaller build artifacts
@@ -21,6 +22,7 @@ dist/
 staging/
 .cache-dl/
 .genre-cache/
+.acoustid-cache/
 logs/
 inputs/*.csv
 inputs/*.json

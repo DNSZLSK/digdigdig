@@ -72,6 +72,7 @@ No need to be a developer: download the `.exe`, double-click, it's a window.
 - **YouTube set / playlist**: paste a set URL (YouTube / 1001Tracklists) or a **YouTube playlist** (each video = a track) -> DDD extracts the tracklist into a want-list (CSV).
 - **Single library**: everything that passes lands in `~/Music/DDD` (changeable in Settings), de-duplicated. Rejects go to the **trash** (recoverable), never hard-deleted.
 - **Sort by genre** (*Sort by genre* button / `ddd sort`): files your loose tracks into your own **vibe folders** through a cascade - the file's **ID3 genre tag**, then **Discogs** (+ MusicBrainz), and when both come up empty a **local audio model** (Discogs-EffNet, 400 Discogs styles) that reads the genre **from the spectrum** - so even an untagged, badly-named edit (`Track_01.flac`) lands in the right folder instead of `_INBOX`. The default set is house/techno-oriented (ACID, DEEPWATER, HOUSERZ, PROG, TECHNO, TRANCE, GARAGE, DISCO-FUNK, BREAKS-ELECTRO) and is **fully editable** in Settings. **Dry-run by default** - you preview, then Apply. Only loose files are touched, never your curated subfolders. (The audio model runs **on-device, no cloud**; by the MTG/UPF, CC BY-NC.)
+- **Identify - recover lost names** (*Identify* tab / `ddd identify`): files called `YH1`, `track01`, `unknown 04`? DDD reads each file's **acoustic fingerprint** (Chromaprint) and matches it against **AcoustID** (the open, MusicBrainz-backed database, same idea as Shazam) to recover *Artist - Title*. It **proposes**, you **confirm track by track** (confident matches pre-ticked, uncertain ones flagged), then it renames + tags only what you kept - **never a blind rename**. Underground / unreleased tracks that aren't in the database just stay untouched.
 - **Not found -> buy links**: whatever Soulseek can't find comes out as a clickable page (DDD logo + theme) with **Discogs** (vinyl marketplace, perfect for old pressings) and **Bandcamp** links to buy it.
 
 **The safety net: the spectrum is law.** Every download is re-audited by spectrum (FFT); **the declared format and bitrate are only used for the Soulseek search, never for the keep-or-reject decision.** The spectrum doesn't lie, tags do - that's what tells a real 320 / lossless apart from an upscale (an MP3 128 re-encoded as .flac or .wav, which Soulseek's filters can't see). A file is only kept if it passes three checks: **spectral** (above the preset's bar, not an upscale), **duration** (not a snippet / preview) and **title + artist identity** (the right track, not a wrong match). Otherwise -> trash.
@@ -132,6 +133,9 @@ playlists (yt-dlp). Everything is bundled into the `.exe` (no Python, no ffmpeg 
 
 # Rename a folder back to "Artist - Title" (from name + tags; dry-run, --apply to write)
 .\.venv\Scripts\python.exe -m ddd rename "C:\path\to\Music"
+
+# Identify no-name files by acoustic fingerprint (AcoustID); review, then --apply renames + tags
+.\.venv\Scripts\python.exe -m ddd identify "C:\path\to\Music"
 
 # Sort loose tracks into vibe folders by genre (Discogs/MusicBrainz; dry-run, --apply to move)
 .\.venv\Scripts\python.exe -m ddd sort "C:\path\to\Music" --library "C:\path\to\Music"

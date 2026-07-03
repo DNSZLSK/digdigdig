@@ -144,6 +144,33 @@ def read_tags(path) -> Dict[str, str]:
             "album": first("album"), "genre": first("genre")}
 
 
+def write_tags(path, *, artist: Optional[str] = None, title: Optional[str] = None) -> bool:
+    """Ecrit artist/title dans les tags via mutagen (easy), best-effort.
+
+    Symetrique de read_tags : n'ecrit que les cles fournies (non None), via l'interface
+    'easy' (uniforme ID3/Vorbis/MP4). Retourne False sans lever si le format ne porte pas
+    de tags (WAV) ou en cas d'erreur -- l'appelant (identify) traite le tag comme un bonus,
+    le renommage restant le signal principal.
+    """
+    if not _MUTAGEN:
+        return False
+    try:
+        mf = mutagen.File(str(path), easy=True)
+        if mf is None:
+            return False
+        if mf.tags is None:
+            mf.add_tags()
+        if artist is not None:
+            mf["artist"] = artist
+        if title is not None:
+            mf["title"] = title
+        mf.save()
+        return True
+    except Exception as e:  # noqa: BLE001
+        logger.debug("write_tags fail %s: %r", path, e)
+        return False
+
+
 # ---- Resolveur de nom : meilleur (artist, title) pour recherche + rename -----
 
 # Marques invisibles (ZWSP/ZWNJ/ZWJ/LRM/RLM/BOM) qui parasitent les tags exportes

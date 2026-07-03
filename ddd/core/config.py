@@ -19,6 +19,7 @@ _FILENAME = "config.json"
 # Cles connues (documentees) - le dict reste ouvert pour extension
 KNOWN_KEYS = (
     "discogs_token",
+    "acoustid_api_key",   # cle AcoustID (gratuite) pour `ddd identify` (empreinte -> titre)
     "discogs_username",   # pseudo Discogs (prerempli dans l'onglet Recuperer favoris)
     "bandcamp_username",  # pseudo Bandcamp (idem)
     "soulseek_user",

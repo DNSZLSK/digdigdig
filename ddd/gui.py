@@ -35,6 +35,7 @@ from .core import quality
 from .core import soulseek
 from .core import upgrade as upgrade_mod
 from .core import organize as organize_mod
+from .core import identify as identify_mod
 from .core import stores as stores_mod
 from .core import updates as updates_mod
 from .core.naming import match_key
@@ -196,6 +197,8 @@ class AppState:
         self.acquire_row_status: dict = {}    # favoris, keye par match_key(artist, titre)
         self.djset_row_status: dict = {}      # onglet YouTube set, meme keyage
         self.sort_report = None               # dernier plan de tri (dry-run) en attente d'apply
+        self.identify_results: list = []      # onglet Identify : resultats du dry-run AcoustID
+        self.identify_selected: set = set()   # chemins CONFIRMES a renommer (cases cochees)
         # Compteurs du recap pied de page (mis a jour par scan / upgrade).
         self.last_upgraded: int = 0
         self.last_buylinks: int = 0
@@ -252,7 +255,8 @@ def main(page: ft.Page) -> None:
 
     file_picker = ft.FilePicker()
     dl_picker = ft.FilePicker()   # pour choisir le dossier bibliotheque dans Reglages
-    page.overlay.extend([file_picker, dl_picker])
+    id_picker = ft.FilePicker()   # pour choisir le dossier a identifier (onglet Identify)
+    page.overlay.extend([file_picker, dl_picker, id_picker])
 
     # Indicateur "slsk connected" (point + texte) : signal cheap, local, pas de reseau.
     # Vert = des creds Soulseek sont lisibles (env / config ddd / slskd) ; gris sinon.
@@ -279,9 +283,10 @@ def main(page: ft.Page) -> None:
         state.busy = b
         progress.visible = b
         for btn in (browse_btn, sort_browse_btn, scan_btn, acquire_btn, djset_fetch_btn,
-                    dl_browse_btn, sort_btn, sort_apply_btn):
+                    dl_browse_btn, sort_btn, sort_apply_btn, id_browse_btn, identify_btn):
             btn.disabled = b
         upgrade_btn.disabled = b or not state.records
+        identify_apply_btn.disabled = b or not state.identify_selected
         source_dd.disabled = b
         page.update()
 
@@ -396,7 +401,8 @@ def main(page: ft.Page) -> None:
         lib_cancel_btn.disabled = True
         acq_cancel_btn.disabled = True
         dj_cancel_btn.disabled = True
-        status.value = "Cancelling... (stopping the download)"
+        id_cancel_btn.disabled = True
+        status.value = "Cancelling..."
         proc = state.active_proc
         if proc is not None:
             try:
@@ -1086,6 +1092,185 @@ def main(page: ft.Page) -> None:
                        state.djset_row_status, dj_cancel_btn)
 
     # ====================================================================
+    #  Identify : retrouve 'Artiste - Titre' de fichiers au nom perdu par
+    #  empreinte acoustique (fpcalc/Chromaprint -> AcoustID). Dry-run d'abord ;
+    #  l'user CONFIRME piste par piste (cases) PUIS renomme+tague. La validation a
+    #  montre qu'aucun seuil ne garantit la justesse (faux positifs a 1.0) -> la
+    #  confirmation humaine est la vraie surete, jamais de renommage a l'aveugle.
+    # ====================================================================
+    identify_folder_field = ft.TextField(
+        width=360, dense=True, text_size=13, color=TXT,
+        prefix_icon=ft.Icons.FOLDER, hint_text="folder of no-name / mislabeled tracks",
+        bgcolor=FIELD_BG, border_color=BORDER, border_radius=8, focused_border_color=PINK)
+    identify_table_col = ft.ListView(expand=True, spacing=2)
+
+    def on_id_folder_picked(e) -> None:
+        if e.path:
+            identify_folder_field.value = e.path
+            page.update()
+
+    id_picker.on_result = on_id_folder_picked
+
+    def id_browse(_e) -> None:
+        id_picker.get_directory_path(dialog_title="Choose the folder to identify")
+
+    def _refresh_identify_apply() -> None:
+        n = len(state.identify_selected)
+        identify_apply_btn.text = f"Rename + tag selection · {n}"
+        identify_apply_btn.disabled = state.busy or n == 0
+        try:
+            identify_apply_btn.update()
+        except Exception:  # noqa: BLE001
+            pass
+
+    def _on_identify_check(e) -> None:
+        path = e.control.data
+        if e.control.value:
+            state.identify_selected.add(path)
+        else:
+            state.identify_selected.discard(path)
+        _refresh_identify_apply()
+
+    def render_identify_table() -> None:
+        identify_table_col.controls.clear()
+        results = state.identify_results
+        if not results:
+            identify_table_col.controls.append(
+                ft.Text("Pick a folder, then Identify.", color=TXT_DIM))
+            page.update()
+            return
+        matched = [r for r in results
+                   if r.status in (identify_mod.MATCH, identify_mod.LOW_CONFIDENCE) and r.best]
+        if not matched:
+            identify_table_col.controls.append(ft.Text(
+                f"No AcoustID match among the {len(results)} files - underground / unreleased "
+                "tracks aren't in the database. Nothing to rename.", color=TXT_DIM))
+            page.update()
+            return
+        # MATCH d'abord (pre-coches), puis LOW_CONFIDENCE (a revoir), score decroissant.
+        order = {identify_mod.MATCH: 0, identify_mod.LOW_CONFIDENCE: 1}
+        matched.sort(key=lambda r: (order[r.status], -r.best.score))
+        for r in matched:
+            is_match = r.status == identify_mod.MATCH
+            checkbox = ft.Container(
+                ft.Checkbox(value=r.path in state.identify_selected, data=r.path,
+                            on_change=_on_identify_check, fill_color=PINK, check_color=BG),
+                width=COL_CHECK)
+            proposed = ft.Text(f"{r.best.artist} - {r.best.title}", size=13,
+                               weight=ft.FontWeight.W_600, color=TXT, no_wrap=True)
+            cur = ft.Text(Path(r.path).name, size=11, color=TXT_DIM, no_wrap=True)
+            badge_col = theme.GREEN if is_match else theme.TAN
+            badge = ft.Container(
+                ft.Text(f"{r.best.score:.0%}" + ("" if is_match else " ?"), size=10,
+                        weight=ft.FontWeight.W_600, color=badge_col, font_family=FONT_MONO,
+                        no_wrap=True),
+                padding=ft.padding.symmetric(vertical=3, horizontal=8), bgcolor=SURFACE,
+                border_radius=4, width=64, alignment=ft.alignment.center)
+            row = ft.Row([checkbox, ft.Column([proposed, cur], spacing=2, expand=True), badge],
+                         spacing=12, vertical_alignment=ft.CrossAxisAlignment.CENTER)
+            identify_table_col.controls.append(ft.Container(
+                row, padding=ft.padding.symmetric(vertical=8, horizontal=4),
+                border=ft.border.only(bottom=ft.BorderSide(1, BORDER))))
+        _refresh_identify_apply()
+        page.update()
+
+    def do_identify(_e) -> None:
+        if state.busy:
+            return
+        folder = (identify_folder_field.value or "").strip()
+        if not folder or not Path(folder).exists():
+            status.value = "Invalid folder."
+            page.update()
+            return
+        if not identify_mod.resolve_api_key():
+            status.value = ("AcoustID key missing - set it via `ddd config set acoustid_api_key` "
+                            "or the ACOUSTID_API_KEY env var.")
+            page.update()
+            return
+
+        def worker() -> None:
+            set_busy(True)
+            state.cancel_requested = False
+            id_cancel_btn.visible = True
+            id_cancel_btn.disabled = False
+            state.identify_results = []
+            state.identify_selected = set()
+            identify_table_col.controls.clear()
+            progress.value = None
+            status.value = "Fingerprinting + querying AcoustID (first run is slow, then cached)..."
+            page.update()
+            try:
+                def prog(i: int, total: int, f: Path) -> None:
+                    progress.value = i / total if total else None
+                    status.value = f"Identify {i}/{total}  {Path(f).name[:50]}"
+                    try:
+                        progress.update()
+                        status.update()
+                    except Exception:  # noqa: BLE001
+                        pass
+
+                results = identify_mod.identify_folder(
+                    folder, api_key=identify_mod.resolve_api_key(),
+                    exclude_names=current_excludes(), cache_dir=paths.acoustid_cache_dir(),
+                    apply=False, cancel=is_cancelled, progress=prog)
+                state.identify_results = results
+                # Pre-coche les MATCH (haute confiance) ; LOW_CONFIDENCE laisses a revoir.
+                state.identify_selected = {r.path for r in results
+                                           if r.status == identify_mod.MATCH and r.best}
+                render_identify_table()
+                from collections import Counter
+                c = Counter(r.status for r in results)
+                nm, nl = c.get(identify_mod.MATCH, 0), c.get(identify_mod.LOW_CONFIDENCE, 0)
+                nn = c.get(identify_mod.NO_MATCH, 0)
+                tail = " (cancelled)" if state.cancel_requested else ""
+                status.value = (f"{nm} confident, {nl} low-confidence, {nn} no-match{tail}. "
+                                "Review the names, then rename the selection.")
+            except (identify_mod.FpcalcError, identify_mod.AcoustidAuthError) as ex:
+                status.value = str(ex)
+            except Exception as ex:  # noqa: BLE001
+                status.value = f"Identify error: {ex}"
+            finally:
+                id_cancel_btn.visible = False
+                set_busy(False)
+
+        threading.Thread(target=worker, daemon=True).start()
+
+    def do_identify_apply(_e) -> None:
+        if state.busy or not state.identify_results:
+            return
+        by_path = {r.path: r for r in state.identify_results}
+        sel = [by_path[p] for p in state.identify_selected if p in by_path and by_path[p].best]
+        if not sel:
+            status.value = "Nothing selected to rename."
+            page.update()
+            return
+
+        def worker() -> None:
+            set_busy(True)
+            progress.value = None
+            status.value = f"Renaming + tagging {len(sel)} files..."
+            page.update()
+            try:
+                items = [(r.path, r.best.artist, r.best.title) for r in sel]
+                res = identify_mod.apply_selected(items)
+                applied = sum(1 for _p, ok, _n in res if ok)
+                # Les fichiers appliques n'existent plus sous l'ancien nom -> on les retire.
+                done = {p for p, ok, _n in res if ok}
+                state.identify_results = [r for r in state.identify_results if r.path not in done]
+                state.identify_selected = {p for p in state.identify_selected if p not in done}
+                render_identify_table()
+                summary = f"Identify: {applied}/{len(sel)} renamed + tagged."
+                status.value = summary
+                _banner(summary, bool(applied))
+            except Exception as ex:  # noqa: BLE001
+                status.value = f"Apply error: {ex}"
+            finally:
+                set_busy(False)
+                page.update()
+
+        threading.Thread(target=worker, daemon=True).start()
+
+    # ====================================================================
     #  Reglages (panneau masque, declenche par l'engrenage)
     # ====================================================================
     slsk_user = ft.TextField(label="Soulseek user", value=cfg.get("soulseek_user", ""), width=240)
@@ -1270,6 +1455,15 @@ def main(page: ft.Page) -> None:
                                       on_click=do_acquire_djset, style=_ink_style)
     dj_cancel_btn = ft.OutlinedButton(text="Cancel", icon=ft.Icons.CANCEL,
                                       on_click=do_cancel, visible=False)
+    id_browse_btn = ft.OutlinedButton(text="Browse", icon=ft.Icons.FOLDER_OPEN,
+                                      on_click=id_browse, style=_outline_style)
+    identify_btn = ft.FilledButton(
+        text="Identify", icon=ft.Icons.FINGERPRINT, on_click=do_identify, style=_ink_style,
+        tooltip="Recover 'Artist - Title' via acoustic fingerprint (AcoustID)")
+    identify_apply_btn = ft.FilledButton(text="Rename + tag selection · 0", icon=ft.Icons.CHECK,
+                                         on_click=do_identify_apply, disabled=True, style=_pink_style)
+    id_cancel_btn = ft.OutlinedButton(text="Cancel", icon=ft.Icons.CANCEL,
+                                      on_click=do_cancel, visible=False)
     feedback_btn = ft.IconButton(icon=ft.Icons.FAVORITE_BORDER, icon_color=TXT_DIM,
                                  tooltip="Like the app / a suggestion", on_click=open_feedback)
     settings_btn = ft.IconButton(icon=ft.Icons.SETTINGS, icon_color=TXT_DIM,
@@ -1362,11 +1556,26 @@ def main(page: ft.Page) -> None:
         ], expand=True, spacing=10),
         padding=ft.padding.only(top=6), expand=True, bgcolor=BG)
 
+    identify_tab = ft.Container(
+        content=ft.Column([
+            ft.Text("Recover 'Artist - Title' for no-name files (YH1, track01...) by acoustic "
+                    "fingerprint (AcoustID). Review the proposed names, tick the ones to keep, "
+                    "then rename - nothing is touched until you click. Underground / unreleased "
+                    "tracks may not match.", size=12, color=TXT_DIM),
+            # PAS de wrap=True : le spacer expand ci-dessous casserait le layout (carre gris).
+            ft.Row([identify_folder_field, id_browse_btn, identify_btn,
+                    ft.Container(expand=True), identify_apply_btn, id_cancel_btn],
+                   spacing=8, vertical_alignment=ft.CrossAxisAlignment.CENTER),
+            _table_surface(None, identify_table_col),
+        ], expand=True, spacing=10),
+        padding=ft.padding.only(top=6), expand=True, bgcolor=BG)
+
     # Nav custom (PAS ft.Tabs : sa TabBarView donne une hauteur non bornee a son contenu
     # -> expand casse et un fond gris Material transparait. Ici le contenu vit dans un
     # Container creme que l'on pilote a la main -> fond uniforme + expand correct).
-    _tab_defs = [("Library", library_tab), ("Get favorites", acquire_tab),
-                 ("YouTube set", djset_tab), ("Sort by genre", sort_tab)]
+    _tab_defs = [("Library", library_tab), ("Identify", identify_tab),
+                 ("Get favorites", acquire_tab), ("YouTube set", djset_tab),
+                 ("Sort by genre", sort_tab)]
     tab_content = ft.Container(content=library_tab, expand=True, bgcolor=BG)
     tab_texts: list = []
     tab_buttons: list = []

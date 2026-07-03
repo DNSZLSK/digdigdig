@@ -52,7 +52,7 @@ ddd/
 │
 ├── ddd/                        # >>> LE COEUR ACTUEL : package Python portable <<<
 │   ├── __main__.py             # `python -m ddd ...`
-│   ├── cli.py                  # CLI : scan | upgrade | sort | rename | buy | scrape | acquire | import | config | gui
+│   ├── cli.py                  # CLI : scan | upgrade | sort | rename | identify | buy | scrape | acquire | import | config | gui
 │   ├── gui.py                  # fenetre native Flet (0.28.x)
 │   ├── paths.py                # chemins frozen-aware (dev vs .exe PyInstaller)
 │   └── core/
@@ -60,7 +60,8 @@ ddd/
 │       ├── scan.py             # scan index-free d'un dossier -> rapport (qualite+nom+doublons)
 │       ├── tokenize.py         # tokens/recall/precision/version (port de audit-staging.ps1)
 │       ├── audit.py            # audit nom<->tags ID3 (mutagen), sans _index.csv
-│       ├── naming.py           # parse "Artiste - Titre" depuis un nom de fichier
+│       ├── naming.py           # parse "Artiste - Titre" depuis un nom de fichier (+ read/write_tags)
+│       ├── identify.py         # `ddd identify` : empreinte fpcalc/Chromaprint -> AcoustID -> titre
 │       ├── soulseek.py         # wrapper sldl (creds, run, lecture _index.csv)
 │       ├── upgrade.py          # boucle upgrade + RE-AUDIT anti-upscale ; acquire_rows()
 │       ├── genre.py            # lookup style/genre par 'Artiste - Titre' (Discogs+MusicBrainz+cache)
@@ -146,6 +147,27 @@ sur quoi on construit désormais.
   ex. `artist="Tibor Tury"` + vrai couple dans le tag titre). Dry-run par défaut ; `--apply`
   écrit, `--dedup` vire les copies byte-identiques. Le même résolveur alimente `upgrade`/`buy`
   (`search_title` nettoie aussi les `[label, année]` côté requête).
+- ✅ **`ddd identify <dossier>`** : retrouve `Artiste - Titre` pour des fichiers au nom perdu
+  (YH1, YH2, track01...) par **empreinte acoustique** (principe Shazam), PAS par le spectre (le
+  spectre juge la qualité, jamais l'identité). Chaîne `fpcalc`/Chromaprint (empreinte locale) ->
+  **AcoustID** (gratuit, adossé à MusicBrainz) ; chaque match ramène aussi le MBID. Dry-run par
+  défaut ; `--apply` renomme + tague (mutagen) les seuls matchs **au-dessus du seuil** (`--min-score`,
+  déf 0.7), les low-confidence sont montrés pour revue, jamais appliqués (on ne renomme jamais à
+  l'aveugle). `--acquire` **boucle** sur le pipeline existant : titre retrouvé -> `acquire_rows` va
+  chercher le vrai lossless sur Soulseek (un YHx pourri redevient une piste nommée ET lossless).
+  Cache disque par empreinte (miss inclus, erreur réseau jamais cachée). Cœur + CLI + **onglet GUI
+  "Identify"** (confirmation piste-par-piste : dry-run -> cases à cocher -> `apply_selected` renomme+
+  tague la seule sélection) + `--validate` + 24 tests. **Prouvé en réel** : fpcalc 1.6.0 (`bin/fpcalc/`,
+  gitignored comme sldl ; FFmpeg statique -> pas de ffmpeg système) + clé AcoustID bakée dans
+  `DEFAULT_ACOUSTID_KEY` (`NEClaspw7R`). **Validation sur 465 fichiers (la biblio déjà nommée = ground
+  truth, via `ddd identify --validate`)** : recall **36%** (longue traîne underground), précision
+  **~90-95% au mieux, aucun seuil n'atteint 99%** (vrais faux positifs même à score 1.0 : samples/edits).
+  Garde-durée testé puis **rejeté** (la durée est redondante avec l'empreinte : les FP ont un delta ~1s
+  comme les corrects ; ça MARCHE côté Soulseek car là le matcher est textuel). Garde-artiste écarté
+  (pollué par les noms de fichiers sales). **Conclusion : aucun garde auto ne rend le rename sûr -> la
+  confirmation humaine EST la sûreté** (d'où l'onglet GUI, dry-run/apply côté CLI). `--min-score` défaut
+  **0.9** = "candidat sérieux", pas "sûr". **Reste** : binaires fpcalc Mac/Linux (bundle .spec déjà
+  conditionnel), commit/push.
 - ✅ **`ddd sort <dossier>`** : range les tracks **en vrac** dans TES dossiers de vibe (ACID,
   DEEPWATER, HOUSERZ, PROG, TECHNO, TRANCE, GARAGE, DISCO-FUNK, BREAKS-ELECTRO) par **lookup de
   genre** (`genre.py` : Discogs Database Search -> `style`, repli MusicBrainz, cache disque incl.

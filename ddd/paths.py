@@ -50,6 +50,16 @@ def sldl_config() -> Path:
     return resource_base() / "config" / "sldl.conf"
 
 
+def fpcalc_exe() -> Path:
+    """Binaire Chromaprint `fpcalc` (empreinte acoustique pour `ddd identify`).
+
+    Resolution frozen-aware comme sldl : embarque sous bin/fpcalc/ (a fournir par
+    plateforme, cf acoustid.org/chromaprint). Absent -> identify le signale clairement.
+    """
+    name = "fpcalc.exe" if platform.system() == "Windows" else "fpcalc"
+    return resource_base() / "bin" / "fpcalc" / name
+
+
 def app_icon() -> Path:
     """Icone DDD (.ico) pour la fenetre + l'exe (embarquee, frozen-aware)."""
     return resource_base() / "ddd" / "assets" / "ddd.ico"
@@ -114,3 +124,8 @@ def outputs_dir() -> Path:
 def genre_cache_dir() -> Path:
     """Cache du lookup de genre (1 JSON par 'artiste - titre', miss inclus)."""
     return _ensure(data_base() / ".genre-cache")
+
+
+def acoustid_cache_dir() -> Path:
+    """Cache des lookups AcoustID (1 JSON par empreinte, miss inclus)."""
+    return _ensure(data_base() / ".acoustid-cache")

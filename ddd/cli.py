@@ -1,4 +1,4 @@
-"""CLI DDD : scan / upgrade / sort / rename / buy / scrape / acquire / import / config / gui."""
+"""CLI DDD : scan / upgrade / sort / rename / identify / buy / scrape / acquire / import / config / gui."""
 
 from __future__ import annotations
 
@@ -18,6 +18,7 @@ from .core.scan import (
 )
 from .core import upgrade as upgrade_mod
 from .core import rename as rename_mod
+from .core import identify as identify_mod
 from .core import organize as organize_mod
 from .core import genre as genre_mod
 from .core import stores as stores_mod
@@ -238,6 +239,143 @@ def _cmd_rename(args: argparse.Namespace) -> int:
         print(f"\nLog: {rep.log_path}")
     if not args.apply:
         print("\n(dry-run) Re-run with --apply to write; add --dedup to delete copies.")
+    return 0
+
+
+def _cmd_identify(args: argparse.Namespace) -> int:
+    from collections import Counter
+
+    folder = Path(args.folder)
+    if not folder.exists():
+        print(f"folder not found: {folder}", file=sys.stderr)
+        return 2
+
+    api_key = identify_mod.resolve_api_key(getattr(args, "api_key", "") or "")
+    if not api_key:
+        print("AcoustID API key required to identify tracks. It's free:\n"
+              "  1. create one at https://acoustid.org/new-application\n"
+              "  2. ddd config set acoustid_api_key <key>   (or set $ACOUSTID_API_KEY)",
+              file=sys.stderr)
+        return 2
+
+    if getattr(args, "validate", False):
+        return _cmd_identify_validate(args, folder, api_key)
+
+    def progress(i: int, total: int, f: Path) -> None:
+        if args.verbose or i == total or i % 25 == 0:
+            print(f"  [{i}/{total}] {Path(f).name}", file=sys.stderr)
+
+    mode = "APPLIED" if args.apply else "DRY-RUN"
+    print(f"Identify {folder}   [{mode}]", file=sys.stderr)
+    print("(acoustic fingerprint -> AcoustID/MusicBrainz; only confident matches are renamed)",
+          file=sys.stderr)
+    try:
+        results = identify_mod.identify_folder(
+            folder, api_key=api_key, exclude_names=args.exclude,
+            cache_dir=paths.acoustid_cache_dir(), min_score=args.min_score,
+            limit=args.limit, apply=args.apply, outputs_dir=paths.outputs_dir(),
+            progress=progress)
+    except identify_mod.AcoustidAuthError as e:
+        print(f"\n{e}\nCheck your AcoustID key (ddd config set acoustid_api_key <key>).",
+              file=sys.stderr)
+        return 1
+    except identify_mod.FpcalcError as e:
+        print(f"\n{e}", file=sys.stderr)
+        return 1
+
+    counts = Counter(r.status for r in results)
+    print(f"\n=== Identify: {folder.name} ===  [{mode}]")
+    for status in (identify_mod.MATCH, identify_mod.LOW_CONFIDENCE,
+                   identify_mod.NO_MATCH, identify_mod.ERROR):
+        if counts.get(status):
+            print(f"  {status:<15} {counts[status]:>5}")
+
+    matches = [r for r in results if r.status == identify_mod.MATCH]
+    if matches:
+        tag = "RENAMED" if args.apply else "WOULD IDENTIFY"
+        print(f"\n  --- {len(matches)} {tag} ---")
+        for r in matches:
+            print(f"  {Path(r.path).name}")
+            print(f"     -> {r.proposed_name}   ({r.best.score:.0%})")
+
+    low = [r for r in results if r.status == identify_mod.LOW_CONFIDENCE]
+    if low:
+        print(f"\n  --- {len(low)} low-confidence (shown for review, never auto-applied) ---")
+        for r in low[:20]:
+            b = r.best
+            print(f"  {Path(r.path).name}")
+            print(f"     ? {b.artist} - {b.title}   ({b.score:.0%})")
+        if len(low) > 20:
+            print(f"  ... +{len(low) - 20} more (see the CSV)")
+
+    if args.verbose:
+        for r in (r for r in results if r.status == identify_mod.ERROR):
+            print(f"  ERROR  {Path(r.path).name}: {r.note}")
+
+    # Boucle DDD : une fois le titre retrouve, on va chercher son vrai lossless sur Soulseek.
+    if getattr(args, "acquire", False) and matches:
+        return _acquire_rows_now(identify_mod.to_want_rows(results))
+
+    if not args.apply:
+        print("\n(dry-run) Re-run with --apply to rename + tag the matches. "
+              "Add --acquire to fetch their real lossless.")
+    return 0
+
+
+def _cmd_identify_validate(args: argparse.Namespace, folder: Path, api_key: str) -> int:
+    """`ddd identify --validate` : cale le seuil sur la biblio deja nommee (verite terrain)."""
+    def progress(i: int, total: int, f: Path) -> None:
+        if args.verbose or i == total or i % 25 == 0:
+            print(f"  [{i}/{total}] {Path(f).name}", file=sys.stderr)
+
+    print(f"Validate identify on {folder}  (dry-run, compares to existing names)", file=sys.stderr)
+    print("(ground truth = files already correctly named; nothing is renamed)", file=sys.stderr)
+    try:
+        rows = identify_mod.validate_folder(
+            folder, api_key=api_key, cache_dir=paths.acoustid_cache_dir(),
+            exclude_names=args.exclude, sample=args.sample,
+            outputs_dir=paths.outputs_dir(), progress=progress)
+    except (identify_mod.AcoustidAuthError, identify_mod.FpcalcError) as e:
+        print(f"\n{e}", file=sys.stderr)
+        return 1
+    if not rows:
+        print("\nNo confidently-named files to validate against here.", file=sys.stderr)
+        return 0
+
+    s = identify_mod.summarize_validation(rows)
+    print(f"\n=== Identify validate: {folder.name} ===")
+    print(f"ground truth: {s['n_total']} confidently-named files  |  matched: {s['n_match']}  "
+          f"no-match: {s['n_no_match']}  (recall {s['recall']:.0%})")
+
+    hdr = f"  {'band':<12}{'N':>6}{'correct':>9}{'diff-ver':>9}{'wrong':>7}{'precision':>11}"
+    print("\nprecision by score band (strict: diff-version is NOT auto-renameable):")
+    print(hdr)
+    for b in s["bands"]:
+        if b["n"] == 0:
+            continue
+        label = f"< {b['hi']:.2f}" if b["lo"] == 0 else f"{b['lo']:.2f}-{min(b['hi'], 1.0):.2f}"
+        prec = f"{b['precision']:.1%}" if b["precision"] is not None else "-"
+        print(f"  {label:<12}{b['n']:>6}{b['correct']:>9}{b['diff_version']:>9}"
+              f"{b['wrong']:>7}{prec:>11}")
+
+    print("\ncumulative (accept all matches >= threshold):")
+    print(f"  {'>= thr':<12}{'N':>6}{'correct':>9}{'diff-ver':>9}{'wrong':>7}{'precision':>11}")
+    for c in s["cumulative"]:
+        if c["n"] == 0:
+            continue
+        prec = f"{c['precision']:.1%}" if c["precision"] is not None else "-"
+        print(f"  {'>= ' + format(c['threshold'], '.2f'):<12}{c['n']:>6}{c['correct']:>9}"
+              f"{c['diff_version']:>9}{c['wrong']:>7}{prec:>11}")
+
+    if s["recommended"] is not None:
+        note = "" if abs(s["recommended"] - identify_mod.MIN_SCORE) < 1e-9 \
+            else f"  (current default {identify_mod.MIN_SCORE})"
+        print(f"\n-> recommended --min-score = {s['recommended']:.2f}  "
+              f"(lowest with >= {s['target']:.0%} precision, N >= {s['min_n']}){note}")
+    else:
+        print(f"\n-> no threshold hit {s['target']:.0%} precision with N >= {s['min_n']} "
+              "(bigger sample needed, or coverage too thin here)")
+    print(f"\nPer-file CSV: {paths.outputs_dir() / ('identify_validate_' + folder.name + '.csv')}")
     return 0
 
 
@@ -534,7 +672,7 @@ def _cmd_config(args: argparse.Namespace) -> int:
         for k in config_mod.KNOWN_KEYS:
             if k in cfg:
                 val = cfg[k]
-                if "pass" in k or "token" in k:
+                if "pass" in k or "token" in k or "api_key" in k:
                     val = "***" + str(val)[-4:] if val else ""
                 print(f"  {k} = {val}")
         return 0
@@ -620,6 +758,28 @@ def build_parser() -> argparse.ArgumentParser:
                        help="subfolder to ignore (repeatable)")
     p_ren.add_argument("-v", "--verbose", action="store_true", help="also show files already clean")
     p_ren.set_defaults(func=_cmd_rename)
+
+    p_id = sub.add_parser(
+        "identify",
+        help="recover 'Artist - Title' for no-name files via acoustic fingerprint (AcoustID)")
+    p_id.add_argument("folder", help="folder of unnamed/mislabeled tracks to identify")
+    p_id.add_argument("--apply", action="store_true",
+                      help="rename + tag confident matches (default: dry-run, nothing touched)")
+    p_id.add_argument("--acquire", action="store_true",
+                      help="after identifying, fetch the real lossless of each match (Soulseek)")
+    p_id.add_argument("--min-score", type=float, default=identify_mod.MIN_SCORE, metavar="S",
+                      help=f"confidence 0..1 to auto-accept a match (default {identify_mod.MIN_SCORE})")
+    p_id.add_argument("--api-key", help="AcoustID API key (else $ACOUSTID_API_KEY or ddd config)")
+    p_id.add_argument("--validate", action="store_true",
+                      help="calibrate the threshold: match already-named files and print "
+                           "precision per score band (renames nothing)")
+    p_id.add_argument("--sample", type=int, default=0, metavar="N",
+                      help="--validate: random sample of N already-named files (0 = all)")
+    p_id.add_argument("-x", "--exclude", action="append", default=[], metavar="NAME",
+                      help="subfolder to ignore (repeatable)")
+    p_id.add_argument("-n", "--limit", type=int, default=0, help="limit to N files (smoke test)")
+    p_id.add_argument("-v", "--verbose", action="store_true", help="show each file + errors")
+    p_id.set_defaults(func=_cmd_identify)
 
     p_sort = sub.add_parser("sort",
                             help="auto-file loose tracks into your vibe folders (genre lookup)")

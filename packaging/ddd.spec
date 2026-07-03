@@ -38,6 +38,13 @@ datas = [
     (str(ROOT / "config"), "config"),
     (str(ROOT / "ddd" / "assets"), "ddd/assets"),
 ]
+
+# fpcalc (Chromaprint) pour `ddd identify` : embarque SI present (binaire par plateforme,
+# a deposer sous bin/fpcalc/). Conditionnel -> un build sans le binaire ne casse pas ;
+# identify signale alors clairement que l'empreinte n'est pas dispo.
+_fpcalc_dir = ROOT / "bin" / "fpcalc"
+if _fpcalc_dir.exists():
+    datas.append((str(_fpcalc_dir), "bin/fpcalc"))
 binaries = []
 hiddenimports = ["ddd", "ddd.gui", "ddd.cli"]
 
