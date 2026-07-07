@@ -126,6 +126,24 @@ def main():
     assert up.ACT_REPLACED in gui_actions and up.ACT_REJECTED_FAKE in gui_actions
     print("OK run_upgrade : chemin GUI (ScanRecord) sans crash")
 
+    # === on_chunk : le moteur remonte la progression par LOT (feedback GUI "batch i/N") ===
+    # Regression du bug remonte par le testeur : sans repere de lot la barre restait indeterminee
+    # = fenetre "figee" en apparence sur un gros run. Le moteur DOIT appeler on_chunk(idx, total)
+    # en tete de chaque lot sldl ; c'est le hook que la GUI branche pour la barre determinee + ETA.
+    lib_ch = base / "_lib_chunk"
+    lib_ch.mkdir(exist_ok=True)
+    _mk(cache / "Artist A - Good.flac")
+    _mk(cache / "Artist B - Upscale.flac")
+    chunk_calls = []
+    up.run_upgrade("C:\\lib", root=ROOT, staging_dir=cache, download_dir=lib_ch,
+                   scan_results=scan, preset="dj_club", fallback_profile=None,
+                   on_chunk=lambda idx, total: chunk_calls.append((idx, total)))
+    assert chunk_calls, "on_chunk doit etre appele (sinon la GUI n'a aucun repere de progression)"
+    assert chunk_calls[0][0] == 1, f"le 1er lot est indexe a 1 : {chunk_calls}"
+    assert all(t == chunk_calls[0][1] for _, t in chunk_calls), "total_chunks stable sur le run"
+    assert chunk_calls[-1][0] == chunk_calls[0][1], f"le dernier idx == total_chunks : {chunk_calls}"
+    print("OK on_chunk : progression par lot remontee (feedback batch i/N pour la GUI)")
+
     # === acquire_rows : depose en bibliotheque, cle match_key, dedup liste ===
     lib3 = base / "_lib3"
     lib3.mkdir(exist_ok=True)

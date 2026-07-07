@@ -16,6 +16,7 @@ import shutil
 import socket
 import subprocess
 import sys
+import time
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Dict, List, Optional, Sequence
@@ -364,6 +365,14 @@ def run_sldl(
     logger.info("sldl: %s", safe)
 
     log_fh = open(log_path, "a", encoding="utf-8") if log_path else None
+    if log_fh:
+        # En-tete horodatee a chaque appel sldl (= chaque lot). Sans repere temporel le log est
+        # intracable : impossible de dire QUAND un run a demarre ni depuis combien de temps il
+        # rame sur la meme piste (retour testeur : "no timestamps in the log, hard to
+        # troubleshoot when / what was happening"). Date complete ici, HH:MM:SS par ligne apres.
+        log_fh.write(f"\n===== {time.strftime('%Y-%m-%d %H:%M:%S')}  sldl start"
+                     f"  profile={profile}  input={input_csv.name} =====\n")
+        log_fh.flush()
     try:
         proc = subprocess.Popen(args, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
                                 text=True, encoding="utf-8", errors="replace",
@@ -379,7 +388,10 @@ def run_sldl(
             else:
                 print(line, file=sys.stderr)
             if log_fh:
-                log_fh.write(line + "\n")
+                # HH:MM:SS + flush par ligne : un run fige montre alors sa DERNIERE ligne
+                # horodatee (sinon bufferisee, invisible tant que le process n'a pas rendu).
+                log_fh.write(f"[{time.strftime('%H:%M:%S')}] {line}\n")
+                log_fh.flush()
             if fatal_line is None and any(m in line for m in _FATAL_MARKERS):
                 fatal_line = line   # 1ere ligne d'echec fatal (port/login/crash)
             # Une fois l'echec repere, on collecte les lignes de raison qui suivent (sldl

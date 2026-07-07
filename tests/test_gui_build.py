@@ -45,6 +45,20 @@ def main():
         "les 3 FilePicker (dossier + inbox + identify) doivent etre dans overlay"
     assert callable(gui.run)
 
+    # _fmt_eta : formatage de l'ETA du feedback upgrade (status "batch i/N · ~ETA left")
+    assert gui._fmt_eta(0) == "0s"
+    assert gui._fmt_eta(45) == "45s"
+    assert gui._fmt_eta(90) == "1m"
+    assert gui._fmt_eta(3600) == "1h00"
+    assert gui._fmt_eta(4920) == "1h22"
+    assert gui._fmt_eta(-5) == "0s", "un ETA negatif est clampe a 0"
+
+    # la legende couvre CHAQUE statut reellement rendu (pas de trou : verdict/phase/action)
+    for v in (gui.quality.LOSSLESS, gui.quality.HQ, gui.quality.DOUTEUX, gui.quality.MAUVAIS):
+        assert v in gui.VERDICT_HELP, f"verdict {v} sans explication dans la legende"
+    for act in gui.ACTION_LABEL:
+        assert act in gui.ACTION_HELP, f"action {act} sans explication dans la legende"
+
     print(f"OK - GUI construite : {len(page.controls)} controles racine, "
           f"overlay={len(page.overlay)}, titre={page.title!r}")
 

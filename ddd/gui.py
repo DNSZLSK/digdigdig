@@ -22,6 +22,7 @@ import atexit
 import json
 import os
 import threading
+import time
 from pathlib import Path
 from typing import List, Optional
 
@@ -102,6 +103,7 @@ PHASE_LABEL = {
     "queued": ("queued...", TXT_DIM, True),
     "searching": ("hunting slsk...", theme.BLUE, True),
     "auditing": ("spectral check...", theme.TAN, True),
+    "fallback": ("mp3 fallback...", theme.TAN, True),
     "cancelled": ("cancelled", TXT_DIM, False),
 }
 ACTION_LABEL = {
@@ -118,12 +120,55 @@ ACTION_LABEL = {
     upgrade_mod.ACT_DUPLICATE: ("already there", TXT_DIM, False),
 }
 
+# Explications montrees dans la legende (bouton "Legend", onglet Bibliotheque). MEMES cles que
+# les dicts de libelle ci-dessus -> la legende ne peut pas deriver de ce qui est reellement
+# rendu dans la colonne STATUS / la pastille BAND (retour testeur : aucune doc sur les statuts).
+VERDICT_HELP = {
+    quality.LOSSLESS: "Full spectrum, no lossy signature: verified true lossless.",
+    quality.HQ: "Cutoff at or above 18 kHz: club-playable (includes a clean MP3 320).",
+    quality.DOUTEUX: "Cutoff 16-18 kHz: audible on a good system, worth re-checking.",
+    quality.MAUVAIS: "Cutoff below 16 kHz: low-bitrate mush.",
+    "SKIPPED": "Not an analyzable audio file (or the read failed).",
+}
+PHASE_HELP = {
+    "queued": "Waiting its turn in the batch.",
+    "searching": "Searching Soulseek for a better copy.",
+    "auditing": "Re-analyzing the download's spectrum (anti-upscale).",
+    "fallback": "No lossless found: retrying in MP3 320.",
+    "cancelled": "You stopped the run before this track finished.",
+}
+ACTION_HELP = {
+    upgrade_mod.ACT_REPLACED: "Upgraded: a verified better copy took its place (old file to trash).",
+    upgrade_mod.ACT_WOULD_REPLACE: "A valid upgrade was found (dry-run: nothing changed).",
+    upgrade_mod.ACT_KEPT_BESIDE: "Downloaded and verified, kept next to the original.",
+    upgrade_mod.ACT_ACQUIRED: "New track fetched and kept in the library.",
+    upgrade_mod.ACT_ALREADY_GOOD: "Already above the quality bar: nothing to upgrade.",
+    upgrade_mod.ACT_REJECTED_FAKE: "The download was a fake/upscale below the bar: discarded.",
+    upgrade_mod.ACT_TOO_SHORT: "The download was a preview/sample (under 90 s): discarded.",
+    upgrade_mod.ACT_WRONG_MATCH: "The download was a different track (title/artist/version): discarded.",
+    upgrade_mod.ACT_NOT_FOUND: "Nothing suitable found on Soulseek.",
+    upgrade_mod.ACT_UNPARSEABLE: "Filename has no usable 'Artist - Title' and no tags: skipped.",
+    upgrade_mod.ACT_DUPLICATE: "Already in the library: skipped (no duplicate download).",
+}
+
 
 def _count_rejected(counter) -> int:
     """Total des downloads jetes a la verif (upscale + trop court + mauvais match)."""
     return (counter.get(upgrade_mod.ACT_REJECTED_FAKE, 0)
             + counter.get(upgrade_mod.ACT_TOO_SHORT, 0)
             + counter.get(upgrade_mod.ACT_WRONG_MATCH, 0))
+
+
+def _fmt_eta(seconds: float) -> str:
+    """Duree restante lisible : '45s', '6m', '1h22'. Pas de fausse precision (pas de decimales)."""
+    s = max(0, int(seconds))
+    if s < 60:
+        return f"{s}s"
+    m, _sec = divmod(s, 60)
+    if m < 60:
+        return f"{m}m"
+    h, m = divmod(m, 60)
+    return f"{h}h{m:02d}"
 
 
 def _set_window_size(page, w: int, h: int) -> None:
@@ -495,6 +540,49 @@ def main(page: ft.Page) -> None:
 
     _BANDS = (quality.LOSSLESS, quality.HQ, quality.DOUTEUX, quality.MAUVAIS)
 
+    def open_legend(_e=None) -> None:
+        """Legende des statuts (colonne BAND + colonne STATUS). Retour testeur : rien
+        n'expliquait ce que chaque statut/verdict veut dire. Genere depuis les MEMES dicts que
+        le rendu (VERDICT_*/PHASE_LABEL/ACTION_LABEL) -> ne peut pas mentir sur l'affichage."""
+        def _entry(color, label, desc):
+            return ft.Row(
+                [ft.Container(_dot(color), padding=ft.padding.only(top=5)),
+                 ft.Column([
+                     ft.Text(label, size=12, weight=ft.FontWeight.W_600, color=TXT,
+                             font_family=FONT_MONO),
+                     ft.Text(desc, size=11, color=TXT_DIM)],
+                    spacing=1, expand=True)],
+                spacing=9, vertical_alignment=ft.CrossAxisAlignment.START)
+
+        def _section(txt):
+            return ft.Container(
+                ft.Text(txt, size=10, weight=ft.FontWeight.BOLD, color=TXT_FAINT,
+                        font_family=FONT_MONO, style=ft.TextStyle(letter_spacing=1)),
+                padding=ft.padding.only(top=8, bottom=2))
+
+        rows = [_section("QUALITY  (BAND column)")]
+        for v in _BANDS:
+            rows.append(_entry(VERDICT_COLOR[v], VERDICT_LABEL[v], VERDICT_HELP[v]))
+        rows.append(_entry(VERDICT_COLOR["SKIPPED"], "Skipped / Error", VERDICT_HELP["SKIPPED"]))
+
+        rows.append(_section("UPGRADE IN PROGRESS  (STATUS column)"))
+        for ph in ("queued", "searching", "auditing", "fallback", "cancelled"):
+            label, color, _r = PHASE_LABEL[ph]
+            rows.append(_entry(color, label, PHASE_HELP[ph]))
+
+        rows.append(_section("UPGRADE RESULT  (STATUS column)"))
+        for act, (label, color, _r) in ACTION_LABEL.items():
+            rows.append(_entry(color, label, ACTION_HELP.get(act, "")))
+
+        dlg = ft.AlertDialog(
+            title=ft.Text("What the statuses mean", color=TXT, weight=ft.FontWeight.BOLD),
+            bgcolor=SURFACE,
+            content=ft.Container(
+                width=470, height=460,
+                content=ft.Column(rows, spacing=6, scroll=ft.ScrollMode.AUTO, tight=True)),
+            actions=[ft.TextButton("Close", on_click=lambda _e: page.close(dlg))])
+        page.open(dlg)
+
     def render_summary() -> None:
         from collections import Counter
         summary_row.controls.clear()
@@ -708,7 +796,7 @@ def main(page: ft.Page) -> None:
             state.active_proc = None
             lib_cancel_btn.visible = True
             lib_cancel_btn.disabled = False
-            progress.value = None  # barre indeterminee (animee) pendant le download
+            progress.value = None  # indeterminee tant que le download n'a pas demarre (plan + dedup)
             for rec in chosen:
                 set_cell(state.row_status, rec.quality.path, *PHASE_LABEL["queued"])
             page.update()
@@ -717,9 +805,38 @@ def main(page: ft.Page) -> None:
                 dl_dir = paths.download_dir(config_mod.load())
                 log_path = paths.logs_dir() / "ddd_upgrade.log"
 
+                # Feedback DETERMINE : le moteur appelle on_chunk(idx, total) en tete de chaque lot
+                # sldl. On en tire une barre REMPLIE + un repere stable "batch i/N · ~ETA left". Le
+                # debit est bride par l'anti-ban sldl (un lot de 25 = plusieurs minutes) : sans ce
+                # repere la fenetre parait FIGEE alors qu'elle bosse (le vrai bug remonte). L'ETA est
+                # estime sur le debit observe (temps deja ecoule / lots deja finis).
+                chunk_timer = {"t0": None}
+                prog_head = {"txt": ""}
+
+                def on_chunk(idx: int, total: int) -> None:
+                    if chunk_timer["t0"] is None:
+                        chunk_timer["t0"] = time.time()
+                    done = idx - 1                       # lots reellement termines avant celui-ci
+                    progress.value = (done / total) if total else None
+                    eta = ""
+                    if done >= 1:
+                        per = (time.time() - chunk_timer["t0"]) / done
+                        eta = f" · ~{_fmt_eta(per * (total - done))} left"
+                    prog_head["txt"] = f"batch {idx}/{total}{eta}"
+                    status.value = f"Downloading · {prog_head['txt']}"
+                    try:
+                        progress.update()
+                        status.update()
+                    except Exception:  # noqa: BLE001
+                        pass
+
                 def prog(*a) -> None:
+                    # Ligne sldl brute = preuve-de-vie, ANCREE derriere le repere de lot (sinon elle
+                    # ne fait que clignoter sans dire ou on en est : l'autre moitie du grief testeur).
                     if len(a) == 1:
-                        status.value = str(a[0])[:90]
+                        head = prog_head["txt"]
+                        line = str(a[0])
+                        status.value = (f"{head}  |  {line}" if head else line)[:120]
                         try:
                             status.update()
                         except Exception:  # noqa: BLE001
@@ -732,7 +849,8 @@ def main(page: ft.Page) -> None:
                 outcomes = upgrade_mod.run_upgrade(
                     state.folder, root=paths.resource_base(), staging_dir=staging,
                     download_dir=dl_dir, scan_results=chosen, progress=prog, on_item=on_item,
-                    on_proc=on_proc, cancel=is_cancelled, log_path=log_path, forced=forced)
+                    on_proc=on_proc, cancel=is_cancelled, log_path=log_path, forced=forced,
+                    on_chunk=on_chunk)
                 from collections import Counter
                 c = Counter(o.action for o in outcomes)
                 ok = c.get(upgrade_mod.ACT_REPLACED, 0)
@@ -1445,6 +1563,8 @@ def main(page: ft.Page) -> None:
                                         on_click=do_cancel, visible=False)
     check_all_btn = ft.TextButton(text="Check all", on_click=select_all_visible)
     uncheck_all_btn = ft.TextButton(text="Uncheck all", on_click=clear_selection)
+    legend_btn = ft.TextButton(text="Legend", icon=ft.Icons.HELP_OUTLINE, on_click=open_legend,
+                               tooltip="What the BAND and STATUS labels mean")
     filter_dd.on_change = lambda _e: render_table()
 
     acquire_btn = ft.FilledButton(text="Fetch & download", icon=ft.Icons.DOWNLOAD,
@@ -1515,7 +1635,7 @@ def main(page: ft.Page) -> None:
             # PAS de wrap=True ici : un enfant expand (le spacer) dans un Wrap fait jeter
             # un layout error a Flutter -> toute la zone table devient un carre gris
             # (ErrorWidget release-mode #C3C3C2). Row normal -> l'expand est valide.
-            ft.Row([filter_dd, check_all_btn, uncheck_all_btn, lib_cancel_btn,
+            ft.Row([filter_dd, check_all_btn, uncheck_all_btn, legend_btn, lib_cancel_btn,
                     ft.Container(expand=True), dup_text],
                    spacing=8, vertical_alignment=ft.CrossAxisAlignment.CENTER),
             _table_surface(table_header, table_col),
