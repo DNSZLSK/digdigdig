@@ -14,6 +14,7 @@ Principe : un vrai lossless garde de l'energie jusqu'a ~Nyquist (~20-22 kHz en
 from __future__ import annotations
 
 import logging
+from functools import lru_cache
 from dataclasses import dataclass, asdict
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
@@ -128,14 +129,29 @@ def _format_class(ext: str) -> str:
     return "unknown"
 
 
+# La fenetre de Hann ne depend QUE de la longueur, la grille de frequences que de
+# (longueur, sample rate) : constantes d'une fenetre a l'autre. Les recalculer a chaque
+# appel coutait ~12% du scan (np.hanning) pour un resultat identique -> on les memoize.
+# lru_cache rend le MEME objet : on ne fait que le lire (le fenetrage cree un nouveau
+# tableau, detect_cutoff/hf ne mutent pas la grille), donc aucun effet de bord.
+@lru_cache(maxsize=16)
+def _hann_window(n: int) -> np.ndarray:
+    return np.hanning(n)
+
+
+@lru_cache(maxsize=16)
+def _freq_grid(n: int, sr: int) -> np.ndarray:
+    return rfftfreq(n, 1.0 / sr)
+
+
 def _window_cutoff(data: np.ndarray, sr: int) -> Tuple[Optional[float], float]:
     """FFT d'une fenetre mono -> (cutoff_hz, hf_energy_ratio)."""
     mono = data.mean(axis=1) if data.ndim > 1 else data
     if mono.size < 256:
         return None, 0.0
-    windowed = mono * np.hanning(len(mono))
+    windowed = mono * _hann_window(len(mono))
     spec = rfft(windowed)
-    freq = rfftfreq(len(windowed), 1.0 / sr)
+    freq = _freq_grid(len(windowed), sr)
     mag = np.abs(spec)
     mag_db = 20.0 * np.log10(mag + 1e-10)
     cutoff = detect_cutoff(freq, mag_db, sr)
