@@ -138,7 +138,9 @@ def read_tags(path) -> Dict[str, str]:
         val = mf.tags.get(key) if mf.tags else None
         if not val:
             return ""
-        return (val[0] if isinstance(val, (list, tuple)) else str(val)).strip()
+        # str() AVANT strip : les tags ASF/WMA rendent des ASFUnicodeAttribute (pas des
+        # str) -> val[0].strip() planterait. str(attr) donne la valeur, inoffensif sur str.
+        return str(val[0] if isinstance(val, (list, tuple)) else val).strip()
 
     return {"artist": first("artist"), "title": first("title"),
             "album": first("album"), "genre": first("genre")}

@@ -49,7 +49,12 @@ def scan_folder(
     total = len(files)
     results: List[QualityResult] = []
     for i, f in enumerate(files, 1):
-        results.append(analyze_file(f))
+        try:
+            results.append(analyze_file(f))
+        except Exception as e:  # noqa: BLE001
+            # Un seul fichier bancal (tag exotique, I/O reseau en rade...) ne doit JAMAIS
+            # tuer tout le scan : on le loggue et on l'ignore.
+            logger.warning("scan: fichier ignore %s: %r", f, e)
         if progress:
             progress(i, total, f)
     return results
@@ -138,15 +143,20 @@ def scan_library(
     raw = []
     size_counts: Dict[int, int] = defaultdict(int)
     for i, f in enumerate(files, 1):
-        q = analyze_file(f)
-        n = audit_mod.audit_file(f)
         try:
-            size = f.stat().st_size
-        except OSError:
-            size = 0
-        raw.append((q, n, size))
-        if size > 0:
-            size_counts[size] += 1
+            q = analyze_file(f)
+            n = audit_mod.audit_file(f)
+            try:
+                size = f.stat().st_size
+            except OSError:
+                size = 0
+            raw.append((q, n, size))
+            if size > 0:
+                size_counts[size] += 1
+        except Exception as e:  # noqa: BLE001
+            # Un seul fichier bancal (tag exotique, I/O reseau en rade...) ne doit JAMAIS
+            # tuer tout le scan : on le loggue et on l'ignore.
+            logger.warning("scan: fichier ignore %s: %r", f, e)
         if progress:
             progress(i, total, f)
 
