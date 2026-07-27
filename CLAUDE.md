@@ -35,7 +35,11 @@ Logo : `docs/logo.png`
 - **PowerShell** : pipeline orchestrateur + lib utilitaire (Windows-natif)
 - **Python 3.12** (venv local `.venv/`) : scrapers + FLAC_Detective
 - **sldl** (`bin/sldl/`) : binary .NET self-contained, batch Soulseek download
-- **soundfile / libsndfile** : décodage audio (WAV/FLAC/AIFF/MP3) pour l'analyse spectrale du coeur Python - embarqué dans le `.exe`, **pas de ffmpeg requis** (ffmpeg n'était utilisé que par l'ancien pipeline PowerShell)
+- **soundfile / libsndfile** : décodage audio (WAV/FLAC/AIFF/MP3) pour l'analyse spectrale du coeur Python - embarqué dans le `.exe`
+- **PyAV** (`ddd/core/decode.py`) : repli de décodage pour tout ce que libsndfile ignore (MP4/M4A
+  AAC + ALAC, WMA v1/v2/Pro/lossless, APE, TTA, WavPack, AC3/DTS...). Le wheel pip embarque ses
+  propres libs ffmpeg → **toujours pas de ffmpeg système requis** (ffmpeg n'était utilisé que par
+  l'ancien pipeline PowerShell)
 - **cloudscraper** : bypass FingerprintJS sur Bandcamp
 - **slskd** (`C:\slskd\`) : daemon Soulseek headless, gardé en standby comme dashboard (port 5030)
 
@@ -137,6 +141,17 @@ sur quoi on construit désormais.
   cutoff spectral (réutilise la math de flac-detective) + audit nom/tags ID3 + doublons.
   Index-free : marche sur n'importe quel dossier, pas besoin du pipeline. Verdicts
   AUTHENTIC / SUSPICIOUS / FAKE_LOSSLESS / LOSSY.
+  - **Formats non-libsndfile (2026-07-27)** : `.mp4`/`.m4b` ajoutés à la liste parcourue, et
+    `decode.py` branche **PyAV en repli** quand `sf.info` refuse → MP4/M4A (AAC *et* ALAC), WMA,
+    APE/TTA/WavPack deviennent scannables. Avant : un dossier de `.mp4` n'était même pas parcouru
+    et **paraissait vide** ; `.m4a`/`.wma` finissaient en ERROR. **Prouvé en réel** sur
+    `Music\Hawai\'Ai Pohaku` (14 rips iTunes 2010, AAC ~120 kbps → tous flaggés lossy).
+  - Le **codec prime sur l'extension** (`_format_class(ext, codec)`) : un `.m4a` en ALAC est un
+    `lossless_container` (contrôle spectral anti-upscale + exempt du plancher 320 kbps réservé aux
+    lossy), pas un lossy. Le débit vient de la **piste audio** quand le conteneur le donne, sinon
+    un `.mp4` vidéo mesurerait surtout sa vidéo.
+  - Volontairement **pas ajoutés** : `.mkv`/`.webm`/`.avi` (PyAV les lit, mais pointer DDD sur un
+    dossier de films n'a pas de sens - à rouvrir si le besoin arrive).
 - ✅ **`ddd upgrade <dossier>`** : cherche un vrai lossless sur Soulseek pour les
   fichiers flaggés, **re-audite chaque download** et n'accepte que l'AUTHENTIC
   (les filtres sldl ne détectent PAS les upscales - le re-audit, si). Dry-run par
@@ -185,7 +200,9 @@ sur quoi on construit désormais.
 - ✅ **`ddd config show|set`** : creds/réglages user dans `%APPDATA%\ddd\config.json`.
 - ✅ **`ddd gui`** : fenêtre native Flet (dossier, scan, tableau filtrable, upgrade, réglages).
 - ✅ **`.exe` autonome** : `packaging/build.ps1` → `dist/DDD/DDD.exe` (255 Mo, embarque
-  sldl + profils + client Flet + libsndfile ; **pas de ffmpeg requis**). Lancé et vérifié.
+  sldl + profils + client Flet + libsndfile + PyAV ; **pas de ffmpeg requis**). Lancé et vérifié.
+  - PyAV ajouté au `collect_all` du `.spec` (import paresseux + ~25 DLL ffmpeg, ~66 Mo) :
+    **rebuild à refaire**, sans ça le MP4 redevient illisible dans le seul `.exe`.
   - **Splash de démarrage** (`pyi_splash`, `packaging/splash.png`, Windows/Linux ; macOS non
     supporté par PyInstaller) : feedback visuel immédiat pendant le cold-start (numpy/onnxruntime/
     Flet à charger). Fermé par `gui.main()` quand la fenêtre est prête. **À valider au rebuild.**

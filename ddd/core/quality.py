@@ -20,7 +20,6 @@ from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
 import numpy as np
-import soundfile as sf
 from scipy.fft import rfft, rfftfreq
 
 from flac_detective.analysis.spectrum import (
@@ -29,12 +28,19 @@ from flac_detective.analysis.spectrum import (
 )
 from flac_detective.analysis.new_scoring.bitrate import estimate_mp3_bitrate
 
+from . import decode
+from .decode import AudioInfo, LOSSLESS_CODECS
+
 logger = logging.getLogger(__name__)
 
-# Conteneurs qui pretendent etre lossless (a verifier au spectre)
-LOSSLESS_EXTS = {".flac", ".wav", ".wave", ".aif", ".aiff", ".aifc"}
-# Formats ouvertement lossy (candidats upgrade par definition)
-LOSSY_EXTS = {".mp3", ".m4a", ".aac", ".ogg", ".oga", ".opus", ".wma"}
+# Conteneurs qui pretendent etre lossless (a verifier au spectre). .ape/.tta/.wv sont
+# lisibles depuis qu'on a un repli PyAV (cf decode.py) : vieilles collections lossless.
+LOSSLESS_EXTS = {".flac", ".wav", ".wave", ".aif", ".aiff", ".aifc",
+                 ".ape", ".tta", ".wv"}
+# Formats ouvertement lossy (candidats upgrade par definition). .mp4/.m4b sont des
+# conteneurs MP4 : classes lossy par defaut, mais le CODEC REEL peut les requalifier en
+# lossless (un .m4a en ALAC) - cf _format_class.
+LOSSY_EXTS = {".mp3", ".m4a", ".m4b", ".mp4", ".aac", ".ogg", ".oga", ".opus", ".wma"}
 
 # Verdicts : 4 bandes orientees "jouable en club", classees par le cutoff spectral
 # mesure. La math reste celle de flac-detective (detect_cutoff/estimate_mp3_bitrate) ;
@@ -121,7 +127,17 @@ class QualityResult:
         return asdict(self)
 
 
-def _format_class(ext: str) -> str:
+def _format_class(ext: str, codec: str = "") -> str:
+    """Classe le format. Le CODEC prime sur l'extension quand on le connait.
+
+    Un conteneur MP4/ASF ne dit pas s'il y a de l'AAC (lossy) ou de l'ALAC / du
+    WMA-lossless dedans : juger sur `.m4a` seul ferait passer un vrai lossless pour du
+    lossy (et lui appliquerait le bannissement < 320 kbps). Le codec, lui, tranche.
+    """
+    if codec:
+        if codec in LOSSLESS_CODECS or codec.startswith("pcm_"):
+            return "lossless_container"
+        return "lossy"
     if ext in LOSSY_EXTS:
         return "lossy"
     if ext in LOSSLESS_EXTS:
@@ -159,7 +175,7 @@ def _window_cutoff(data: np.ndarray, sr: int) -> Tuple[Optional[float], float]:
     return float(cutoff), float(hf)
 
 
-def _spectral(path: Path, info: "sf._SoundFileInfo") -> Optional[Tuple]:
+def _spectral(path: Path, info: AudioInfo) -> Optional[Tuple]:
     """Analyse 3 fenetres (debut/milieu/fin) -> (cutoff, cutoff_std, hf, win_best) de la
     fenetre la plus revelatrice (cf _aggregate_windows). win_best est gardee en 2D (L/R)
     pour alimenter les detecteurs d'artefacts + le collapse stereo du mode forensic, sans
@@ -182,12 +198,11 @@ def _spectral(path: Path, info: "sf._SoundFileInfo") -> Optional[Tuple]:
         if start + win_frames > total:
             start = max(0, total - win_frames)
         try:
-            data, _ = sf.read(str(path), start=start, frames=win_frames,
-                              dtype="float64", always_2d=True)
+            data = decode.read_window(path, info, start, win_frames)
         except Exception as e:  # noqa: BLE001
             logger.debug("lecture fenetre %d echouee pour %s: %r", i, path.name, e)
             continue
-        if len(data) == 0:
+        if data is None or len(data) == 0:
             continue
         c, hf = _window_cutoff(data, sr)
         if c is not None:
@@ -257,15 +272,22 @@ def analyze_file(path, detector=None) -> QualityResult:
                              0, SKIPPED, "n/a", "format non audio / non gere")
 
     try:
-        info = sf.info(str(p))
+        info = decode.open_info(p)
     except Exception as e:  # noqa: BLE001
         return _error(p, ext, fclass, f"info illisible: {e}")
+
+    # Le codec reel (connu seulement via PyAV) prime : un .m4a en ALAC est un conteneur
+    # lossless, pas un lossy, et doit passer le controle spectral comme un FLAC.
+    fclass = _format_class(ext, info.codec)
 
     try:
         size = p.stat().st_size
     except OSError:
         size = 0
-    container_bitrate = int(size * 8 / info.duration / 1000) if info.duration else 0
+    # Debit de la piste audio si le conteneur le donne, sinon taille/duree. La distinction
+    # compte sur un .mp4 VIDEO : taille*8/duree y mesure surtout la video.
+    container_bitrate = info.stream_bitrate or (
+        int(size * 8 / info.duration / 1000) if info.duration else 0)
 
     sp = _spectral(p, info)
     if sp is None:
@@ -345,7 +367,9 @@ def is_accepted(qr: "QualityResult", preset: str = DEFAULT_PRESET) -> bool:
     """
     if qr.verdict in (SKIPPED, ERROR):
         return False
-    if qr.ext in LOSSY_EXTS and 0 < qr.container_bitrate < MIN_LOSSY_BITRATE:
+    # format_class, pas l'extension : il tient compte du codec reel, donc un .m4a en ALAC
+    # (lossless_container) n'est pas soumis au plancher de debit reserve aux lossy.
+    if qr.format_class == "lossy" and 0 < qr.container_bitrate < MIN_LOSSY_BITRATE:
         return False
     # Le spectre est law : un SUSPECT forensic (artefacts ANCRES HF-aliasing/comb -> probable
     # upscale/fake) n'est pas accepte quel que soit le cutoff/preset -> reste candidat a l'upgrade.

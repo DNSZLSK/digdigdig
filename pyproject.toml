@@ -12,6 +12,9 @@ dependencies = [
     "numpy>=1.24",
     "scipy>=1.10",
     "soundfile>=0.12",
+    # PyAV = repli de decodage pour ce que libsndfile ignore (MP4/M4A/AAC, WMA, APE...).
+    # Le wheel embarque ses propres libs ffmpeg -> toujours aucun ffmpeg systeme requis.
+    "av>=12",
     "mutagen>=1.46",
     "flac-detective>=0.9.6",
     "requests>=2.28",

@@ -54,8 +54,12 @@ hiddenimports = ["ddd", "ddd.gui", "ddd.cli"]
 #    PyInstaller rate -> sans collect_all, le scrape YouTube (set + repli playlist) est mort
 #    dans le .exe ("yt-dlp missing"). cloudscraper (1001/set79/Bandcamp) embarque aussi du JS.
 #  - flac_detective : sous-modules charges dynamiquement par quality.py.
-for pkg in ("flet", "flet_desktop", "soundfile", "yt_dlp", "cloudscraper", "flac_detective",
-            "onnxruntime"):
+#  - av (PyAV) : IMPORT PARESSEUX dans decode.py (repli MP4/M4A/WMA...) que l'analyse
+#    statique rate, ET ~25 DLL ffmpeg a cote du module. Sans collect_all, le .exe ouvre
+#    la GUI normalement mais tout .mp4/.wma redevient illisible - bug visible SEULEMENT
+#    dans le build, jamais en dev.
+for pkg in ("flet", "flet_desktop", "soundfile", "av", "yt_dlp", "cloudscraper",
+            "flac_detective", "onnxruntime"):
     d, b, h = collect_all(pkg)
     datas += d
     binaries += b

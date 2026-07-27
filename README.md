@@ -61,6 +61,7 @@ No need to be a developer: download the `.exe`, double-click, it's a window.
   - **HQ** (blue): >= 18 kHz, playable on a big system (includes MP3 320).
   - **Iffy** (yellow): 16-18 kHz, borderline.
   - **Bad** (red): < 16 kHz, mush.
+- **Reads pretty much anything**: FLAC, WAV, AIFF, MP3, OGG/Opus, **MP4 / M4A** (AAC *and* ALAC), **WMA** (including WMA Lossless), APE, TTA, WavPack. That old folder of iTunes-era `.mp4` rips or Windows Media `.wma` gets scanned like the rest, instead of showing up empty. What's *inside* the container decides: an ALAC `.m4a` is treated as lossless and put through the same anti-upscale spectral check as a FLAC, not written off as lossy because of its extension.
 - **Quality / target modes** (in Settings) - the bar DDD keeps to, and what it goes hunting for:
   - **DJ Club** (>= 18 kHz) - *default*: keeps anything club-playable, MP3 320 included.
   - **Audiophile** (>= 20 kHz): rejects MP3s below 320.
@@ -108,8 +109,9 @@ productions, your promos / white-labels, public domain / CC, or re-downloading i
 
 Portable **Python** core (Windows / Mac / Linux) + native **Flet** window. Downloading via
 **sldl** ([fiso64/slsk-batchdl](https://github.com/fiso64/slsk-batchdl), bundled). Spectral detection
-via numpy/scipy/soundfile; genre-from-audio via a **Discogs-EffNet** ONNX model run with **onnxruntime** (no TensorFlow). Scrapers for Discogs (API), Bandcamp (cloudscraper), YouTube sets and
-playlists (yt-dlp). Everything is bundled into the `.exe` (no Python, no ffmpeg needed).
+via numpy/scipy/soundfile, with **PyAV** as the decoding fallback for what libsndfile won't open
+(MP4/M4A, WMA, APE...); genre-from-audio via a **Discogs-EffNet** ONNX model run with **onnxruntime** (no TensorFlow). Scrapers for Discogs (API), Bandcamp (cloudscraper), YouTube sets and
+playlists (yt-dlp). Everything is bundled into the `.exe` (no Python, no ffmpeg to install).
 
 ---
 
