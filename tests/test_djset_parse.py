@@ -44,6 +44,49 @@ def test_split_keeps_remix_skips_id_and_noise():
     assert _split_artist_title(" - Track") is None               # artiste vide
 
 
+def test_split_content_id_lrm_endash():
+    """YouTube "Content ID" separe par une marque invisible (U+200E LRM) + en-dash
+    (U+2013), pas ' - '. Titres reels de playlist -> doivent parser (34/38 tombaient)."""
+    for raw, want in [
+        ("Talking Heads ‎– Psycho Killer (Lexicon Avenue Remix)",
+         ("Talking Heads", "Psycho Killer (Lexicon Avenue Remix)")),
+        ("Tears For Fears ‎– Mother's Talk (Greed Mix)",
+         ("Tears For Fears", "Mother's Talk (Greed Mix)")),
+        ("Underworld — Cowgirl (Chris Cargo Remix)",           # em-dash sans LRM
+         ("Underworld", "Cowgirl (Chris Cargo Remix)")),
+    ]:
+        assert _split_artist_title(raw) == want
+
+
+def test_split_hyphenated_name_not_broken():
+    """Le split exige des espaces autour du tiret -> un trait d'union interne
+    ("Jean-Michel") ne coupe jamais l'artiste, meme avec LRM + en-dash separateur."""
+    assert _split_artist_title("Jean-Michel Jarre ‎– Oxygene (Part IV)") == \
+        ("Jean-Michel Jarre", "Oxygene (Part IV)")
+    assert _split_artist_title("Jean-Michel Jarre - Oxygene") == ("Jean-Michel Jarre", "Oxygene")
+    assert _split_artist_title("Compilation 1979-1985") is None   # tiret sans espaces -> pas un sep
+
+
+def test_strip_vinyl_side_prefix():
+    """'A1.'/'B2.' = position de face vinyle (tracklist), PAS l'artiste. Sans strip,
+    Soulseek etait interroge avec 'A1. Wilba' -> zero match. Via _clean_line."""
+    def parse(raw):
+        return d._split_artist_title(d._clean_video_title(d._clean_line(raw)))
+    assert parse("A1. Wilba - Wrong Turn") == ("Wilba", "Wrong Turn")
+    assert parse("B2. Some Artist - Some Track") == ("Some Artist", "Some Track")
+    assert parse("C12. Double LP - Track") == ("Double LP", "Track")
+
+
+def test_side_prefix_no_false_positive():
+    """Le strip exige lettre A-H + chiffre + separateur -> les vrais noms restent intacts."""
+    def parse(raw):
+        return d._split_artist_title(d._clean_video_title(d._clean_line(raw)))
+    assert parse("B from E - Surreal") == ("B from E", "Surreal")     # pas de chiffre apres B
+    assert parse("U2 - One") == ("U2", "One")                        # U hors [A-H]
+    assert parse("808 State - Pacific") == ("808 State", "Pacific")  # commence par un chiffre
+    assert parse("4 Hero - Mr Kirk's Nightmare") == ("4 Hero", "Mr Kirk's Nightmare")
+
+
 def test_strip_catalog_and_dedup():
     from ddd.core.scrapers.djset import _rows_from_pairs
     pairs = [

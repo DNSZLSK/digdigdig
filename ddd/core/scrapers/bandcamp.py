@@ -161,6 +161,7 @@ def scrape_bandcamp(
     cache_dir: str = "inputs/.bandcamp-cache",
     progress: ProgressCb = None,
     newest: int = 0,
+    cancel: Optional[Callable[[], bool]] = None,
 ) -> List[Dict]:
     """Scrape la wishlist publique -> liste de rows (albums deplies en pistes).
 
@@ -221,15 +222,17 @@ def scrape_bandcamp(
         return True
 
     for item_id in sequence:
-        if cap_reached():
+        if cap_reached() or (cancel and cancel()):
             break
         item = wishlist.get(str(item_id))
         if item:
             add_item(item)
 
-    if fan_id and last_token and not cap_reached():   # 1re page a suffi -> pas d'API paginee
+    if fan_id and last_token and not cap_reached() and not (cancel and cancel()):
         api_url = f"{BASE}/api/fancollection/1/wishlist_items"
         while True:
+            if cancel and cancel():
+                break                                # annulation GUI -> stop la pagination
             payload = {"fan_id": fan_id, "older_than_token": last_token, "count": 50}
             try:
                 r = scraper.post(api_url, json=payload, timeout=30)

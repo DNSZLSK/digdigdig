@@ -1156,14 +1156,18 @@ def main(page: ft.Page) -> None:
                     rows = scrapers.scrape_discogs(
                         username, token=token,
                         include_collection=discogs_collection_cb.value, progress=prog,
-                        newest=newest)
+                        newest=newest, cancel=is_cancelled)
                 elif source == "bandcamp":
                     rows = scrapers.scrape_bandcamp(
                         username, expand_albums=bandcamp_expand_cb.value, progress=prog,
-                        newest=newest)
+                        newest=newest, cancel=is_cancelled)
                 else:                           # djset : `username` porte l'URL / le chemin
-                    rows = scrapers.scrape_djset(username, progress=prog, newest=newest)
+                    rows = scrapers.scrape_djset(username, progress=prog, newest=newest,
+                                                 cancel=is_cancelled)
 
+                if state.cancel_requested:      # annule PENDANT le scrape -> on n'enchaine pas le download
+                    status.value = "Fetch cancelled (scraping stopped)."
+                    return
                 if not rows:
                     status.value = f"No tracks found for {username} on {source}."
                     return

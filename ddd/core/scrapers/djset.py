@@ -28,8 +28,11 @@ except ImportError:  # pragma: no cover
 
 from bs4 import BeautifulSoup
 
+from ..naming import norm_dashes, strip_side_prefix   # helpers mutualises (invisibles/tirets + face vinyle)
+
 logger = logging.getLogger(__name__)
 ProgressCb = Optional[Callable[[str], None]]
+CancelCb = Optional[Callable[[], bool]]   # rend le scrape (pagination) interruptible depuis la GUI
 Pair = Tuple[str, str]
 
 # Timestamp en tete : "0:00", "[01:23]", "1:02:33" (option crochets/parentheses + sep)
@@ -54,12 +57,15 @@ _TRIM = " -\t·•–—:"   # bullets/dashes/colons en bords
 
 
 def _clean_line(line: str) -> str:
-    """Enleve le timestamp et/ou le numero de piste en tete (2 passes : tout ordre)."""
+    """Enleve le timestamp, le numero de piste et/ou le prefixe de face vinyle en tete
+    (2 passes : tout ordre). Sans ca 'A1. Wilba - Wrong Turn' interrogeait Soulseek avec
+    l'artiste 'A1. Wilba' -> zero match, tout partait en buy-links."""
     s = line.strip()
     for _ in range(2):
         s = _NUM.sub("", s)
         s = _TS.sub("", s)
         s = _TS_HUMAN.sub("", s)
+        s = strip_side_prefix(s)          # 'A1.'/'B2.'/'C12.' de face vinyle -> vire (garde 'B from E')
     return s.strip(_TRIM)
 
 
@@ -71,7 +77,13 @@ def _split_artist_title(s: str) -> Optional[Pair]:
     """'Artiste - Titre' -> (artist, title). None si pas parsable ou ID inconnu.
 
     On GARDE les "(Original Mix)" / "(X Remix)" dans le titre (utiles pour la recherche).
+
+    Normalise d'abord les separateurs (helper mutualise `norm_dashes`) : vire les marques
+    invisibles (LRM/RLM/BOM que YouTube "Content ID" injecte) et ramene les tirets unicode
+    (en-dash/em-dash/minus) a un hyphen ASCII. Le split reste sur ' - ' AVEC espaces, donc
+    "Jean-Michel Jarre - Oxygene" ne se coupe PAS sur le trait d'union interne.
     """
+    s = norm_dashes(s)
     if _SEP not in s:
         return None
     artist, title = (p.strip() for p in s.split(_SEP, 1))
@@ -318,7 +330,7 @@ def _channel_uploads_id(url: str) -> Optional[str]:
 def _clean_video_title(title: str) -> str:
     """Titre de video YouTube -> propre pour le split : vire le bruit (Official Video,
     Lyric Video, | Channel, Free DL...). Garde les (Original Mix)/(X Remix)."""
-    s = _YT_NOISE.sub("", title or "")
+    s = norm_dashes(_YT_NOISE.sub("", title or ""))   # tirets unicode/invisibles -> ' - ' detectable
     head = s.split("|", 1)[0]            # segment apres '|' = label/chaine, vire si le debut
     if _SEP in head:                     # garde encore 'Artiste - Titre'
         s = head
@@ -390,12 +402,13 @@ def _continuation_token(node) -> Optional[str]:
 
 
 def _youtube_playlist_titles(list_id: str, progress: ProgressCb, max_pages: int = 80,
-                             newest: int = 0) -> List[str]:
+                             newest: int = 0, cancel: CancelCb = None) -> List[str]:
     """Titres de video d'une playlist via l'API interne YouTube.
 
     `newest > 0` : arrete la pagination des qu'on a au moins N titres (recent-d'abord)
     et tronque a N -> pas de pagination inutile sur une longue chaine/playlist connue.
-    Sinon pagine TOUT.
+    Sinon pagine TOUT. `cancel()` vrai -> stoppe la pagination (annulation GUI) ; une chaine
+    a 1000 uploads doit pouvoir etre coupee sans attendre la fin.
     """
     html = _yt_get(f"https://www.youtube.com/playlist?list={list_id}")
     mkey, idx = _INNERTUBE_KEY.search(html), html.find("ytInitialData")
@@ -410,6 +423,8 @@ def _youtube_playlist_titles(list_id: str, progress: ProgressCb, max_pages: int 
         return titles[:newest]
     token, pages = _continuation_token(data), 0
     while token and pages < max_pages:
+        if cancel and cancel():
+            break                               # annulation GUI -> on rend ce qu'on a deja
         body = json.dumps({"context": {"client": {"clientName": "WEB", "clientVersion": ver}},
                            "continuation": token}).encode()
         try:
@@ -429,12 +444,13 @@ def _youtube_playlist_titles(list_id: str, progress: ProgressCb, max_pages: int 
     return titles[:newest] if newest and newest > 0 else titles
 
 
-def _scrape_youtube_playlist(list_id: str, progress: ProgressCb, newest: int = 0) -> List[Pair]:
+def _scrape_youtube_playlist(list_id: str, progress: ProgressCb, newest: int = 0,
+                             cancel: CancelCb = None) -> List[Pair]:
     """Playlist YouTube : chaque video = un track. InnerTube (pagine TOUT), repli yt-dlp."""
     if progress:
         progress("YouTube playlist: extracting videos...")
     try:
-        titles = _youtube_playlist_titles(list_id, progress, newest=newest)
+        titles = _youtube_playlist_titles(list_id, progress, newest=newest, cancel=cancel)
     except Exception as e:  # noqa: BLE001
         titles = []
         logger.debug("playlist InnerTube echec: %r", e)
@@ -470,13 +486,13 @@ def _scrape_youtube_playlist_ytdlp(list_id: str, progress: ProgressCb) -> List[P
 
 
 def _scrape_youtube_channel(url: str, uploads_id: str, progress: ProgressCb,
-                            newest: int = 0) -> List[Pair]:
+                            newest: int = 0, cancel: CancelCb = None) -> List[Pair]:
     """Chaine YouTube : chaque upload = un track. Via la playlist 'uploads' (UU...) +
     paginateur InnerTube (pagine TOUT), repli yt-dlp flat sur l'URL de chaine."""
     if progress:
         progress("YouTube channel: extracting uploads...")
     try:
-        titles = _youtube_playlist_titles(uploads_id, progress, newest=newest)
+        titles = _youtube_playlist_titles(uploads_id, progress, newest=newest, cancel=cancel)
     except Exception as e:  # noqa: BLE001
         titles = []
         logger.debug("channel InnerTube echec: %r", e)
@@ -555,12 +571,13 @@ def _scrape_set79(url: str, progress: ProgressCb) -> List[Pair]:
 
 # ---- Entry point ------------------------------------------------------------
 
-def scrape_djset(url: str, progress: ProgressCb = None, newest: int = 0) -> List[Dict]:
+def scrape_djset(url: str, progress: ProgressCb = None, newest: int = 0,
+                 cancel: CancelCb = None) -> List[Dict]:
     """URL de set -> want-list (ROW_FIELDS). Ramasse le max depuis les sources dispo.
 
     `newest > 0` : s'applique aux cas playlist / chaine (chaque video = une entree) ->
     ne garde que les N derniers uploads. No-op pour un set unique / 1001 / set79 / paste
-    (une seule tracklist, deja bornee).
+    (une seule tracklist, deja bornee). `cancel()` vrai coupe la pagination playlist/chaine.
     """
     url = (url or "").strip()
     low = url.lower()
@@ -588,14 +605,14 @@ def scrape_djset(url: str, progress: ProgressCb = None, newest: int = 0) -> List
         if list_id:                              # playlist : chaque video = un track
             source = "djset:youtube-playlist"
             try:
-                pairs = _scrape_youtube_playlist(list_id, progress, newest=newest)
+                pairs = _scrape_youtube_playlist(list_id, progress, newest=newest, cancel=cancel)
             except Exception as e:  # noqa: BLE001
                 if progress:
                     progress(f"YouTube playlist failed: {e}")
         elif uploads_id:                         # chaine : chaque upload = un track
             source = "djset:youtube-channel"
             try:
-                pairs = _scrape_youtube_channel(url, uploads_id, progress, newest=newest)
+                pairs = _scrape_youtube_channel(url, uploads_id, progress, newest=newest, cancel=cancel)
             except Exception as e:  # noqa: BLE001
                 if progress:
                     progress(f"YouTube channel failed: {e}")

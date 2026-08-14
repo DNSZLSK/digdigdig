@@ -98,9 +98,13 @@ def normalize_artist_title(artist: str, title: str):
     3. Artiste duplique en tete du titre -> dedupliquer ('ildec' + 'ildec - Voice' -> 'Voice').
 
     Idempotent : appliquer deux fois donne le meme resultat.
+
+    Normalise d'abord les tirets/marques invisibles (norm_dashes) : comme ce helper est
+    au funnel (upgrade.acquire_rows) que TOUTES les sources traversent, un en-dash/LRM
+    d'une entree Discogs ou Bandcamp est neutralise ici sans cabler chaque scraper.
     """
-    a = _light(artist)
-    t = _SIDE_PREFIX.sub("", _light(title)).strip()
+    a = _light(norm_dashes(artist))
+    t = _SIDE_PREFIX.sub("", _light(norm_dashes(title))).strip()
 
     if a.lower() in _VA_ARTISTS:
         m = _SEP.search(t)
@@ -193,7 +197,7 @@ _BRACKETS = re.compile(r"\[[^\]]*\]")
 _TRAIL_STAR = re.compile(r"\s*\*+\s*$")
 
 
-def _norm_dashes(s: str) -> str:
+def norm_dashes(s: str) -> str:
     """Normalise les tirets/marques unicode pour que le split ' - ' fonctionne."""
     if not s:
         return ""
@@ -201,6 +205,13 @@ def _norm_dashes(s: str) -> str:
     s = _UNI_DASH.sub("-", s)
     s = _MOJIBAKE_DASH.sub(" - ", s)
     return _WS.sub(" ", s).strip()
+
+
+def strip_side_prefix(s: str) -> str:
+    """Vire un prefixe de face vinyle en tete ('A1. Wilba - Wrong Turn' -> 'Wilba - Wrong
+    Turn'). Exige lettre A-H + 1-2 chiffres + separateur -> 'B from E', 'U2', '808 State'
+    restent intacts. Helper mutualise (scrape tracklists djset + resolveur de noms)."""
+    return _SIDE_PREFIX.sub("", s or "")
 
 
 def _looks_slug(s: str) -> bool:
@@ -278,7 +289,7 @@ def display_artist_title(artist: str, title: str):
 
 def _deslug(stem: str) -> str:
     """Slug 'a-b-c' -> 'A B C' (titre-seul, artiste inconnu). Strip annee + junk 'am dl'."""
-    s = _norm_dashes(stem)
+    s = norm_dashes(stem)
     s = re.sub(r"\bcopie\b", "", s, flags=re.IGNORECASE)        # variantes "- Copie"
     parts = [p for p in re.split(r"[-_\s]+", s) if p]
     parts = [p for p in parts if not re.fullmatch(r"(?:19|20)\d{2}", p)]   # annees
@@ -317,8 +328,8 @@ def resolve_name(path, tags: Optional[Dict[str, str]] = None) -> ResolvedName:
 
     if tags is None:
         tags = read_tags(path)
-    t_artist = _norm_dashes(tags.get("artist", ""))
-    t_title = _norm_dashes(tags.get("title", ""))
+    t_artist = norm_dashes(tags.get("artist", ""))
+    t_title = norm_dashes(tags.get("title", ""))
 
     # 2. TAG titre = 'Artiste - Titre' (cas mixtape : artist tag = compilateur)
     m = _SEP.search(t_title) if t_title else None

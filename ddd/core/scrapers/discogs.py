@@ -101,6 +101,7 @@ def scrape_discogs(
     cache_dir: str = "inputs/.discogs-cache",
     progress: ProgressCb = None,
     newest: int = 0,
+    cancel: Optional[Callable[[], bool]] = None,
 ) -> List[Dict]:
     """Scrape la wantlist (et option. la collection) -> liste de rows.
 
@@ -142,6 +143,8 @@ def scrape_discogs(
             progress(f"Discogs: {source_name} of {username}...")
         key = "wants" if source_name == "wantlist" else "releases"
         for item in _paginated(start_url, token, key):
+            if cancel and cancel():
+                return rows                        # annulation GUI -> stop, plus de pages fetchees
             if newest and newest > 0 and releases_done >= newest:
                 break                              # cap AVANT le fetch detail = le gain
             basic = item.get("basic_information", {})
