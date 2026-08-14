@@ -1033,13 +1033,19 @@ def main(page: ft.Page) -> None:
                  ft.dropdown.Option(key="bandcamp", text="Bandcamp")])
     discogs_collection_cb = ft.Checkbox(label="Include collection", value=False, visible=True)
     bandcamp_expand_cb = ft.Checkbox(label="Expand albums", value=True, visible=False)
-    # Les N derniers ajouts (0 = tout) : evite de re-scraper tout un compte deja connu.
-    newest_field = ft.TextField(label="Latest additions (0 = all)", value="0", width=110,
-                                keyboard_type=ft.KeyboardType.NUMBER, dense=True,
-                                tooltip="Only fetch your most recently added favourites")
-    newest_field_dj = ft.TextField(label="Latest videos (0 = all)", value="0", width=110,
-                                   keyboard_type=ft.KeyboardType.NUMBER, dense=True,
-                                   tooltip="Playlist / channel: keep only the most recent videos")
+    # Les N derniers ajouts : evite de re-scraper tout un compte deja connu. Dropdown
+    # (meme widget que "Source") -> s'aligne naturellement, rien a taper. Cle = N (0 = tout),
+    # lue telle quelle par _parse_newest. Valeur libre arbitraire toujours dispo en CLI (--newest).
+    def _newest_dd(tip: str) -> ft.Dropdown:
+        return ft.Dropdown(
+            label="Latest", value="0", width=150, tooltip=tip,
+            options=[ft.dropdown.Option(key="0", text="Everything"),
+                     ft.dropdown.Option(key="50", text="50"),
+                     ft.dropdown.Option(key="100", text="100"),
+                     ft.dropdown.Option(key="200", text="200")])
+
+    newest_field = _newest_dd("Only fetch your most recently added favourites")
+    newest_field_dj = _newest_dd("Playlist / channel: keep only the most recent videos")
 
     def _parse_newest(field) -> int:
         """Valeur du champ -> int >= 0 (vide/invalide/negatif -> 0 = tout)."""
