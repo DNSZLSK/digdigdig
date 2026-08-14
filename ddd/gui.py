@@ -1033,12 +1033,13 @@ def main(page: ft.Page) -> None:
                  ft.dropdown.Option(key="bandcamp", text="Bandcamp")])
     discogs_collection_cb = ft.Checkbox(label="Include collection", value=False, visible=True)
     bandcamp_expand_cb = ft.Checkbox(label="Expand albums", value=True, visible=False)
-    # "N derniers ajouts" (0 = tout) : evite de re-scraper tout un compte deja connu.
-    newest_field = ft.TextField(label="Newest N (0 = all)", value="0", width=150,
-                                keyboard_type=ft.KeyboardType.NUMBER, dense=True)
-    newest_field_dj = ft.TextField(label="Newest N (0 = all)", value="0", width=150,
+    # Les N derniers ajouts (0 = tout) : evite de re-scraper tout un compte deja connu.
+    newest_field = ft.TextField(label="Latest additions (0 = all)", value="0", width=110,
+                                keyboard_type=ft.KeyboardType.NUMBER, dense=True,
+                                tooltip="Only fetch your most recently added favourites")
+    newest_field_dj = ft.TextField(label="Latest videos (0 = all)", value="0", width=110,
                                    keyboard_type=ft.KeyboardType.NUMBER, dense=True,
-                                   tooltip="Playlist / channel: keep only the N most recent videos")
+                                   tooltip="Playlist / channel: keep only the most recent videos")
 
     def _parse_newest(field) -> int:
         """Valeur du champ -> int >= 0 (vide/invalide/negatif -> 0 = tout)."""
@@ -1663,10 +1664,10 @@ def main(page: ft.Page) -> None:
 
     acquire_tab = ft.Container(
         content=ft.Column([
-            ft.Row([source_dd, acquire_btn, acq_cancel_btn],
+            ft.Row([source_dd, newest_field, acquire_btn, acq_cancel_btn],
                    wrap=True, spacing=8, run_spacing=8,
                    vertical_alignment=ft.CrossAxisAlignment.CENTER),
-            ft.Row([discogs_collection_cb, bandcamp_expand_cb, newest_field], wrap=True,
+            ft.Row([discogs_collection_cb, bandcamp_expand_cb], wrap=True,
                    run_spacing=8, vertical_alignment=ft.CrossAxisAlignment.CENTER),
             _table_surface(None, acquire_table_col),
         ], expand=True, spacing=10),
@@ -1677,10 +1678,8 @@ def main(page: ft.Page) -> None:
             ft.Text("Paste a YouTube set or playlist URL (each video = a track), a 1001TL page, "
                     "or a tracklist file. DDD scrapes it, then downloads in real lossless.",
                     size=12, color=TXT_DIM),
-            ft.Row([djset_url, djset_fetch_btn, dj_cancel_btn],
+            ft.Row([djset_url, newest_field_dj, djset_fetch_btn, dj_cancel_btn],
                    wrap=True, spacing=8, run_spacing=8,
-                   vertical_alignment=ft.CrossAxisAlignment.CENTER),
-            ft.Row([newest_field_dj], wrap=True, run_spacing=8,
                    vertical_alignment=ft.CrossAxisAlignment.CENTER),
             _table_surface(None, djset_table_col),
         ], expand=True, spacing=10),
