@@ -63,5 +63,12 @@ def main():
           f"overlay={len(page.overlay)}, titre={page.title!r}")
 
 
+def test_gui_build():
+    """Entree pytest : la construction GUI (avec StubPage) ne doit rien lever.
+    Sans ca le fichier n'etait qu'un script `main()` -> non collecte par pytest,
+    donc zero filet sur les pieges Flet (kwargs/enums invalides) au run de suite."""
+    main()
+
+
 if __name__ == "__main__":
     main()

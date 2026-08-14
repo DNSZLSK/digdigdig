@@ -531,12 +531,14 @@ def _cmd_scrape(args: argparse.Namespace) -> int:
         if source == "discogs":
             rows = scrapers.scrape_discogs(
                 args.username, token=args.token or "",
-                include_collection=args.include_collection, progress=progress)
+                include_collection=args.include_collection, progress=progress,
+                newest=args.newest)
         elif source == "djset":
-            rows = scrapers.scrape_djset(args.username, progress=progress)
+            rows = scrapers.scrape_djset(args.username, progress=progress, newest=args.newest)
         else:
             rows = scrapers.scrape_bandcamp(
-                args.username, expand_albums=not args.no_expand_albums, progress=progress)
+                args.username, expand_albums=not args.no_expand_albums, progress=progress,
+                newest=args.newest)
     except (ValueError, RuntimeError) as e:
         print(f"ERROR: {e}", file=sys.stderr)
         return 1
@@ -723,6 +725,8 @@ def build_parser() -> argparse.ArgumentParser:
     p_sc.add_argument("--token", help="Discogs token (else $DISCOGS_TOKEN or ddd config)")
     p_sc.add_argument("--include-collection", action="store_true", help="Discogs: also the collection")
     p_sc.add_argument("--no-expand-albums", action="store_true", help="Bandcamp: keep whole albums")
+    p_sc.add_argument("--newest", type=int, default=0, metavar="N",
+                      help="only the N most recent additions (0 = everything)")
     p_sc.add_argument("--acquire", action="store_true",
                       help="chain straight into acquire (downloads the tracks found)")
     p_sc.add_argument("--no-acquire", action="store_true", help="don't suggest the acquire step")

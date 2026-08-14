@@ -100,8 +100,15 @@ def scrape_discogs(
     include_collection: bool = False,
     cache_dir: str = "inputs/.discogs-cache",
     progress: ProgressCb = None,
+    newest: int = 0,
 ) -> List[Dict]:
-    """Scrape la wantlist (et option. la collection) -> liste de rows."""
+    """Scrape la wantlist (et option. la collection) -> liste de rows.
+
+    `newest > 0` : ne garde que les N derniers ajouts (cap GLOBAL wantlist+collection,
+    pas 2N). On trie la source `added desc` et on casse la pagination des qu'on a traite
+    N releases, AVANT le fetch detail des vieilles -> gros gain de temps sur un compte
+    deja connu.
+    """
     if not token:
         token = os.environ.get("DISCOGS_TOKEN", "")
     if not token:
@@ -116,22 +123,33 @@ def scrape_discogs(
     cdir = Path(cache_dir)
     cdir.mkdir(parents=True, exist_ok=True)
 
+    # newest > 0 : tri added desc (sinon "les N premiers" != "les N derniers ajoutes")
+    # et per_page=100 pour minimiser les allers-retours API avant le break.
+    sort_q = "?sort=added&sort_order=desc&per_page=100" if newest and newest > 0 else ""
+
     rows: List[Dict] = []
     seen = set()
-    sources = [("wantlist", f"{API}/users/{username}/wants")]
+    sources = [("wantlist", f"{API}/users/{username}/wants{sort_q}")]
     if include_collection:
-        sources.append(("collection", f"{API}/users/{username}/collection/folders/0/releases"))
+        sources.append(("collection",
+                         f"{API}/users/{username}/collection/folders/0/releases{sort_q}"))
 
+    releases_done = 0                              # cap GLOBAL (wantlist + collection)
     for source_name, start_url in sources:
+        if newest and newest > 0 and releases_done >= newest:
+            break                                  # N deja atteint sur la wantlist
         if progress:
             progress(f"Discogs: {source_name} of {username}...")
         key = "wants" if source_name == "wantlist" else "releases"
         for item in _paginated(start_url, token, key):
+            if newest and newest > 0 and releases_done >= newest:
+                break                              # cap AVANT le fetch detail = le gain
             basic = item.get("basic_information", {})
             rid = basic.get("id")
             if not rid or rid in seen:
                 continue
             seen.add(rid)
+            releases_done += 1
             try:
                 release = _release(rid, token, cdir)
             except Exception as e:  # noqa: BLE001
@@ -175,10 +193,13 @@ def main() -> int:
     ap.add_argument("--token", default="")
     ap.add_argument("--include-collection", action="store_true")
     ap.add_argument("--cache-dir", default="inputs/.discogs-cache")
+    ap.add_argument("--newest", type=int, default=0, metavar="N",
+                    help="only the N most recent additions (0 = everything)")
     args = ap.parse_args()
     try:
         rows = scrape_discogs(args.username, args.token, args.include_collection,
-                              args.cache_dir, progress=lambda m: print(m, file=sys.stderr))
+                              args.cache_dir, progress=lambda m: print(m, file=sys.stderr),
+                              newest=args.newest)
     except ValueError as e:
         print(f"ERROR: {e}", file=sys.stderr)
         return 1

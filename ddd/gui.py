@@ -1033,6 +1033,20 @@ def main(page: ft.Page) -> None:
                  ft.dropdown.Option(key="bandcamp", text="Bandcamp")])
     discogs_collection_cb = ft.Checkbox(label="Include collection", value=False, visible=True)
     bandcamp_expand_cb = ft.Checkbox(label="Expand albums", value=True, visible=False)
+    # "N derniers ajouts" (0 = tout) : evite de re-scraper tout un compte deja connu.
+    newest_field = ft.TextField(label="Newest N (0 = all)", value="0", width=150,
+                                keyboard_type=ft.KeyboardType.NUMBER, dense=True)
+    newest_field_dj = ft.TextField(label="Newest N (0 = all)", value="0", width=150,
+                                   keyboard_type=ft.KeyboardType.NUMBER, dense=True,
+                                   tooltip="Playlist / channel: keep only the N most recent videos")
+
+    def _parse_newest(field) -> int:
+        """Valeur du champ -> int >= 0 (vide/invalide/negatif -> 0 = tout)."""
+        try:
+            n = int(str(field.value or "0").strip())
+        except ValueError:
+            return 0
+        return n if n > 0 else 0
     djset_url = ft.TextField(label="Set / channel / playlist URL (or 1001TL / tracklist file)",
                              width=560, hint_text="YouTube set or playlist URL, 1001TL, or a file")
     acquire_table_col = ft.ListView(expand=True, spacing=2)
@@ -1095,7 +1109,8 @@ def main(page: ft.Page) -> None:
             return None, None
         return username, ""
 
-    def _start_acquire(source, username, token, table_target, status_map, cancel_btn) -> None:
+    def _start_acquire(source, username, token, table_target, status_map, cancel_btn,
+                       newest=0) -> None:
         """Worker partage scrape -> acquire (favoris Discogs/Bandcamp + YouTube set)."""
         # Acquire telecharge via Soulseek : on verifie les creds AVANT de scraper, sinon
         # djset scrape une longue playlist puis echoue seulement au moment du download.
@@ -1133,12 +1148,14 @@ def main(page: ft.Page) -> None:
                 if source == "discogs":
                     rows = scrapers.scrape_discogs(
                         username, token=token,
-                        include_collection=discogs_collection_cb.value, progress=prog)
+                        include_collection=discogs_collection_cb.value, progress=prog,
+                        newest=newest)
                 elif source == "bandcamp":
                     rows = scrapers.scrape_bandcamp(
-                        username, expand_albums=bandcamp_expand_cb.value, progress=prog)
+                        username, expand_albums=bandcamp_expand_cb.value, progress=prog,
+                        newest=newest)
                 else:                           # djset : `username` porte l'URL / le chemin
-                    rows = scrapers.scrape_djset(username, progress=prog)
+                    rows = scrapers.scrape_djset(username, progress=prog, newest=newest)
 
                 if not rows:
                     status.value = f"No tracks found for {username} on {source}."
@@ -1198,7 +1215,8 @@ def main(page: ft.Page) -> None:
         if username is None:
             return
         _start_acquire(source, username, token, acquire_table_col,
-                       state.acquire_row_status, acq_cancel_btn)
+                       state.acquire_row_status, acq_cancel_btn,
+                       newest=_parse_newest(newest_field))
 
     def do_acquire_djset(_e) -> None:
         if state.busy:
@@ -1207,7 +1225,8 @@ def main(page: ft.Page) -> None:
         if username is None:
             return
         _start_acquire("djset", username, "", djset_table_col,
-                       state.djset_row_status, dj_cancel_btn)
+                       state.djset_row_status, dj_cancel_btn,
+                       newest=_parse_newest(newest_field_dj))
 
     # ====================================================================
     #  Identify : retrouve 'Artiste - Titre' de fichiers au nom perdu par
@@ -1647,7 +1666,8 @@ def main(page: ft.Page) -> None:
             ft.Row([source_dd, acquire_btn, acq_cancel_btn],
                    wrap=True, spacing=8, run_spacing=8,
                    vertical_alignment=ft.CrossAxisAlignment.CENTER),
-            ft.Row([discogs_collection_cb, bandcamp_expand_cb], wrap=True),
+            ft.Row([discogs_collection_cb, bandcamp_expand_cb, newest_field], wrap=True,
+                   run_spacing=8, vertical_alignment=ft.CrossAxisAlignment.CENTER),
             _table_surface(None, acquire_table_col),
         ], expand=True, spacing=10),
         padding=ft.padding.only(top=6), expand=True, bgcolor=BG)
@@ -1659,6 +1679,8 @@ def main(page: ft.Page) -> None:
                     size=12, color=TXT_DIM),
             ft.Row([djset_url, djset_fetch_btn, dj_cancel_btn],
                    wrap=True, spacing=8, run_spacing=8,
+                   vertical_alignment=ft.CrossAxisAlignment.CENTER),
+            ft.Row([newest_field_dj], wrap=True, run_spacing=8,
                    vertical_alignment=ft.CrossAxisAlignment.CENTER),
             _table_surface(None, djset_table_col),
         ], expand=True, spacing=10),

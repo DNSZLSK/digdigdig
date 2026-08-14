@@ -389,8 +389,14 @@ def _continuation_token(node) -> Optional[str]:
     return None
 
 
-def _youtube_playlist_titles(list_id: str, progress: ProgressCb, max_pages: int = 80) -> List[str]:
-    """TOUS les titres de video d'une playlist via l'API interne YouTube (pagination complete)."""
+def _youtube_playlist_titles(list_id: str, progress: ProgressCb, max_pages: int = 80,
+                             newest: int = 0) -> List[str]:
+    """Titres de video d'une playlist via l'API interne YouTube.
+
+    `newest > 0` : arrete la pagination des qu'on a au moins N titres (recent-d'abord)
+    et tronque a N -> pas de pagination inutile sur une longue chaine/playlist connue.
+    Sinon pagine TOUT.
+    """
     html = _yt_get(f"https://www.youtube.com/playlist?list={list_id}")
     mkey, idx = _INNERTUBE_KEY.search(html), html.find("ytInitialData")
     if not mkey or idx < 0:
@@ -400,6 +406,8 @@ def _youtube_playlist_titles(list_id: str, progress: ProgressCb, max_pages: int 
     data, _ = json.JSONDecoder().raw_decode(html[html.find("{", idx):])
 
     titles = _playlist_video_titles(data)
+    if newest and newest > 0 and len(titles) >= newest:
+        return titles[:newest]
     token, pages = _continuation_token(data), 0
     while token and pages < max_pages:
         body = json.dumps({"context": {"client": {"clientName": "WEB", "clientVersion": ver}},
@@ -414,17 +422,19 @@ def _youtube_playlist_titles(list_id: str, progress: ProgressCb, max_pages: int 
         token, pages = _continuation_token(resp), pages + 1
         if progress and pages % 3 == 0:
             progress(f"  playlist: {len(titles)} videos...")
+        if newest and newest > 0 and len(titles) >= newest:
+            break                               # assez de titres recents -> stop pagination
         if not new:
             break
-    return titles
+    return titles[:newest] if newest and newest > 0 else titles
 
 
-def _scrape_youtube_playlist(list_id: str, progress: ProgressCb) -> List[Pair]:
+def _scrape_youtube_playlist(list_id: str, progress: ProgressCb, newest: int = 0) -> List[Pair]:
     """Playlist YouTube : chaque video = un track. InnerTube (pagine TOUT), repli yt-dlp."""
     if progress:
         progress("YouTube playlist: extracting videos...")
     try:
-        titles = _youtube_playlist_titles(list_id, progress)
+        titles = _youtube_playlist_titles(list_id, progress, newest=newest)
     except Exception as e:  # noqa: BLE001
         titles = []
         logger.debug("playlist InnerTube echec: %r", e)
@@ -433,7 +443,7 @@ def _scrape_youtube_playlist(list_id: str, progress: ProgressCb) -> List[Pair]:
         if not pairs and progress:          # rien des 2 cotes -> dire POURQUOI, pas juste "0 found"
             progress("  -> 0 video: the playlist may be private, unlisted (the link is "
                      "required), empty, or the URL is wrong.")
-        return pairs
+        return pairs[:newest] if newest and newest > 0 else pairs
     pairs = _pairs_from_entries([{"title": t} for t in titles])
     if progress:
         progress(f"  -> {len(titles)} videos, {len(pairs)} parsed as Artist - Title")
@@ -459,13 +469,14 @@ def _scrape_youtube_playlist_ytdlp(list_id: str, progress: ProgressCb) -> List[P
     return _ytdlp_flat_pairs(f"https://www.youtube.com/playlist?list={list_id}")
 
 
-def _scrape_youtube_channel(url: str, uploads_id: str, progress: ProgressCb) -> List[Pair]:
+def _scrape_youtube_channel(url: str, uploads_id: str, progress: ProgressCb,
+                            newest: int = 0) -> List[Pair]:
     """Chaine YouTube : chaque upload = un track. Via la playlist 'uploads' (UU...) +
     paginateur InnerTube (pagine TOUT), repli yt-dlp flat sur l'URL de chaine."""
     if progress:
         progress("YouTube channel: extracting uploads...")
     try:
-        titles = _youtube_playlist_titles(uploads_id, progress)
+        titles = _youtube_playlist_titles(uploads_id, progress, newest=newest)
     except Exception as e:  # noqa: BLE001
         titles = []
         logger.debug("channel InnerTube echec: %r", e)
@@ -473,7 +484,7 @@ def _scrape_youtube_channel(url: str, uploads_id: str, progress: ProgressCb) -> 
         pairs = _ytdlp_flat_pairs(url)
         if not pairs and progress:
             progress("  -> 0 video: channel empty/unavailable, or the URL is wrong.")
-        return pairs
+        return pairs[:newest] if newest and newest > 0 else pairs
     pairs = _pairs_from_entries([{"title": t} for t in titles])
     if progress:
         progress(f"  -> {len(titles)} videos, {len(pairs)} parsed as Artist - Title")
@@ -544,8 +555,13 @@ def _scrape_set79(url: str, progress: ProgressCb) -> List[Pair]:
 
 # ---- Entry point ------------------------------------------------------------
 
-def scrape_djset(url: str, progress: ProgressCb = None) -> List[Dict]:
-    """URL de set -> want-list (ROW_FIELDS). Ramasse le max depuis les sources dispo."""
+def scrape_djset(url: str, progress: ProgressCb = None, newest: int = 0) -> List[Dict]:
+    """URL de set -> want-list (ROW_FIELDS). Ramasse le max depuis les sources dispo.
+
+    `newest > 0` : s'applique aux cas playlist / chaine (chaque video = une entree) ->
+    ne garde que les N derniers uploads. No-op pour un set unique / 1001 / set79 / paste
+    (une seule tracklist, deja bornee).
+    """
     url = (url or "").strip()
     low = url.lower()
     pairs: List[Pair] = []
@@ -572,14 +588,14 @@ def scrape_djset(url: str, progress: ProgressCb = None) -> List[Dict]:
         if list_id:                              # playlist : chaque video = un track
             source = "djset:youtube-playlist"
             try:
-                pairs = _scrape_youtube_playlist(list_id, progress)
+                pairs = _scrape_youtube_playlist(list_id, progress, newest=newest)
             except Exception as e:  # noqa: BLE001
                 if progress:
                     progress(f"YouTube playlist failed: {e}")
         elif uploads_id:                         # chaine : chaque upload = un track
             source = "djset:youtube-channel"
             try:
-                pairs = _scrape_youtube_channel(url, uploads_id, progress)
+                pairs = _scrape_youtube_channel(url, uploads_id, progress, newest=newest)
             except Exception as e:  # noqa: BLE001
                 if progress:
                     progress(f"YouTube channel failed: {e}")

@@ -160,8 +160,14 @@ def scrape_bandcamp(
     expand_albums: bool = True,
     cache_dir: str = "inputs/.bandcamp-cache",
     progress: ProgressCb = None,
+    newest: int = 0,
 ) -> List[Dict]:
-    """Scrape la wishlist publique -> liste de rows (albums deplies en pistes)."""
+    """Scrape la wishlist publique -> liste de rows (albums deplies en pistes).
+
+    `newest > 0` : ne garde que les N derniers items (entrees wishlist). La wishlist
+    est deja recent-d'abord (sequence + pagination `older_than_token`) ; on stoppe des
+    N items. Si la 1re page suffit, la boucle d'API paginee n'est jamais atteinte.
+    """
     cdir = Path(cache_dir)
     cdir.mkdir(parents=True, exist_ok=True)
     scraper = _make_scraper()
@@ -179,22 +185,30 @@ def scrape_bandcamp(
 
     rows: List[Dict] = []
     seen = set()
+    items_done = 0                                 # entrees wishlist reellement traitees
 
-    def add_item(item):
+    def cap_reached() -> bool:
+        return bool(newest and newest > 0 and items_done >= newest)
+
+    def add_item(item) -> bool:
+        """Traite un item wishlist. Retourne True s'il comptait comme une nouvelle
+        entree (past dedup) -> alimente le cap `newest`."""
+        nonlocal items_done
         band = item.get("band_name", "")
         title = item.get("item_title", "")
         item_url = item.get("item_url", "")
         if not title:
-            return
+            return False
         key = (band.lower(), title.lower())
         if key in seen:
-            return
+            return False
         seen.add(key)
+        items_done += 1
         if item.get("item_type") == "album" and expand_albums and item_url:
             try:
                 data = _album_tracklist(scraper, item_url, cdir)
                 rows.extend(_tracks_from_album(data, band, title, item_url))
-                return
+                return True
             except Exception as e:  # noqa: BLE001
                 if progress:
                     progress(f"  skip album {title}: {e}")
@@ -204,13 +218,16 @@ def scrape_bandcamp(
                 "Artist": na, "Title": nt, "Album": "", "Length": "", "Year": "",
                 "Source": "bandcamp:wishlist", "SourceUrl": item_url,
             })
+        return True
 
     for item_id in sequence:
+        if cap_reached():
+            break
         item = wishlist.get(str(item_id))
         if item:
             add_item(item)
 
-    if fan_id and last_token:
+    if fan_id and last_token and not cap_reached():   # 1re page a suffi -> pas d'API paginee
         api_url = f"{BASE}/api/fancollection/1/wishlist_items"
         while True:
             payload = {"fan_id": fan_id, "older_than_token": last_token, "count": 50}
@@ -226,12 +243,14 @@ def scrape_bandcamp(
             if not items:
                 break
             for item in items:
+                if cap_reached():
+                    break
                 add_item(item)
             if progress:
                 progress(f"  {len(rows)} tracks...")
-            last_token = data.get("last_token")
-            if not data.get("more_available"):
+            if cap_reached() or not data.get("more_available"):
                 break
+            last_token = data.get("last_token")
             time.sleep(0.5)
 
     if progress:
@@ -246,9 +265,11 @@ def main() -> int:
     ap.add_argument("-o", "--output", default="bandcamp_wishlist.csv")
     ap.add_argument("--no-expand-albums", action="store_true")
     ap.add_argument("--cache-dir", default="inputs/.bandcamp-cache")
+    ap.add_argument("--newest", type=int, default=0, metavar="N",
+                    help="only the N most recent additions (0 = everything)")
     args = ap.parse_args()
     rows = scrape_bandcamp(args.username, not args.no_expand_albums, args.cache_dir,
-                           progress=lambda m: print(m, file=sys.stderr))
+                           progress=lambda m: print(m, file=sys.stderr), newest=args.newest)
     out = Path(args.output)
     out.parent.mkdir(parents=True, exist_ok=True)
     with open(out, "w", newline="", encoding="utf-8") as f:
