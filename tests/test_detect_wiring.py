@@ -41,8 +41,12 @@ def test_routing_never_worse_through_analyze_file(tmp_path):
         assert _RANK[fo.verdict] >= _RANK[leg.verdict], f"{p.name}: {leg.verdict} -> {fo.verdict}"
 
 
-def test_default_detector_is_legacy(tmp_path):
-    # sans config, le defaut doit etre legacy (zero changement de comportement).
+def test_default_detector_is_legacy(tmp_path, monkeypatch):
+    # Isolation : ne PAS lire le vrai %APPDATA%\ddd\config.json (sinon le test mesure la
+    # machine, pas le code -> rouge chez qui a detector=forensic, vert en CI). Config vide
+    # -> le defaut du CODE doit etre legacy (zero changement de comportement).
+    from ddd.core import config
+    monkeypatch.setattr(config, "get", lambda key, default=None: default)
     assert quality._current_detector() == "legacy"
     p = tmp_path / "full.wav"
     _write_noise(p)
