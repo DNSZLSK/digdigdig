@@ -1054,8 +1054,8 @@ def main(page: ft.Page) -> None:
         except ValueError:
             return 0
         return n if n > 0 else 0
-    djset_url = ft.TextField(label="Set / channel / playlist URL (or 1001TL / tracklist file)",
-                             width=560, hint_text="YouTube set or playlist URL, 1001TL, or a file")
+    djset_url = ft.TextField(label="YouTube URL, or a tracklist file (for 1001TL: paste to a file)",
+                             width=560, hint_text="YouTube set/playlist/channel URL, or path to a .txt tracklist")
     acquire_table_col = ft.ListView(expand=True, spacing=2)
     djset_table_col = ft.ListView(expand=True, spacing=2)
 
@@ -1111,7 +1111,7 @@ def main(page: ft.Page) -> None:
             return username, ""
         username = (djset_url.value or "").strip()      # djset : l'URL / le fichier
         if not username:
-            status.value = "Enter the set / channel / playlist URL (YouTube / 1001TL) or a tracklist file."
+            status.value = "Enter a YouTube set / playlist / channel URL, or the path to a .txt tracklist file (1001TL: paste it to a file first)."
             page.update()
             return None, None
         return username, ""
@@ -1169,7 +1169,12 @@ def main(page: ft.Page) -> None:
                     status.value = "Fetch cancelled (scraping stopped)."
                     return
                 if not rows:
-                    status.value = f"No tracks found for {username} on {source}."
+                    if "1001tracklists.com" in username.lower():
+                        status.value = ("1001Tracklists blocks scrapers (Cloudflare). Open the page in "
+                                        "your browser, copy the tracklist into a .txt file (one "
+                                        "'Artist - Title' per line), and give that file here instead of the URL.")
+                    else:
+                        status.value = f"No tracks found for {username} on {source}."
                     return
                 state.acquire_rows = rows
                 render_acquire_into(table_target, status_map, rows)
@@ -1685,8 +1690,10 @@ def main(page: ft.Page) -> None:
 
     djset_tab = ft.Container(
         content=ft.Column([
-            ft.Text("Paste a YouTube set or playlist URL (each video = a track), a 1001TL page, "
-                    "or a tracklist file. DDD scrapes it, then downloads in real lossless.",
+            ft.Text("Paste a YouTube set, playlist or channel URL (each video = a track), or the path "
+                    "to a .txt tracklist file. DDD scrapes it, then downloads in real lossless.\n"
+                    "1001Tracklists blocks scrapers (Cloudflare): open the page in your browser, "
+                    "copy the tracklist into a .txt file (one 'Artist - Title' per line), and give that file here.",
                     size=12, color=TXT_DIM),
             ft.Row([djset_url, newest_field_dj, djset_fetch_btn, dj_cancel_btn],
                    wrap=True, spacing=8, run_spacing=8,
