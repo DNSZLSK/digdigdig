@@ -168,10 +168,13 @@ def test_dedup_double_remix_paren():
 
 def test_playlist_id_detects_real_playlist():
     from ddd.core.scrapers.djset import _playlist_id
-    assert _playlist_id("https://www.youtube.com/watch?v=abc&list=PLxxx&index=22") == "PLxxx"
-    assert _playlist_id("https://www.youtube.com/playlist?list=OL12345") == "OL12345"
-    assert _playlist_id("https://www.youtube.com/watch?v=abc&list=RDmix") is None   # mix/radio auto
-    assert _playlist_id("https://www.youtube.com/watch?v=abc") is None              # pas de playlist
+    assert _playlist_id("https://www.youtube.com/playlist?list=OL12345") == "OL12345"  # vraie playlist (sans v=)
+    # watch?v=...&list=... designe la VIDEO (le set) -> None, le set part au scraping tracklist
+    assert _playlist_id("https://www.youtube.com/watch?v=abc&list=PLxxx&index=22") is None
+    assert _playlist_id("https://www.youtube.com/watch?v=z-NH7h1x2hU&list=LL&index=53") is None  # likes perso
+    assert _playlist_id("https://www.youtube.com/watch?v=abc&list=WL") is None       # watch later perso
+    assert _playlist_id("https://www.youtube.com/watch?v=abc&list=RDmix") is None    # mix/radio auto
+    assert _playlist_id("https://www.youtube.com/watch?v=abc") is None               # pas de playlist
 
 
 def test_clean_video_title_strips_noise_keeps_version():

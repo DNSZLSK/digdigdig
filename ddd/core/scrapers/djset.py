@@ -287,12 +287,24 @@ _YT_NOISE = re.compile(
 
 
 def _playlist_id(url: str) -> Optional[str]:
-    """ID de playlist depuis ?list=... (sauf mix/radio auto 'RD...'). None sinon."""
+    """ID de playlist depuis ?list=... (sauf mix/radio auto 'RD...'). None sinon.
+
+    Un `watch?v=XXX&list=YYY` designe la VIDEO (le set), jouee dans le contexte de la
+    liste : on renvoie None des qu'il y a un `v=` -> le set part au scraping tracklist
+    (description/commentaires/Content-ID), pas au scraping des titres de la playlist.
+    Sans ca, cliquer un set depuis "Vidéos que j'aime" (`list=LL`, personnelle/privee ->
+    "playlist does not exist") ou une sidebar ramenait 0. Une vraie playlist se donne en
+    `/playlist?list=YYY` (sans `v=`). Ecarte aussi les listes personnelles LL/WL/RD.
+    """
     try:
-        lid = (parse_qs(urlparse(url).query).get("list") or [""])[0].strip()
+        q = parse_qs(urlparse(url).query)
+        lid = (q.get("list") or [""])[0].strip()
     except ValueError:
         return None
-    if not lid or lid.upper().startswith("RD"):   # RD... = mix/radio auto-genere
+    if q.get("v"):                                # v=... present -> l'intention est la video
+        return None
+    up = lid.upper()
+    if not lid or up.startswith("RD") or up in ("LL", "WL"):  # RD=mix auto, LL=likes, WL=watch later
         return None
     return lid
 
