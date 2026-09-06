@@ -16,7 +16,9 @@ dependencies = [
     # Le wheel embarque ses propres libs ffmpeg -> toujours aucun ffmpeg systeme requis.
     "av>=12",
     "mutagen>=1.46",
-    "flac-detective>=0.9.6",
+    # Internal spectral APIs are version-specific; 1.x removed new_scoring.artifacts.
+    # Keep the published version used to calibrate and test both detectors.
+    "flac-detective==0.9.6",
     "requests>=2.28",
     "cloudscraper>=1.2.71",
     "beautifulsoup4>=4.11",
