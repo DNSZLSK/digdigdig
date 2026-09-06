@@ -25,6 +25,7 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
+test = ["pytest>=8,<10"]
 # Phase 4 (GUI + packaging) - non requis pour le coeur CLI.
 # Pin sur la ligne stable 0.28.x : la 0.85+ ("Flet 1.0", alpha) a des constructeurs
 # incompatibles (TextField sans label, boutons sans label positionnel).
@@ -54,3 +55,6 @@ version = {attr = "ddd.__version__"}
 
 [tool.setuptools.packages.find]
 include = ["ddd*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

@@ -14,7 +14,10 @@ permissions:
   contents: write   # upload de l'asset sur la release
 
 jobs:
+  tests:
+    uses: ./.github/workflows/tests.yml
   build:
+    needs: tests
     name: DDD.app (Apple Silicon)
     runs-on: macos-14
     steps:

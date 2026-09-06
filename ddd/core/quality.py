@@ -1,14 +1,11 @@
-"""Detecteur de qualite lossless universel.
+"""Mesure de bande passante audio et classement selon les seuils utilisateur.
 
-Classe n'importe quel fichier audio en vrai lossless vs lossy/upscale via
-l'analyse du cutoff spectral. On reutilise la math eprouvee de flac-detective
-(detect_cutoff, calculate_high_frequency_energy, estimate_mp3_bitrate) mais avec
-un lecteur leger par fenetres (3 x 30 s) qui marche pareil sur WAV/FLAC/AIFF/MP3,
-sans la copie-vers-temp ni le cache oriente-FLAC de flac-detective.
+Les bandes mesurent le cutoff spectral. Elles ne prouvent ni l'historique de
+compression ni la qualite perceptuelle. Un enregistrement filtre peut etre
+lossless avec une bande passante reduite. LOSSLESS est un identifiant historique
+conserve dans les rapports pour la bande large, pas une preuve de provenance.
 
-Principe : un vrai lossless garde de l'energie jusqu'a ~Nyquist (~20-22 kHz en
-44.1 kHz) ; un MP3 reencode en lossless a un mur (cutoff) plus bas
-(~16 kHz pour du 128, ~20 kHz pour du 320).
+Analyse par fenetres (3 x 30 s), avec les fonctions spectrales de flac-detective.
 """
 
 from __future__ import annotations
@@ -45,7 +42,7 @@ LOSSY_EXTS = {".mp3", ".m4a", ".m4b", ".mp4", ".aac", ".ogg", ".oga", ".opus", "
 # Verdicts : 4 bandes orientees "jouable en club", classees par le cutoff spectral
 # mesure. La math reste celle de flac-detective (detect_cutoff/estimate_mp3_bitrate) ;
 # on ne change QUE la facon de nommer/grouper le resultat.
-LOSSLESS = "LOSSLESS"            # plein spectre (estimate_mp3_bitrate == 0) - vrai lossless
+LOSSLESS = "LOSSLESS"            # bande large (identifiant historique, pas une preuve de provenance)
 HQ = "HQ"                        # cutoff >= 18 kHz - jouable club (inclut le MP3 320)
 DOUTEUX = "DOUTEUX"              # 16-18 kHz - audible sur bon systeme, a revoir
 MAUVAIS = "MAUVAIS"              # < 16 kHz - bouillie / MP3 bas debit
@@ -54,8 +51,7 @@ ERROR = "ERROR"                 # echec de lecture/analyse
 
 SAMPLE_WINDOW_S = 30.0
 LONG_FILE_S = 90.0
-# Un FLAC dont le bitrate conteneur est sous ce seuil vient quasi surement d'un MP3.
-# (Ne s'applique pas au WAV : le WAV non compresse est toujours ~1411 kbps.)
+# Indice secondaire du mode forensic, jamais une preuve de compression avec perte.
 FLAC_BITRATE_RED_FLAG = 160
 
 # Frontieres de bande (Hz) sur le cutoff mesure
@@ -218,14 +214,7 @@ def _spectral(path: Path, info: AudioInfo) -> Optional[Tuple]:
 
 
 def _aggregate_windows(cutoffs: List[float], hfs: List[float]) -> Tuple[float, float, float]:
-    """Agrege les fenetres en (cutoff, cutoff_std, hf) de la fenetre LA PLUS REVELATRICE.
-
-    On prend le MAX du cutoff, pas le min : une seule fenetre plein spectre prouve que le
-    fichier porte vraiment les aigus -> vrai lossless. Un transcode ne peut PAS fabriquer une
-    fenetre a cutoff haut (les aigus sont jetes a l'encodage), donc le max ne laisse pas passer
-    de faux ; le min, lui, rejetait a tort les morceaux dynamiques (un breakdown filtre ou une
-    intro calme = fenetre pauvre en HF qui tirait tout le fichier sous la barre). Le hf suit la
-    meme fenetre que le cutoff retenu (coherence pour un futur detecteur de resample)."""
+    """Use the widest observed bandwidth; this is not proof of lossless provenance."""
     best = max(range(len(cutoffs)), key=cutoffs.__getitem__)
     cutoff_std = float(np.std(cutoffs)) if len(cutoffs) > 1 else 0.0
     return cutoffs[best], cutoff_std, hfs[best]
@@ -238,19 +227,16 @@ def _band(cutoff: float, est: int) -> Tuple[str, str, str]:
     position du mur : >=18 kHz jouable (HQ), 16-18 limite (DOUTEUX), <16 bouillie.
     """
     if est == 0:
-        return LOSSLESS, "high", f"spectre plein, cutoff {cutoff:.0f} Hz"
+        return LOSSLESS, "uncertain", f"spectre large, cutoff {cutoff:.0f} Hz; origine de compression indeterminee"
     if cutoff >= HQ_CUTOFF_HZ:
-        return HQ, "medium", f"cutoff {cutoff:.0f} Hz (~{est} kbps) - jouable club"
+        return HQ, "uncertain", f"cutoff {cutoff:.0f} Hz; bande passante elevee, origine indeterminee"
     if cutoff >= DOUTEUX_CUTOFF_HZ:
-        return DOUTEUX, "medium", f"cutoff {cutoff:.0f} Hz (~{est} kbps) - limite, a revoir"
-    return MAUVAIS, "high", f"cutoff {cutoff:.0f} Hz (~{est} kbps) - source lossy bas debit"
+        return DOUTEUX, "uncertain", f"cutoff {cutoff:.0f} Hz; bande passante limitee, a ecouter"
+    return MAUVAIS, "uncertain", f"cutoff {cutoff:.0f} Hz; bande passante reduite, origine indeterminee"
 
 
 def _classify_lossless(cutoff: float, container_bitrate: int, ext: str) -> Tuple[str, str, str]:
     est = estimate_mp3_bitrate(cutoff)
-    if ext == ".flac" and 0 < container_bitrate < FLAC_BITRATE_RED_FLAG:
-        return (MAUVAIS, "high",
-                f"bitrate conteneur FLAC {container_bitrate} kbps < {FLAC_BITRATE_RED_FLAG} (source lossy)")
     return _band(cutoff, est)
 
 
@@ -380,7 +366,7 @@ def is_accepted(qr: "QualityResult", preset: str = DEFAULT_PRESET) -> bool:
         preset = DEFAULT_PRESET
     floor = QUALITY_PRESETS[preset]
     if floor is None:                      # puriste / wav_aiff / flac_only : plein spectre uniquement
-        return qr.verdict == LOSSLESS
+        return qr.verdict == LOSSLESS and qr.format_class == "lossless_container"
     return qr.verdict == LOSSLESS or qr.cutoff_hz >= floor
 
 

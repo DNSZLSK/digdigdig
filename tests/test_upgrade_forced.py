@@ -54,10 +54,10 @@ def main():
     soulseek.read_index = lambda _i: [DownloadResult("Artist X", "Tune", str(dl_flac), 300, "1", "0")]
     up.quality.analyze_file = lambda p: _qr(p, quality.LOSSLESS, 22050.0, ".flac", 1000, "lossless_container")
     trashed = []
-    up.trash.send_to_trash = lambda p: trashed.append(str(p))
+    up.trash.send_to_trash = lambda p: (trashed.append(str(p)), True)[1]
 
     # 1) SANS forced : HQ accepte -> already_good, rien telecharge, original intact
-    out_auto = up.run_upgrade(str(acid), root=ROOT, staging_dir=cache, download_dir=lib,
+    out_auto = up.run_upgrade(folder=str(acid), root=ROOT, staging_dir=cache, trash_original=True, download_dir=lib,
                               scan_results=[src_qr], preset="dj_club", fallback_profile=None, forced=False)
     assert any(o.action == up.ACT_ALREADY_GOOD for o in out_auto), "sans forced : HQ -> already_good"
     assert not any(o.action == up.ACT_REPLACED for o in out_auto), "sans forced : rien remplace"
@@ -66,7 +66,7 @@ def main():
     # 2) AVEC forced : bypass is_accepted ET dedup -> telecharge, re-audit LOSSLESS, REMPLACE IN-PLACE
     trashed.clear()
     _mk(dl_flac)   # re-cree le download (la passe precedente a pu le deplacer)
-    out_f = up.run_upgrade(str(acid), root=ROOT, staging_dir=cache, download_dir=lib,
+    out_f = up.run_upgrade(folder=str(acid), root=ROOT, staging_dir=cache, trash_original=True, download_dir=lib,
                            scan_results=[src_qr], preset="dj_club", fallback_profile=None, forced=True)
     assert any(o.action == up.ACT_REPLACED for o in out_f), "forced : doit chercher+remplacer malgre HQ+in-library"
     assert (acid / "Artist X - Tune.flac").exists(), "upgrade in-place : le FLAC reste dans ACID"

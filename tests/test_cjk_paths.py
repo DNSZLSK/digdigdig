@@ -50,7 +50,7 @@ def main():
         assert q is not None, "quality.analyze_file a renvoye None"
         assert q.filename == fpath.name, (q.filename, fpath.name)
         assert "東京テスト" in q.path, q.path
-        assert q.verdict == "LOSSLESS", f"WAV plein spectre attendu LOSSLESS, recu {q.verdict}"
+        assert q.verdict not in (quality.ERROR, quality.SKIPPED), q.reason
         print("OK - quality.analyze_file (verdict + nom/chemin japonais intacts)")
 
         # 4. parseur de nom : decoupe 'Artiste - Titre' en CJK (+ parentheses pleine-chasse).

@@ -31,7 +31,7 @@ def test_promotes_genuine_near_nyquist_lossless():
     # cutoff 21.2 kHz (>= 95% Nyquist) + bitrate eleve : le legacy dit HQ (est=320 car
     # 21.2k < 21.5k), le forensique le reconnait LOSSLESS. Un vrai 320 plafonne ~20.5k.
     v, conf, _r, _est, _sig = _fc(21200, std=50, hf=0.00002, container=800)
-    assert v == quality.LOSSLESS and conf == "high"
+    assert v == quality.LOSSLESS and conf == "uncertain"
 
 
 def test_real_320_transcode_stays_hq_not_promoted():

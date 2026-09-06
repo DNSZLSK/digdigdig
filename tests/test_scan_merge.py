@@ -28,13 +28,17 @@ def _rec(path, verdict, status, size):
     return ScanRecord(q, n, size, 0)  # dup_count recompute by hand below
 
 
-def main():
+def test_scan_merge(tmp_path):
     # 3 fichiers : 2 partagent une taille (doublon), 1 unique
     recs = [
         _rec(r"C:\lib\A\x.wav", quality.DOUTEUX, audit.OK, 5_000_000),
         _rec(r"C:\lib\B\x.wav", quality.DOUTEUX, audit.OK, 5_000_000),   # meme taille que le 1er
         _rec(r"C:\lib\C\y.wav", quality.LOSSLESS, audit.OK, 7_000_000),
     ]
+    for i, rec in enumerate(recs):
+        path = tmp_path / f"{i}.wav"
+        path.write_bytes(b"same" if i < 2 else b"different")
+        rec.quality.path = str(path)
     # recompute dup_count comme le fait scan_library
     from collections import Counter
     sizes = Counter(r.size_bytes for r in recs)
@@ -56,7 +60,3 @@ def main():
     assert d["dup_count"] == 2
 
     print("OK - merge qualite+nommage + detection doublons : assertions passent")
-
-
-if __name__ == "__main__":
-    main()
