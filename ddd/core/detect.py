@@ -122,8 +122,8 @@ def forensic_classify(
     # aucune signature MP3 confirmee (est1 None) + pas de red flag conteneur. Un vrai 320
     # plafonne ~20.5 kHz (< 95% Nyquist), donc il ne remonte PAS ici -> promotion sure.
     if base_v != q.LOSSLESS and est1 is None and near_nyquist and not flac_red_flag:
-        reason = f"cutoff {cutoff:.0f} Hz >= 95% Nyquist, aucune signature MP3 (Rule 1/8) -> authentique"
-        return q.LOSSLESS, "high", reason, est, signals
+        reason = f"cutoff {cutoff:.0f} Hz >= 95% Nyquist, bande passante large (Rule 1/8)"
+        return q.LOSSLESS, "uncertain", reason + "; compression history unknown", est, signals
 
     # ZONE GRISE : le legacy retrograde (HQ/DOUTEUX) mais Rule 1 ne confirme PAS de MP3.
     # On ne change NI le verdict NI le cutoff (is_accepted inchange) : juste la confiance.

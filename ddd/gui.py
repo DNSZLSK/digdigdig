@@ -112,7 +112,7 @@ ACTION_LABEL = {
     upgrade_mod.ACT_KEPT_BESIDE: ("kept beside ✓", theme.GREEN, False),
     upgrade_mod.ACT_ACQUIRED: ("kept in inbox ✓", theme.GREEN, False),
     upgrade_mod.ACT_ALREADY_GOOD: ("already good ✓", theme.BLUE, False),
-    upgrade_mod.ACT_REJECTED_FAKE: ("upscale -> trash ✗", theme.PINK, False),
+    upgrade_mod.ACT_REJECTED_FAKE: ("below threshold ✗", theme.PINK, False),
     upgrade_mod.ACT_TOO_SHORT: ("too short ✗", theme.PINK, False),
     upgrade_mod.ACT_WRONG_MATCH: ("wrong match ✗", theme.PINK, False),
     upgrade_mod.ACT_NOT_FOUND: ("not found ✗", TXT_DIM, False),
@@ -124,10 +124,10 @@ ACTION_LABEL = {
 # les dicts de libelle ci-dessus -> la legende ne peut pas deriver de ce qui est reellement
 # rendu dans la colonne STATUS / la pastille BAND (retour testeur : aucune doc sur les statuts).
 VERDICT_HELP = {
-    quality.LOSSLESS: "Full spectrum, no lossy signature: verified true lossless.",
+    quality.LOSSLESS: "Wide spectrum observed. This does not prove lossless provenance.",
     quality.HQ: "Cutoff at or above 18 kHz: club-playable (includes a clean MP3 320).",
-    quality.DOUTEUX: "Cutoff 16-18 kHz: audible on a good system, worth re-checking.",
-    quality.MAUVAIS: "Cutoff below 16 kHz: low-bitrate mush.",
+    quality.DOUTEUX: "Cutoff 16-18 kHz: limited bandwidth. Compression history unknown.",
+    quality.MAUVAIS: "Reduced bandwidth or below the configured bitrate threshold. Review before replacing.",
     "SKIPPED": "Not an analyzable audio file (or the read failed).",
 }
 PHASE_HELP = {
@@ -143,7 +143,7 @@ ACTION_HELP = {
     upgrade_mod.ACT_KEPT_BESIDE: "Downloaded and verified, kept next to the original.",
     upgrade_mod.ACT_ACQUIRED: "New track fetched and kept in the library.",
     upgrade_mod.ACT_ALREADY_GOOD: "Already above the quality bar: nothing to upgrade.",
-    upgrade_mod.ACT_REJECTED_FAKE: "The download was a fake/upscale below the bar: discarded.",
+    upgrade_mod.ACT_REJECTED_FAKE: "The candidate was below the selected threshold; this does not prove a fake.",
     upgrade_mod.ACT_TOO_SHORT: "The download was a preview/sample (under 90 s): discarded.",
     upgrade_mod.ACT_WRONG_MATCH: "The download was a different track (title/artist/version): discarded.",
     upgrade_mod.ACT_NOT_FOUND: "Nothing suitable found on Soulseek.",
@@ -324,7 +324,8 @@ def main(page: ft.Page) -> None:
     #  Helpers partages
     # ====================================================================
     def set_busy(b: bool) -> None:
-        """Une seule operation a la fois : verrouille les actions des 2 onglets."""
+        """Une seule operation a la fois : verrouille les actions des onglets."""
+        trash_original_cb.disabled = b
         state.busy = b
         progress.visible = b
         for btn in (browse_btn, sort_browse_btn, scan_btn, acquire_btn, djset_fetch_btn,
@@ -457,17 +458,13 @@ def main(page: ft.Page) -> None:
         page.update()
 
     def _kill_sldl_on_exit(_e=None) -> None:
-        """Filet de securite a la fermeture de la fenetre : tue le sldl en cours s'il y en
-        a un. Sinon il survit orphelin et tient le port 50300 -> ralentit/bloque le run
-        suivant (le zombie recurrent). Le kill en tete de chaque lot le rattrape aussi,
-        mais autant ne jamais le creer."""
+        """Terminate only the child process owned by this window."""
         proc = state.active_proc
         if proc is not None:
             try:
                 proc.terminate()
             except Exception:  # noqa: BLE001
                 pass
-        soulseek.stop_orphan_sldl()
 
     page.on_disconnect = _kill_sldl_on_exit   # fenetre fermee / client deconnecte
     atexit.register(_kill_sldl_on_exit)       # repli : sortie du process
@@ -509,7 +506,7 @@ def main(page: ft.Page) -> None:
         l1, l2 = {
             "dj_club":    ("keep >= 18 kHz", "DJ CLUB"),
             "audiophile": ("keep >= 20 kHz", "AUDIOPHILE"),
-            "puriste":    ("pure lossless", "PURIST"),
+            "puriste":    ("wide spectrum", "PURIST"),
             "mp3_320":    ("target MP3 320", "MP3 320"),
             "wav_aiff":   ("target WAV/AIFF", "WAV/AIFF"),
             "flac_only":  ("target FLAC", "FLAC ONLY"),
@@ -529,7 +526,7 @@ def main(page: ft.Page) -> None:
         options=[
             ft.dropdown.Option(key="upgradable", text="To upgrade (below the bar)"),
             ft.dropdown.Option(key="all", text="All"),
-            ft.dropdown.Option(key=quality.LOSSLESS, text="Lossless"),
+            ft.dropdown.Option(key=quality.LOSSLESS, text="Wide spectrum"),
             ft.dropdown.Option(key=quality.HQ, text="HQ"),
             ft.dropdown.Option(key=quality.DOUTEUX, text="Iffy"),
             ft.dropdown.Option(key=quality.MAUVAIS, text="Bad"),
@@ -785,6 +782,7 @@ def main(page: ft.Page) -> None:
         # Clic manuel (au moins une case cochee) = override : DDD cherche mieux meme pour une
         # track deja bonne ou deja dans la lib (bypass is_accepted + dedup, depot in-place).
         forced = bool(state.selected)
+        trash_original = bool(trash_original_cb.value)
         if not chosen:
             status.value = "Nothing to upgrade (check files or change the filter)."
             page.update()
@@ -850,10 +848,11 @@ def main(page: ft.Page) -> None:
                     state.folder, root=paths.resource_base(), staging_dir=staging,
                     download_dir=dl_dir, scan_results=chosen, progress=prog, on_item=on_item,
                     on_proc=on_proc, cancel=is_cancelled, log_path=log_path, forced=forced,
-                    on_chunk=on_chunk)
+                    on_chunk=on_chunk, trash_original=trash_original)
                 from collections import Counter
                 c = Counter(o.action for o in outcomes)
-                ok = c.get(upgrade_mod.ACT_REPLACED, 0)
+                ok = c.get(upgrade_mod.ACT_REPLACED, 0) + c.get(upgrade_mod.ACT_KEPT_BESIDE, 0)
+                retained = c.get(upgrade_mod.ACT_KEPT_BESIDE, 0)
                 rej = _count_rejected(c)
                 nf = c.get(upgrade_mod.ACT_NOT_FOUND, 0)
                 dup = c.get(upgrade_mod.ACT_DUPLICATE, 0)
@@ -868,7 +867,7 @@ def main(page: ft.Page) -> None:
                     summary = (f"Upgrade cancelled: {ok} in library, {rej} rejected, "
                                f"{nf} not found{dup_txt}{ag_txt} (partial).")
                 else:
-                    summary = (f"Upgrade done: {ok} added to library (fakes -> trash), "
+                    summary = (f"Upgrade done: {ok} added to library ({retained} originals retained), "
                                f"{rej} rejected, {nf} not found{dup_txt}{ag_txt}.")
                 status.value = summary
                 state.last_upgraded += ok
@@ -1202,7 +1201,7 @@ def main(page: ft.Page) -> None:
                                f"{nf} not found{dup_txt} (partial).")
                 else:
                     summary = (f"Fetch done: {acq} in library, {rej} rejected "
-                               f"(upscale/short/wrong match), {nf} not found{dup_txt}.")
+                               f"(below threshold/short/wrong match), {nf} not found{dup_txt}.")
                 status.value = summary
                 show_buy_links(outcomes, source)
                 _banner(summary, bool(acq) and not state.cancel_requested)
@@ -1458,7 +1457,7 @@ def main(page: ft.Page) -> None:
         options=[
             ft.dropdown.Option(key="dj_club", text="DJ Club (>=18 kHz, MP3 320 included)"),
             ft.dropdown.Option(key="audiophile", text="Audiophile (>=20 kHz)"),
-            ft.dropdown.Option(key="puriste", text="Purist (pure lossless)"),
+            ft.dropdown.Option(key="puriste", text="Purist (wide spectrum)"),
             ft.dropdown.Option(key="mp3_320", text="MP3 320 only (vintage / mobile)"),
             ft.dropdown.Option(key="wav_aiff", text="WAV/AIFF only (uncompressed)"),
             ft.dropdown.Option(key="flac_only", text="FLAC only"),
@@ -1527,7 +1526,7 @@ def main(page: ft.Page) -> None:
         ft.Row([slsk_user, slsk_pass], wrap=True),
         ft.Row([discogs_user, discogs_tok], wrap=True),
         ft.Row([bandcamp_user], wrap=True),
-        ft.Text("Everything DDD validates (upgrade + favorites) lands here; fakes/rejects "
+        ft.Text("Accepted downloads land here. Originals are retained by default; rejected candidates "
                 "go to the trash.", size=12, color=TXT_DIM),
         ft.Row([dl_dir_field, dl_browse_btn]),
         ft.Text("Quality bar (what DDD keeps); the MP3 320 / WAV-AIFF / FLAC modes also set "
@@ -1587,6 +1586,9 @@ def main(page: ft.Page) -> None:
                                style=_ink_style)
     upgrade_btn = ft.FilledButton(text="Upgrade selection · 0", icon=ft.Icons.UPGRADE,
                                   on_click=do_upgrade, disabled=True, style=_pink_style)
+    trash_original_cb = ft.Checkbox(
+        label="Trash originals after verified replacement", value=False,
+        tooltip="Off by default. Keep originals for listening and comparison.")
     lib_cancel_btn = ft.OutlinedButton(text="Cancel", icon=ft.Icons.CANCEL,
                                        on_click=do_cancel, visible=False)
     sort_btn = ft.FilledButton(
@@ -1670,6 +1672,7 @@ def main(page: ft.Page) -> None:
             # PAS de wrap=True ici : un enfant expand (le spacer) dans un Wrap fait jeter
             # un layout error a Flutter -> toute la zone table devient un carre gris
             # (ErrorWidget release-mode #C3C3C2). Row normal -> l'expand est valide.
+            trash_original_cb,
             ft.Row([filter_dd, check_all_btn, uncheck_all_btn, legend_btn, lib_cancel_btn,
                     ft.Container(expand=True), dup_text],
                    spacing=8, vertical_alignment=ft.CrossAxisAlignment.CENTER),

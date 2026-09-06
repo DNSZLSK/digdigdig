@@ -75,43 +75,43 @@ def main():
     up.trash.send_to_trash = lambda p: (trashed.append(str(p)), True)[1]
 
     scan = [
-        _qr(r"C:\lib\Artist A - Good.wav", quality.DOUTEUX),    # -> REPLACED (depose + source corbeille)
-        _qr(r"C:\lib\Artist B - Upscale.wav", quality.DOUTEUX), # -> REJECTED_FAKE (candidat corbeille)
-        _qr(r"C:\lib\Artist C - Rare.wav", quality.DOUTEUX),    # -> NOT_FOUND
-        _qr(r"C:\lib\groove 2 me.wav", quality.DOUTEUX),        # sans ' - ' -> recherche titre-seul
-        _qr(r"C:\lib\Artist D - Real.flac", quality.LOSSLESS, cutoff=22050.0),  # accepte -> hors want-list
+        _qr(r"C:/lib/Artist A - Good.wav", quality.DOUTEUX),    # -> REPLACED (depose + source corbeille)
+        _qr(r"C:/lib/Artist B - Upscale.wav", quality.DOUTEUX), # -> REJECTED_FAKE (candidat corbeille)
+        _qr(r"C:/lib/Artist C - Rare.wav", quality.DOUTEUX),    # -> NOT_FOUND
+        _qr(r"C:/lib/groove 2 me.wav", quality.DOUTEUX),        # sans ' - ' -> recherche titre-seul
+        _qr(r"C:/lib/Artist D - Real.flac", quality.LOSSLESS, cutoff=22050.0),  # accepte -> hors want-list
     ]
 
     # === run_upgrade : depot bibliotheque + corbeille (preset dj_club, pas de repli MP3) ===
     _mk(cache / "Artist A - Good.flac")
     _mk(cache / "Artist B - Upscale.flac")
-    outcomes = up.run_upgrade("C:\\lib", root=ROOT, staging_dir=cache, download_dir=lib,
+    outcomes = up.run_upgrade(folder="C:/lib", root=ROOT, staging_dir=cache, trash_original=True, download_dir=lib,
                               scan_results=scan, preset="dj_club", fallback_profile=None)
     by = {o.action: o for o in outcomes}
     assert by[up.ACT_REPLACED].artist == "Artist A"
     assert (lib / "Artist A - Good.flac").exists(), "le vrai lossless doit etre depose en bibliotheque"
-    assert r"C:\lib\Artist A - Good.wav" in trashed, "le faux SOURCE doit partir a la corbeille"
+    assert r"C:/lib/Artist A - Good.wav" in trashed, "le faux SOURCE doit partir a la corbeille"
     assert by[up.ACT_REJECTED_FAKE].artist == "Artist B"
     assert str(cache / "Artist B - Upscale.flac") in trashed, "le candidat upscale -> corbeille"
     assert up.ACT_NOT_FOUND in by, "Artist C introuvable"
     # 'groove 2 me.wav' (sans separateur) doit etre CHERCHE en titre-seul, pas skippe
-    assert any(o.original == r"C:\lib\groove 2 me.wav" for o in outcomes), \
+    assert any(o.original == r"C:/lib/groove 2 me.wav" for o in outcomes), \
         "un fichier sans ' - ' doit etre cherche (titre-seul), pas ignore"
     assert all(o.action != up.ACT_UNPARSEABLE for o in outcomes), "plus de skip sur nom sans separateur"
     # le deja-accepte (LOSSLESS) n'est PAS telecharge, mais est desormais REPORTE
     # (ACT_ALREADY_GOOD) au lieu d'etre droppe en silence -> la ligne GUI ne reste plus figee.
-    d_out = [o for o in outcomes if o.original == r"C:\lib\Artist D - Real.flac"]
+    d_out = [o for o in outcomes if o.original == r"C:/lib/Artist D - Real.flac"]
     assert d_out and d_out[0].action == up.ACT_ALREADY_GOOD, "le deja-accepte (LOSSLESS) -> already_good"
     print("OK run_upgrade : accepte depose, source sous seuil + upscale a la corbeille, fallback titre-seul")
 
     # === dedup : un fichier deja dans la bibliotheque -> DUPLICATE, source intacte ===
     trashed.clear()
     _mk(lib / "Artist C - Rare.flac")     # on a deja Artist C dans la bibliotheque
-    out2 = up.run_upgrade("C:\\lib", root=ROOT, staging_dir=cache, download_dir=lib,
-                          scan_results=[_qr(r"C:\lib\Artist C - Rare.wav", quality.DOUTEUX)],
+    out2 = up.run_upgrade(folder="C:/lib", root=ROOT, staging_dir=cache, trash_original=True, download_dir=lib,
+                          scan_results=[_qr(r"C:/lib/Artist C - Rare.wav", quality.DOUTEUX)],
                           preset="dj_club", fallback_profile=None)
     assert any(o.action == up.ACT_DUPLICATE for o in out2), "deja en bibliotheque -> DUPLICATE"
-    assert r"C:\lib\Artist C - Rare.wav" not in trashed, "un doublon ne doit PAS supprimer le source a l'aveugle"
+    assert r"C:/lib/Artist C - Rare.wav" not in trashed, "un doublon ne doit PAS supprimer le source a l'aveugle"
     print("OK run_upgrade : dedup bibliotheque (DUPLICATE) sans toucher au source")
 
     # === chemin GUI : run_upgrade accepte des ScanRecord (non-regression) ===
@@ -120,7 +120,7 @@ def main():
     _mk(cache / "Artist A - Good.flac")
     _mk(cache / "Artist B - Upscale.flac")
     recs = [ScanRecord(quality=q, naming=None, size_bytes=0, dup_count=1) for q in scan]
-    gui_out = up.run_upgrade("C:\\lib", root=ROOT, staging_dir=cache, download_dir=lib2,
+    gui_out = up.run_upgrade(folder="C:/lib", root=ROOT, staging_dir=cache, trash_original=True, download_dir=lib2,
                              scan_results=recs, preset="dj_club", fallback_profile=None)
     gui_actions = {o.action for o in gui_out}
     assert up.ACT_REPLACED in gui_actions and up.ACT_REJECTED_FAKE in gui_actions
@@ -135,7 +135,7 @@ def main():
     _mk(cache / "Artist A - Good.flac")
     _mk(cache / "Artist B - Upscale.flac")
     chunk_calls = []
-    up.run_upgrade("C:\\lib", root=ROOT, staging_dir=cache, download_dir=lib_ch,
+    up.run_upgrade(folder="C:/lib", root=ROOT, staging_dir=cache, trash_original=True, download_dir=lib_ch,
                    scan_results=scan, preset="dj_club", fallback_profile=None,
                    on_chunk=lambda idx, total: chunk_calls.append((idx, total)))
     assert chunk_calls, "on_chunk doit etre appele (sinon la GUI n'a aucun repere de progression)"
@@ -183,7 +183,7 @@ def main():
     assert up._reject_reason(kraml, _dl("Andre Kraml - Safari"), q_ok) is None, "vrai renomme -> garde"
     assert up._reject_reason(kraml, _dl("Andre Kraml - Different Song"), q_ok)[0] == up.ACT_WRONG_MATCH
     collab = WantItem("Daft Punk vs Stardust", "Music Sounds Better", None, "")
-    assert up._reject_reason(collab, _dl("Stardust - Music Sounds Better With You"), q_ok) is None, "collab -> garde"
+    assert up._reject_reason(collab, _dl("Stardust - Music Sounds Better"), q_ok) is None, "collab -> garde"
     print("OK _reject_reason : court / mauvais match / renomme / collab")
 
     # === _reject_reason durci : artiste vs CHAMP du candidat, titres courts, version ===
@@ -231,34 +231,34 @@ def main():
     up.scan_library = lambda src, **k: recs_imp     # mock le scan reel
     trashed.clear()
     stats = up.import_folder(src_imp, lib4, preset="dj_club")
-    assert stats["kept"] == 1 and stats["trashed"] == 1, stats
+    assert stats["kept"] == 1 and stats["retained"] == 1 and stats["trashed"] == 0, stats
     assert (lib4 / "Foo - RealTrack.flac").exists(), "accepte deplace en bibliotheque"
-    assert str(fake_b) in trashed, "sous le seuil -> corbeille"
+    assert str(fake_b) not in trashed and fake_b.exists(), "below threshold remains at source"
     print("OK import_folder : accepte garde, reste corbeille")
 
     # === build_plan : nom sans separateur -> requete construite depuis les TAGS ===
     up.read_tags = lambda p: ({"artist": "Gary Beck", "title": "Get Down", "album": ""}
                               if "gary" in str(p).lower() else {"artist": "", "title": "", "album": ""})
-    plan = up.build_plan([_qr(r"C:\lib\gary-beck-get-down.mp3", quality.DOUTEUX)], preset="dj_club")
+    plan = up.build_plan([_qr(r"C:/lib/gary-beck-get-down.mp3", quality.DOUTEUX)], preset="dj_club")
     assert plan.items and plan.items[0].artist == "Gary Beck" and plan.items[0].title == "Get Down", \
         f"nom sans ' - ' doit utiliser les tags : {plan.items}"
     # sans tag exploitable -> titre-seul depuis le nom (fallback)
-    plan2 = up.build_plan([_qr(r"C:\lib\Mysterious Title.wav", quality.DOUTEUX)], preset="dj_club")
+    plan2 = up.build_plan([_qr(r"C:/lib/Mysterious Title.wav", quality.DOUTEUX)], preset="dj_club")
     assert plan2.items and plan2.items[0].artist == "" and plan2.items[0].title == "Mysterious Title", \
         f"sans tag -> titre-seul depuis le nom : {plan2.items}"
     print("OK build_plan : tags d'abord, puis titre-seul en fallback")
 
     # === is_accepted : meme fichier HQ, deux presets, deux resultats ===
-    hq = _qr(r"C:\lib\track.flac", quality.HQ, cutoff=19000.0)
+    hq = _qr(r"C:/lib/track.flac", quality.HQ, cutoff=19000.0)
     hq.est_source_bitrate = 320
     assert quality.is_accepted(hq, "dj_club"), "HQ 19 kHz accepte en DJ Club"
     assert not quality.is_accepted(hq, "audiophile"), "HQ 19 kHz refuse en Audiophile (<20 kHz)"
     assert not quality.is_accepted(hq, "puriste"), "HQ refuse en Puriste (pas plein spectre)"
-    loss = _qr(r"C:\lib\real.flac", quality.LOSSLESS, cutoff=22050.0)
+    loss = _qr(r"C:/lib/real.flac", quality.LOSSLESS, cutoff=22050.0)
     loss.est_source_bitrate = 0
     assert all(quality.is_accepted(loss, p) for p in ("dj_club", "audiophile", "puriste")), \
         "LOSSLESS accepte par tous les presets"
-    bad = _qr(r"C:\lib\bad.wav", quality.MAUVAIS, cutoff=14000.0)
+    bad = _qr(r"C:/lib/bad.wav", quality.MAUVAIS, cutoff=14000.0)
     assert not any(quality.is_accepted(bad, p) for p in ("dj_club", "audiophile", "puriste")), \
         "MAUVAIS refuse par tous les presets"
     # build_plan : le MEME HQ est skippe en dj_club (accepte) mais candidat en puriste
@@ -273,23 +273,23 @@ def main():
     print("OK already_good : track acceptee enregistree (plus de drop silencieux -> plus de ligne figee)")
     # forensic "?" : un HQ SUSPECT (artefacts ancres) n'est PAS "deja bon" en dj_club malgre le
     # cutoff -> il redevient candidat (le spectre prime). 'uncertain' reste clement (accepte).
-    hq_susp = _qr(r"C:\lib\Some Artist - Sketchy.mp3", quality.HQ, cutoff=19000.0, fclass="lossy")
+    hq_susp = _qr(r"C:/lib/Some Artist - Sketchy.mp3", quality.HQ, cutoff=19000.0, fclass="lossy")
     hq_susp.container_bitrate = 320
     hq_susp.confidence = "suspect"
     assert not quality.is_accepted(hq_susp, "dj_club"), "HQ suspect ne doit PAS etre accepte en dj_club"
     assert up.build_plan([hq_susp], preset="dj_club").items, "HQ suspect -> candidat a l'upgrade"
-    hq_unc = _qr(r"C:\lib\Some Artist - GreyZone.mp3", quality.HQ, cutoff=19000.0, fclass="lossy")
+    hq_unc = _qr(r"C:/lib/Some Artist - GreyZone.mp3", quality.HQ, cutoff=19000.0, fclass="lossy")
     hq_unc.container_bitrate = 320
     hq_unc.confidence = "uncertain"
     assert quality.is_accepted(hq_unc, "dj_club"), "HQ uncertain reste accepte (clement) en dj_club"
     print("OK forensic suspect : HQ suspect -> candidat ; HQ uncertain reste accepte (clement)")
 
     # === ban universel MP3 < 320 (jamais accepte, meme en DJ Club) ===
-    mp3_192 = _qr(r"C:\lib\lo.mp3", quality.MAUVAIS, cutoff=19000.0, fclass="lossy")
+    mp3_192 = _qr(r"C:/lib/lo.mp3", quality.MAUVAIS, cutoff=19000.0, fclass="lossy")
     mp3_192.container_bitrate = 192
     assert not any(quality.is_accepted(mp3_192, p) for p in ("dj_club", "audiophile", "puriste")), \
         "MP3 192 kbps banni partout, meme a cutoff 19 kHz"
-    mp3_320 = _qr(r"C:\lib\hi.mp3", quality.HQ, cutoff=20000.0, fclass="lossy")
+    mp3_320 = _qr(r"C:/lib/hi.mp3", quality.HQ, cutoff=20000.0, fclass="lossy")
     mp3_320.container_bitrate = 320
     assert quality.is_accepted(mp3_320, "dj_club"), "MP3 320 (cutoff 20 kHz) accepte en DJ Club"
     print("OK ban MP3 < 320 : 192 refuse partout, 320 accepte en DJ Club")
@@ -336,12 +336,12 @@ def main():
     # is_accepted : mp3_320 garde le 320 (>= 18 kHz) ; wav_aiff/flac_only ne gardent que le plein
     # spectre (un 320 reste candidat -> re-cherche dans le format cible) ; un vrai lossless est garde
     # par tous (jamais transcode).
-    mp3_320_ok = _qr(r"C:\lib\hi.mp3", quality.HQ, cutoff=20000.0, fclass="lossy")
+    mp3_320_ok = _qr(r"C:/lib/hi.mp3", quality.HQ, cutoff=20000.0, fclass="lossy")
     mp3_320_ok.container_bitrate = 320
     assert quality.is_accepted(mp3_320_ok, "mp3_320"), "MP3 320 garde en mode MP3 320"
     assert not quality.is_accepted(mp3_320_ok, "flac_only"), "un 320 reste candidat en FLAC only"
     assert not quality.is_accepted(mp3_320_ok, "wav_aiff"), "un 320 reste candidat en WAV/AIFF only"
-    real_loss = _qr(r"C:\lib\real.flac", quality.LOSSLESS, cutoff=22050.0)
+    real_loss = _qr(r"C:/lib/real.flac", quality.LOSSLESS, cutoff=22050.0)
     real_loss.est_source_bitrate = 0
     assert all(quality.is_accepted(real_loss, p) for p in ("mp3_320", "wav_aiff", "flac_only")), \
         "un vrai lossless est garde par tous les modes"
@@ -356,13 +356,13 @@ def main():
     soulseek.read_index = lambda _idx: []     # rien trouve -> NOT_FOUND, pas d'audit
     lib6 = base / "_lib6"
     lib6.mkdir(exist_ok=True)
-    up.run_upgrade("C:\\lib", root=ROOT, staging_dir=cache, download_dir=lib6,
-                   scan_results=[_qr(r"C:\lib\X - Y.mp3", quality.MAUVAIS, fclass="lossy")],
+    up.run_upgrade(folder="C:/lib", root=ROOT, staging_dir=cache, trash_original=True, download_dir=lib6,
+                   scan_results=[_qr(r"C:/lib/X - Y.mp3", quality.MAUVAIS, fclass="lossy")],
                    preset="mp3_320")
     assert seen_profiles == ["mp3-only"], f"mp3_320 -> mp3-only sans repli : {seen_profiles}"
     seen_profiles.clear()
-    up.run_upgrade("C:\\lib", root=ROOT, staging_dir=cache, download_dir=lib6,
-                   scan_results=[_qr(r"C:\lib\X - Z.mp3", quality.MAUVAIS, fclass="lossy")],
+    up.run_upgrade(folder="C:/lib", root=ROOT, staging_dir=cache, trash_original=True, download_dir=lib6,
+                   scan_results=[_qr(r"C:/lib/X - Z.mp3", quality.MAUVAIS, fclass="lossy")],
                    preset="flac_only")
     assert seen_profiles == ["flac-only"], f"flac_only -> flac-only : {seen_profiles}"
     print("OK modes cible format : search_profiles_for + is_accepted + profil derive du preset")

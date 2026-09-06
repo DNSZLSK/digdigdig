@@ -35,7 +35,7 @@ sur ton volume monte avec `--download-dir` pour recuperer les fichiers :
 docker run --rm \
   -e DDD_SOULSEEK_USER=tonuser -e DDD_SOULSEEK_PASS=tonpass \
   -v /mnt/musique:/music \
-  ddd upgrade /music --download-dir /music --apply
+  ddd upgrade /music --download-dir /music
 ```
 
 `upgrade` re-audite chaque download et ne garde que le vrai AUTHENTIC (les filtres
@@ -66,3 +66,5 @@ docker run --rm \
   -v "$PWD/ddd-data":/app/outputs \
   ddd scan /music
 ```
+
+Les originaux restent en place par defaut. `upgrade --trash-original` autorise leur mise a la corbeille uniquement apres depot verifie du candidat. `import` conserve les refus, erreurs et doublons a la source. Le spectre mesure une bande passante, pas la provenance de compression.

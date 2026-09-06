@@ -11,12 +11,13 @@ import csv
 import json
 import logging
 import os
-from collections import Counter, defaultdict
+from collections import Counter
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable, Dict, Iterator, List, Optional, Sequence
 
 from . import audit as audit_mod
+from .content import duplicate_paths
 from .audit import NameAudit
 from .quality import CSV_FIELDS, LOSSLESS_EXTS, LOSSY_EXTS, QualityResult, analyze_file
 
@@ -92,7 +93,7 @@ class ScanRecord:
     quality: QualityResult
     naming: NameAudit
     size_bytes: int
-    dup_count: int          # nb de fichiers partageant exactement cette taille (1 = unique)
+    dup_count: int          # nb de fichiers de contenu identique (1 = unique)
 
     @property
     def is_duplicate(self) -> bool:
@@ -137,11 +138,10 @@ def scan_library(
     exclude_names: Sequence[str] = (),
     progress: Optional[ProgressCb] = None,
 ) -> List[ScanRecord]:
-    """Scan complet : pour chaque fichier, qualite + nommage/tags, puis doublons (taille)."""
+    """Scan complet : pour chaque fichier, qualite + nommage/tags, puis doublons confirmes par contenu."""
     files = list(iter_audio_files(root, exclude_names))
     total = len(files)
     raw = []
-    size_counts: Dict[int, int] = defaultdict(int)
     for i, f in enumerate(files, 1):
         try:
             q = analyze_file(f)
@@ -151,8 +151,6 @@ def scan_library(
             except OSError:
                 size = 0
             raw.append((q, n, size))
-            if size > 0:
-                size_counts[size] += 1
         except Exception as e:  # noqa: BLE001
             # Un seul fichier bancal (tag exotique, I/O reseau en rade...) ne doit JAMAIS
             # tuer tout le scan : on le loggue et on l'ignore.
@@ -162,17 +160,17 @@ def scan_library(
 
     records: List[ScanRecord] = []
     for q, n, size in raw:
-        dup = size_counts.get(size, 1) if size > 0 else 1
+        dup = 1
         records.append(ScanRecord(q, n, size, dup))
+    for group in duplicate_groups(records):
+        for rec in group:
+            rec.dup_count = len(group)
     return records
 
 
 def duplicate_groups(records: Sequence[ScanRecord]) -> List[List[ScanRecord]]:
-    """Regroupe les doublons (meme taille en octets) ; groupes de 2+ uniquement."""
-    by_size: Dict[int, List[ScanRecord]] = defaultdict(list)
-    for r in records:
-        if r.size_bytes > 0:
-            by_size[r.size_bytes].append(r)
-    groups = [g for g in by_size.values() if len(g) > 1]
+    """Group files only after content equality has been confirmed."""
+    by_path = {Path(r.quality.path): r for r in records}
+    groups = [[by_path[p] for p in group] for group in duplicate_paths(by_path)]
     groups.sort(key=lambda g: g[0].size_bytes, reverse=True)
     return groups

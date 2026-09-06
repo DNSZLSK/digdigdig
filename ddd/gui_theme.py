@@ -45,10 +45,10 @@ VERDICT_COLOR = {
     "SKIPPED": NEUTRAL,
 }
 VERDICT_LABEL = {
-    quality.LOSSLESS: "Lossless",
+    quality.LOSSLESS: "Wide",
     quality.HQ: "HQ",
     quality.DOUTEUX: "Iffy",
-    quality.MAUVAIS: "Bad",
+    quality.MAUVAIS: "Review",
     "ERROR": "Error",
     "SKIPPED": "Skipped",
 }

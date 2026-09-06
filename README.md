@@ -29,10 +29,10 @@
 **DDD cleans up your music library and bumps it to club-playable quality, on its own.**
 
 You point it at a folder (or your Discogs / Bandcamp favorites), and DDD:
-- spots the **fake lossless**: MP3s re-encoded as .flac/.wav/.aiff that *look* lossless but aren't,
-- goes and finds a **real version** on Soulseek (FLAC, WAV or AIFF, with an automatic MP3 320 fallback if nothing lossless turns up),
-- checks the **spectrum** of the downloaded file to make sure it holds up (not an upscale), that it's the **right track** and not a snippet,
-- files it into **a single** clean library, and sends the fakes to the trash.
+- flags **limited bandwidth and suspicious encodings** for review,
+- searches for a **candidate version** on Soulseek (FLAC, WAV or AIFF, with an automatic MP3 320 fallback if nothing lossless turns up),
+- checks the downloaded file against your **bandwidth threshold**, requested identity and duration,
+- adds accepted candidates to your library and **retains originals by default**.
 
 No need to be a developer: download the `.exe`, double-click, it's a window.
 
@@ -57,26 +57,28 @@ No need to be a developer: download the `.exe`, double-click, it's a window.
 ## What it does
 
 - **Quality scan**: every file is ranked by its **spectral cutoff** (the frequency where the sound stops) into one of four bands, plus duplicates:
-  - **Lossless** (green): full spectrum, real lossless.
+  - **Wide** (green): wide spectrum observed; compression history remains unknown. The CSV identifier `LOSSLESS` is retained for compatibility.
   - **HQ** (blue): >= 18 kHz, playable on a big system (includes MP3 320).
   - **Iffy** (yellow): 16-18 kHz, borderline.
-  - **Bad** (red): < 16 kHz, mush.
+  - **Review** (red): reduced bandwidth or bitrate below the configured floor.
 - **Reads pretty much anything**: FLAC, WAV, AIFF, MP3, OGG/Opus, **MP4 / M4A** (AAC *and* ALAC), **WMA** (including WMA Lossless), APE, TTA, WavPack. That old folder of iTunes-era `.mp4` rips or Windows Media `.wma` gets scanned like the rest, instead of showing up empty. What's *inside* the container decides: an ALAC `.m4a` is treated as lossless and put through the same anti-upscale spectral check as a FLAC, not written off as lossy because of its extension.
 - **Quality / target modes** (in Settings) - the bar DDD keeps to, and what it goes hunting for:
   - **DJ Club** (>= 18 kHz) - *default*: keeps anything club-playable, MP3 320 included.
   - **Audiophile** (>= 20 kHz): rejects MP3s below 320.
-  - **Purist** (pure lossless): real full-spectrum lossless only; if it's not on Soulseek -> buy links, no MP3 fallback.
+  - **Purist** (wide spectrum): only candidates classified as wide spectrum; if it's not on Soulseek -> buy links, no MP3 fallback.
   - **MP3 320** (vintage / mobile): hunts MP3 320 straight, skips FLAC - for old gear that won't read FLAC, or syncing over mobile data. Bumps your sub-320s up to 320; leaves the lossless you already have untouched.
   - **WAV/AIFF only** / **FLAC only**: target a single lossless container (old CDJs/samplers that won't read FLAC, or a FLAC-homogeneous library). DDD never transcodes what you already own - the mode just picks the format of what it fetches.
-- **Upgrade**: replaces your below-the-bar files with something better, found on Soulseek. In **DJ Club / Audiophile** it looks for FLAC, WAV and AIFF (lots of DJs share in WAV/AIFF), with an **automatic MP3 320 fallback** for tracks that can't be found in lossless. MP3s below 320 kbps are **banned across the board**, whatever the mode.
+- **Upgrade**: downloads candidates from Soulseek and retains the originals by default. The CLI `--trash-original` option or GUI checkbox explicitly enables removal, only after a verified copy has been installed. Name collisions retain both names using a numbered suffix. In **DJ Club / Audiophile** it looks for FLAC, WAV and AIFF (lots of DJs share in WAV/AIFF), with an **automatic MP3 320 fallback** for tracks that can't be found in lossless. MP3s below 320 kbps are **banned across the board**, whatever the mode.
 - **Get favorites**: scrapes your Discogs wantlist / Bandcamp wishlist and downloads it.
 - **YouTube set / playlist**: paste a set URL (YouTube / 1001Tracklists) or a **YouTube playlist** (each video = a track) -> DDD extracts the tracklist into a want-list (CSV).
-- **Single library**: everything that passes lands in `~/Music/DDD` (changeable in Settings), de-duplicated. Rejects go to the **trash** (recoverable), never hard-deleted.
+- **Single library**: everything that passes lands in `~/Music/DDD` (changeable in Settings), de-duplicated. Rejected download candidates go to the **trash**. Import leaves rejected, unreadable and duplicate source files in place.
 - **Sort by genre** (*Sort by genre* button / `ddd sort`): files your loose tracks into your own **vibe folders** through a cascade - the file's **ID3 genre tag**, then **Discogs** (+ MusicBrainz), and when both come up empty a **local audio model** (Discogs-EffNet, 400 Discogs styles) that reads the genre **from the spectrum** - so even an untagged, badly-named edit (`Track_01.flac`) lands in the right folder instead of `_INBOX`. The default set is house/techno-oriented (ACID, DEEPWATER, HOUSERZ, PROG, TECHNO, TRANCE, GARAGE, DISCO-FUNK, BREAKS-ELECTRO) and is **fully editable** in Settings. **Dry-run by default** - you preview, then Apply. Only loose files are touched, never your curated subfolders. (The audio model runs **on-device, no cloud**; by the MTG/UPF, CC BY-NC.)
 - **Identify - recover lost names** (*Identify* tab / `ddd identify`): files called `YH1`, `track01`, `unknown 04`? DDD reads each file's **acoustic fingerprint** (Chromaprint) and matches it against **AcoustID** (the open, MusicBrainz-backed database, same idea as Shazam) to recover *Artist - Title*. It **proposes**, you **confirm track by track** (confident matches pre-ticked, uncertain ones flagged), then it renames + tags only what you kept - **never a blind rename**. Underground / unreleased tracks that aren't in the database just stay untouched.
 - **Not found -> buy links**: whatever Soulseek can't find comes out as a clickable page (DDD logo + theme) with **Discogs** (vinyl marketplace, perfect for old pressings) and **Bandcamp** links to buy it.
 
-**The safety net: the spectrum is law.** Every download is re-audited by spectrum (FFT); **the declared format and bitrate are only used for the Soulseek search, never for the keep-or-reject decision.** The spectrum doesn't lie, tags do - that's what tells a real 320 / lossless apart from an upscale (an MP3 128 re-encoded as .flac or .wav, which Soulseek's filters can't see). A file is only kept if it passes three checks: **spectral** (above the preset's bar, not an upscale), **duration** (not a snippet / preview) and **title + artist identity** (the right track, not a wrong match). Otherwise -> trash.
+**Safety and limits.** Spectral analysis measures bandwidth; it cannot prove the history of a recording. A genuine filtered recording can fall below your chosen threshold. Review by listening before removing originals. Downloads must match the complete normalized title, a complete named collaborator, the requested version and measured duration (10% tolerance, minimum 2 seconds). Without a reference duration, candidates under 90 seconds are rejected; unknown duration or artist is not accepted. Matching is conservative and can reject valid naming variations.
+
+Accepted downloads are copied without overwriting existing files, flushed and checked by SHA-256 before staging is removed. Original removal is opt-in and happens afterwards. Import never trashes source files; importing a library into itself is a no-op. Scan and rename only label content-identical files as duplicates; import retains such copies for review.
 
 ## Getting started (user)
 
@@ -91,7 +93,7 @@ No need to be a developer: download the `.exe`, double-click, it's a window.
    **Get favorites** tab: pick Discogs/Bandcamp -> *Fetch & download*.
 
 > The 3 D's: **DIG** your sources -> **DOWNLOAD** from Soulseek -> **DETECT** by spectrum. The output
-> is your verified lossless library, which you can then share / point anywhere you want.
+> is a library of candidates checked against your selected thresholds, which you can then share / point anywhere you want.
 
 ## Usage & responsibility
 
@@ -127,10 +129,10 @@ playlists (yt-dlp). Everything is bundled into the `.exe` (no Python, no ffmpeg 
 # Scan a folder: Lossless / HQ / Iffy / Bad? well named? duplicates?
 .\.venv\Scripts\python.exe -m ddd scan "C:\path\to\Music"
 
-# Upgrade: drops real lossless into the library, fake source -> trash
+# Upgrade: add accepted copies; retain originals (use --trash-original to opt into removal)
 .\.venv\Scripts\python.exe -m ddd upgrade "C:\path\to\Music"
 
-# Import an existing folder into the library (lossless kept, the rest trashed)
+# Import accepted files; leave rejects, errors and confirmed duplicates at source
 .\.venv\Scripts\python.exe -m ddd import "C:\path\to\Music"
 
 # Rename a folder back to "Artist - Title" (from name + tags; dry-run, --apply to write)
@@ -164,10 +166,21 @@ Query resolution: name `Artist - Title` -> else ID3/Vorbis tags -> else title-on
 Compilations (`Various Artists`), vinyl side prefixes (`A1`, `B2`...) and artists duplicated
 in the title are normalized before the search.
 
+### Verification
+
+```sh
+python -m pip install -e ".[gui,test]"
+python -m pytest -q
+```
+
+The suite includes the standalone legacy scenarios in isolated subprocesses. CI runs core,
+CLI and GUI construction tests on Windows, Linux and macOS for pull requests. The macOS
+release build depends on this suite; the Windows build script also runs it before packaging.
+
 ### Building the `.exe`
 
 ```powershell
-.\.venv\Scripts\python.exe -m pip install -e ".[gui,build]"
+.\.venv\Scripts\python.exe -m pip install -e ".[gui,build,test]"
 .\packaging\build.ps1
 ```
 
@@ -189,7 +202,7 @@ docker run --rm -v /mnt/music:/music ddd scan /music -o /music/ddd-scan.csv
 docker run --rm \
   -e DDD_SOULSEEK_USER=you -e DDD_SOULSEEK_PASS=secret \
   -v /mnt/music:/music \
-  ddd upgrade /music --download-dir /music --apply
+  ddd upgrade /music --download-dir /music
 ```
 
 x86_64 only. Details: `docker/README.md`.

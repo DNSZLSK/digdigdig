@@ -8,23 +8,27 @@ le re-audit obligatoire). Le preset fixe AUSSI la cible de recherche (cf quality
 en DJ Club/Audiophile, si rien n'est trouve en lossless, une 2e passe retente en MP3 320 (jamais
 sous 320) ; les modes cible-format cherchent directement leur format, sans repli.
 
-Le remplacement est opt-in (apply=True). Par defaut : telecharge en staging,
-re-audite, et rapporte ce qui SERAIT remplace, sans toucher la bibliotheque.
+Les candidats acceptes sont deposes dans la bibliotheque. Les originaux sont
+conserves par defaut ; trash_original=True autorise leur retrait apres depot verifie.
 """
 
 from __future__ import annotations
 
 import logging
 import os
+import math
+import re
+import unicodedata
 from dataclasses import dataclass, asdict, field
 from pathlib import Path
 from typing import Callable, Dict, List, Optional, Sequence
 
 from . import quality
-from .fsutil import safe_move
+from .fsutil import verified_deposit
+from .content import duplicate_paths
 from .naming import match_key, parse_filename, normalize_artist_title, resolve_name, read_tags, search_title
 from .scan import scan_folder, scan_library, AUDIO_EXTS
-from .tokenize import get_tokens, token_coverage, core_title_tokens, loose_title_tokens, version_key
+from .tokenize import version_key
 from . import soulseek
 from . import trash
 from .soulseek import WantItem
@@ -51,7 +55,6 @@ ACT_ALREADY_GOOD = "ALREADY_GOOD"       # cochee a la main mais deja au-dessus d
 
 # Garde-fous post-download (sldl tourne en fuzzy ; c'est DDD qui filtre intelligemment)
 MIN_DURATION_S = 90        # < 90 s = quasi sûr un extrait / preview Soulseek
-MIN_TITLE_COVERAGE = 0.6   # le fichier recu doit couvrir >=60% des tokens du titre (noyau)
 CHUNK_SIZE = 25            # taille des lots sldl : feedback par piste periodique sur gros batch
 
 
@@ -60,17 +63,18 @@ def _chunks(seq, n: int):
         yield seq[i:i + n]
 
 
-def _existing_keys(folder) -> set:
+def _existing_keys(folder, exclude_paths=()) -> set:
     """match_key des pistes deja presentes (comme fichiers audio) dans un dossier.
 
     Sert a ne PAS re-telecharger ce qu'on a deja (acquire relance / inbox rempli).
     """
     folder = Path(folder)
     keys = set()
+    excluded = {Path(p).resolve() for p in exclude_paths}
     if not folder.exists():
         return keys
     for p in folder.rglob("*"):
-        if p.is_file() and p.suffix.lower() in AUDIO_EXTS:
+        if p.resolve() not in excluded and p.is_file() and p.suffix.lower() in AUDIO_EXTS:
             parsed = parse_filename(str(p))
             if parsed.parseable:
                 # MEME normalisation que la want-list et que existing.add au depot
@@ -81,60 +85,59 @@ def _existing_keys(folder) -> set:
     return keys
 
 
-def _title_coverage(req_title, cand_title):
-    """Couverture du titre demande dans le candidat (0..1), ou None si le titre demande
-    n'a aucun token jugeable meme en mode loose.
+def _words(value):
+    normalized = unicodedata.normalize("NFKD", value).casefold()
+    return tuple(re.findall(r"[^\W_]+", "".join(c for c in normalized if not unicodedata.combining(c))))
 
-    Le noyau (>=3 lettres, sans version/feat) est essaye d'abord ; repli loose (chiffres
-    + mots courts) pour les titres tres courts ('2 ME') qui sinon ne donneraient aucun
-    token et feraient sauter le check (l'ancien fail-open a -1)."""
-    core_req = core_title_tokens(req_title)
-    if core_req:
-        return token_coverage(core_req, core_title_tokens(cand_title))
-    loose_req = loose_title_tokens(req_title)
-    if not loose_req:
-        return None
-    return token_coverage(loose_req, loose_title_tokens(cand_title))
+
+def _artist_names(value):
+    # Match a complete collaborator, including short names and non-Latin scripts.
+    parts = re.split(r"\s*(?:,|&|/|\+|\b(?:feat\.?|ft\.?|featuring|vs\.?|with)\b|\s[xX]\s)\s*", value, flags=re.I)
+    return {words for part in parts if (words := _words(part))}
+
+
+def _identity_title(value):
+    value = re.sub(r"(?i)\s*[([]?\b(?:feat\.?|ft\.?|featuring)\b.*$", "", value)
+    value = search_title(value)
+    value = re.sub(r"[([{](.*?)[])}]",
+                   lambda m: " " if version_key(m[1]) or _words(m[1]) in (("original",), ("original", "mix")) else m[0], value)
+    return _words(value)
+
+
+def _version_identity(value):
+    # Generic Original Mix is equivalent to no version. Named remixes stay distinct.
+    value = re.sub(r"(?i)[([]\s*original(?: mix| version)?\s*[])]", "", value)
+    qualifiers = re.findall(r"[([{](.*?)[])}]", value)
+    versions = tuple(_words(v) for v in qualifiers if version_key(v))
+    return version_key(value), versions
 
 
 def _reject_reason(it, dl, q, preset=quality.DEFAULT_PRESET):
-    """Raison de rejet d'un download (action, note) ou None s'il est bon.
+    """Check measured duration, complete title, one complete collaborator and version.
 
-    Ordre : trop court (preview) -> mauvais match (identite) -> sous le seuil qualite du
-    preset (upscale/lossy/MP3<320). Le re-audit spectral ne verifie QUE la qualite, pas
-    l'identite ni la duree -> c'est ICI qu'on garantit qu'on ne remplace pas un fichier par
-    un autre track. Operation destructive : dans le doute, on garde l'original.
-
-    Identite comparee au candidat PARSE (artiste vs champ artiste, titre vs titre), pas au
-    stem entier melange -> un mot du TITRE du candidat ne peut plus valider l'artiste demande
-    (bug "DJ Schema - 2 ME" remplace par "Theo Meier - Schema (Remix)" parce que "schema"
-    etait present quelque part) :
-    - TITRE : couverture du noyau >= 60% (repli loose pour les titres tres courts) ;
-    - ARTISTE : au moins un artiste demande present dans le CHAMP ARTISTE du candidat (repli
-      sur le stem entier si le nom n'a pas de ' - ' exploitable) -> tolere les collabs
-      nommees par l'autre membre, rejette une reprise par un autre artiste ;
-    - VERSION : original != (X Remix) != Extended/Radio... (symetrique selon la demande).
+    Unknown duration/artist fails closed. A known short recording is allowed when
+    its measured duration matches within 10% (at least two seconds tolerance).
     """
     dur = getattr(q, "duration_s", 0) or 0
-    if 0 < dur < MIN_DURATION_S:
-        return ACT_TOO_SHORT, f"too short ({dur:.0f}s < {MIN_DURATION_S}s): likely preview/sample"
+    if not math.isfinite(dur) or dur <= 0:
+        return ACT_WRONG_MATCH, "download duration unavailable"
+    if it.length and it.length > 0:
+        tolerance = max(2.0, it.length * 0.10)
+        if abs(dur - it.length) > tolerance:
+            return ACT_WRONG_MATCH, f"duration mismatch: expected {it.length}s, received {dur:.1f}s"
+    elif dur < MIN_DURATION_S:
+        return ACT_TOO_SHORT, f"too short ({dur:.0f}s < {MIN_DURATION_S}s): review required"
 
     cand = parse_filename(dl.filepath)
-
-    t_cov = _title_coverage(it.title, cand.title)     # None = titre non jugeable
-    title_ok = t_cov is not None and t_cov >= MIN_TITLE_COVERAGE
-
-    artist_req = get_tokens(it.artist)   # tous les collaborateurs (presence, pas couverture)
-    cand_artist = set(get_tokens(cand.artist)) if cand.parseable \
-        else set(get_tokens(Path(dl.filepath).stem))
-    artist_ok = (not artist_req) or any(tok in cand_artist for tok in artist_req)
-
-    ver_ok = version_key(it.title) == version_key(cand.title)
+    title_ok = bool(_identity_title(it.title)) and _identity_title(it.title) == _identity_title(cand.title)
+    requested_artists = _artist_names(it.artist)
+    artist_ok = bool(cand.parseable and requested_artists & _artist_names(cand.artist))
+    ver_ok = _version_identity(it.title) == _version_identity(cand.title)
 
     if not (title_ok and artist_ok and ver_ok):
         bits = []
         if not title_ok:
-            bits.append("title n/a" if t_cov is None else f"title {t_cov:.0%}")
+            bits.append("title differs")
         if not artist_ok:
             bits.append("artist missing")
         if not ver_ok:
@@ -243,7 +246,7 @@ def _deposit(src, download_dir) -> Path:
     `downloads/` ne contient donc que du lossless verifie. Collision de nom (rare) ->
     suffixe ' (n)'. Delegue le deplacement a `fsutil.safe_move`. Retourne le chemin final.
     """
-    return safe_move(src, download_dir)
+    return verified_deposit(src, download_dir)
 
 
 def _finalize_download(it, dl, q, *, preset, download_dir, existing, trash_origin):
@@ -258,29 +261,28 @@ def _finalize_download(it, dl, q, *, preset, download_dir, existing, trash_origi
         base.action = ACT_NOT_FOUND
         base.note = "sldl returned no file"
         return base, False
+    if it.origin_path and Path(dl.filepath).resolve() == Path(it.origin_path).resolve():
+        base.action = ACT_WRONG_MATCH
+        base.note = "download points to original; retained"
+        return base, False
     base.new_file, base.new_verdict, base.new_cutoff_hz = dl.filepath, q.verdict, q.cutoff_hz
     rej = _reject_reason(it, dl, q, preset)
     if rej:
         base.action, base.note = rej
         trash.send_to_trash(dl.filepath)          # candidat rejete -> corbeille
         return base, False
-    # Depot : par defaut a la racine de la bibliotheque. Mais si le SOURCE est deja DANS la
-    # bibliotheque (upgrade d'une track deja rangee -> typiquement un clic manuel), on REMPLACE
-    # sur place dans SON dossier au lieu de l'eparpiller a la racine. On vide la place AVANT le
-    # move (corbeille, recuperable) pour garder le bon nom (pas de suffixe ' (1)').
-    in_place = bool(trash_origin and it.origin_path and _is_within(it.origin_path, download_dir))
-    if in_place:
-        trash.send_to_trash(it.origin_path)
-        final = _deposit(dl.filepath, Path(it.origin_path).parent)
-    else:
-        final = _deposit(dl.filepath, download_dir)
-        if trash_origin:
-            trash.send_to_trash(it.origin_path)   # le faux source -> corbeille
+    # Keep the old file until the complete candidate has been copied and verified.
+    in_place = bool(it.origin_path and _is_within(it.origin_path, download_dir))
+    target = Path(it.origin_path).parent if in_place else download_dir
+    final = _deposit(dl.filepath, target)
     existing.add(match_key(it.artist, it.title))
     base.new_file = str(final)
-    if trash_origin:
-        base.action = ACT_REPLACED
-        base.note = "upgraded in place" if in_place else "added to the library; original to trash"
+    if it.origin_path:
+        removed = trash_origin and trash.send_to_trash(it.origin_path)
+        base.action = ACT_REPLACED if removed else ACT_KEPT_BESIDE
+        base.note = ("verified copy installed; original sent to trash" if removed else
+                     "verified copy installed; original retained" +
+                     (" (trash failed)" if trash_origin else ""))
     else:
         base.action = ACT_ACQUIRED
         base.note = f"added to the library: {final}"
@@ -370,11 +372,12 @@ def run_upgrade(
     log_path=None,
     on_chunk: Optional[Callable] = None,
     forced: bool = False,
+    trash_original: bool = False,
 ) -> List[UpgradeOutcome]:
-    """Upgrade : pour chaque faux/lossy, telecharge un vrai lossless valide, le DEPOSE
-    dans la bibliotheque `download_dir`, et envoie le fichier source (le faux) a la
-    corbeille. Pas de remplacement en place. `staging_dir` = cache transitoire (sldl
-    telecharge la avant validation). Retourne le rapport par fichier.
+    """Download and verify candidates, retaining originals unless explicitly requested.
+
+    A retained original is reported as KEPT_BESIDE. Removal failure also retains it
+    and is recorded in the outcome note. In-library upgrades stay in their folder.
     """
     root = Path(root)
     staging_dir = Path(staging_dir)
@@ -403,7 +406,7 @@ def run_upgrade(
     # Dedoublonnage a l'entree : ce qui est already in library -> DUPLICATE.
     # On ne touche PAS au source dans ce cas (pas de check de version -> jamais de
     # suppression a l'aveugle sur un simple match de cle).
-    existing = _existing_keys(download_dir)
+    existing = _existing_keys(download_dir, (it.origin_path for it in plan.items))
     to_dl: List[WantItem] = []
     for it in plan.items:
         if not forced and match_key(it.artist, it.title) in existing:
@@ -423,7 +426,7 @@ def run_upgrade(
     outcomes += _download_pass(
         to_dl, root=root, staging_dir=staging_dir, download_dir=download_dir,
         existing=existing, preset=preset, profile=profile, fallback_profile=fallback_profile,
-        trash_origin=True, csv_name="ddd_upgrade.csv", fallback_csv_name="ddd_upgrade_mp3.csv",
+        trash_origin=trash_original, csv_name="ddd_upgrade.csv", fallback_csv_name="ddd_upgrade_mp3.csv",
         progress=progress, on_item=on_item, on_proc=on_proc, cancel=cancel, log_path=log_path,
         on_chunk=on_chunk,
     )
@@ -459,8 +462,6 @@ def download_and_audit(
     input_csv = staging_dir / csv_name
     soulseek.write_input_csv(items, input_csv)
 
-    soulseek.stop_slskd()
-    soulseek.stop_orphan_sldl()   # tue un sldl fige d'un run precedent (sinon port 50300 bloque)
     creds = creds or soulseek.read_soulseek_creds()
 
     if on_item:
@@ -575,31 +576,40 @@ def import_folder(
     exclude_names: Sequence[str] = (),
     progress: Optional[Callable] = None,
 ) -> Dict[str, int]:
-    """Migre un dossier existant dans la bibliotheque : scanne `src`, DEPLACE ce qui
-    passe le seuil du preset (dedoublonne par match_key) vers `download_dir`, envoie
-    le reste (sous le seuil) a la corbeille. Reversible. Retourne un bilan.
+    """Move accepted, unique files; retain rejects, errors and confirmed duplicates.
+
+    Never scan the destination as source, including a destination nested in src.
+    No file is trashed by import. Unknown quality is a review decision, not deletion.
     """
-    download_dir = Path(download_dir)
+    src, download_dir = Path(src).resolve(), Path(download_dir).resolve()
+    stats = dict(total=0, kept=0, duplicates=0, trashed=0, retained=0, errors=0)
+    if _is_within(src, download_dir):
+        return stats
     download_dir.mkdir(parents=True, exist_ok=True)
     preset = preset or quality.preset_from_config()
-    records = scan_library(src, exclude_names=exclude_names, progress=progress)
-    existing = _existing_keys(download_dir)
-    stats = {"total": len(records), "kept": 0, "duplicates": 0, "trashed": 0}
+    records = [r for r in scan_library(src, exclude_names=exclude_names, progress=progress)
+               if not _is_within(r.quality.path, download_dir)]
+    stats["total"] = len(records)
+    existing_files = list(p for p in download_dir.rglob("*") if p.is_file() and p.suffix.lower() in AUDIO_EXTS)
     for rec in records:
         q = rec.quality
-        if quality.is_accepted(q, preset):
-            parsed = parse_filename(q.path)
-            key = match_key(parsed.artist, parsed.title) if parsed.parseable else None
-            if key and key in existing:
-                trash.send_to_trash(q.path)        # vrai lossless mais doublon -> corbeille
-                stats["duplicates"] += 1
-            else:
-                _deposit(q.path, download_dir)
-                if key:
-                    existing.add(key)
-                stats["kept"] += 1
-        else:
-            trash.send_to_trash(q.path)            # pas un vrai lossless -> corbeille
-            stats["trashed"] += 1
+        if q.verdict in (quality.ERROR, quality.SKIPPED):
+            stats["errors"] += 1
+            continue
+        if not quality.is_accepted(q, preset):
+            stats["retained"] += 1
+            continue
+        source = Path(q.path)
+        if any(source in group for group in duplicate_paths([source, *existing_files])):
+            stats["duplicates"] += 1
+            continue
+        try:
+            final = _deposit(source, download_dir)
+        except OSError as exc:
+            logger.warning("import failed for %s: %s", source, exc)
+            stats["errors"] += 1
+            continue
+        existing_files.append(final)
+        stats["kept"] += 1
     logger.info("import_folder %s -> %s", src, stats)
     return stats

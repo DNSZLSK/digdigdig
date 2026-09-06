@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>DigDigDig - the crate digger that digs three times</title>
-<meta name="description" content="DDD scans your library, unmasks fake lossless, finds the real thing on Soulseek and files it by genre - from the spectrum, not the filename. Download the Windows app.">
+<meta name="description" content="DDD scans your library, flags limited bandwidth, searches for candidates on Soulseek and files it by genre - from the spectrum, not the filename. Download the Windows app.">
 <meta property="og:title" content="DigDigDig">
 <meta property="og:description" content="The crate digger that digs three times. Club-playable quality, verified by spectrum.">
 <meta property="og:image" content="logo.png">
@@ -183,7 +183,7 @@
       <h2>What is it?</h2>
       <p class="lead">
         DDD cleans up your music library and bumps it to <b>club-playable quality</b>, on its own.
-        It unmasks fake lossless (MP3s disguised as .flac/.wav), finds a real version on Soulseek
+        It flags limited bandwidth for review and searches for candidates on Soulseek
         (FLAC, WAV or AIFF, with an automatic MP3 320 fallback), checks every file by spectrum, and files
         it into a clean library - sorted by genre <b>from the audio itself</b>, not the filename.
         No need to be a developer&nbsp;: it's a window.
@@ -203,7 +203,7 @@
         <div class="card">
           <div class="num">3 · DETECT</div>
           <h3>The spectrum</h3>
-          <p>FFT analysis&nbsp;: ranks as Lossless / HQ / Iffy / Bad, plus duration and identity checks. Only the right track, above your bar, is kept.</p>
+          <p>FFT analysis&nbsp;: ranks as Wide / HQ / Iffy / Review, plus duration and identity checks. Only the right track, above your bar, is kept.</p>
         </div>
       </div>
     </section>
@@ -233,24 +233,22 @@
 
     <section>
       <div class="highlight">
-        <h2>The thing that changes everything&nbsp;: <span class="accent">the spectrum is law</span></h2>
+        <h2>The thing that changes everything&nbsp;: <span class="accent">measure, compare, review</span></h2>
         <p>
-          An MP3 320 re-encoded as FLAC is still an MP3. Soulseek's filters can't see it&nbsp;:
-          the container proudly shows "1411 kbps". DDD looks at the <b>real spectrum</b>&nbsp;:
-          a wall of frequencies at 16 kHz gives away the lossy source. <b>The declared format and bitrate
-          are only used for the Soulseek search, never for the keep-or-reject decision.</b>
-          The spectrum doesn't lie, tags do&nbsp;: that's what tells a real 320 / lossless apart from an upscale.
+          Spectral analysis measures <b>bandwidth</b>, not compression history.
+          A genuine filtered recording can have little high-frequency content.
+          DDD flags measurements against your chosen threshold; listen before removing originals.
           Every downloaded file is <b>re-audited</b> (spectrum + duration + title/artist identity) and ranked
           by its real cutoff. You pick what DDD keeps - and what it hunts for&nbsp;:
           <b>DJ Club</b> (&gt;= 18 kHz, default, MP3 320 included), <b>Audiophile</b> (&gt;= 20 kHz),
-          <b>Purist</b> (pure lossless), or a target-format mode&nbsp;- <b>MP3 320</b> (vintage / mobile),
-          <b>WAV/AIFF only</b> or <b>FLAC only</b>. MP3s below 320 kbps are banned no matter what&nbsp;; the rest goes to the trash.
+          <b>Purist</b> (wide spectrum), or a target-format mode&nbsp;- <b>MP3 320</b> (vintage / mobile),
+          <b>WAV/AIFF only</b> or <b>FLAC only</b>. MP3s below 320 kbps are banned no matter what&nbsp;; originals are retained by default.
         </p>
         <div class="pts">
-          <span class="tag ok">LOSSLESS</span>
+          <span class="tag ok">WIDE SPECTRUM</span>
           <span class="tag hq">HQ &gt;= 18 kHz</span>
           <span class="tag susp">IFFY 16-18 kHz</span>
-          <span class="tag fake">BAD &lt; 16 kHz</span>
+          <span class="tag fake">REVIEW &lt; 16 kHz</span>
         </div>
       </div>
     </section>
@@ -272,7 +270,7 @@
       <ol class="steps">
         <li><b>Fill in your access</b> (Settings)&nbsp;: Soulseek login, Discogs token, and the library folder.</li>
         <li><b>Scan a folder</b> (or pull your favorites)&nbsp;: DDD ranks every file and spots duplicates.</li>
-        <li><b>Upgrade</b>&nbsp;: what passes your bar lands in your library, the rest goes to the trash.</li>
+        <li><b>Upgrade</b>&nbsp;: what passes your bar lands in your library, originals are retained by default.</li>
         <li><b>Sort by genre</b>&nbsp;: file the whole pile into vibe folders, read from the spectrum. One clean, de-duplicated library.</li>
         <li><b>Identify</b> (lost the names?)&nbsp;: recover <i>Artist - Title</i> for no-name files by acoustic fingerprint (AcoustID) - you confirm each match, then it renames + tags.</li>
       </ol>
@@ -294,7 +292,7 @@
       &nbsp;·&nbsp;
       <a href="https://github.com/DNSZLSK/digdigdig">Source code on GitHub</a>
     </p>
-    <p style="margin-top:10px" class="mono">DDD - DigDigDig · the spectrum is law.</p>
+    <p style="margin-top:10px" class="mono">DDD - DigDigDig · measure, compare, review.</p>
     <p style="margin-top:16px; font-size:0.78rem; max-width:640px; margin-left:auto; margin-right:auto; color:var(--muted);">
       DDD is a tool to manage your library&nbsp;; it hosts and provides no content.
       Soulseek is a peer-to-peer network&nbsp;: downloading copyrighted music without authorization

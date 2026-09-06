@@ -185,39 +185,6 @@ def _slskd_config_path() -> Optional[Path]:
     return Path.home() / ".local" / "share" / "slskd" / "slskd.yml"
 
 
-def stop_slskd() -> bool:
-    """Arrete slskd s'il tourne (Soulseek = un seul login par compte). True si stoppe."""
-    try:
-        if platform.system() == "Windows":
-            r = subprocess.run(["taskkill", "/IM", "slskd.exe", "/F"],
-                               capture_output=True, text=True, **_no_window_kwargs())
-            return r.returncode == 0
-        r = subprocess.run(["pkill", "-f", "slskd"], capture_output=True, text=True)
-        return r.returncode == 0
-    except Exception as e:  # noqa: BLE001
-        logger.debug("stop_slskd: %r", e)
-        return False
-
-
-def stop_orphan_sldl() -> bool:
-    """Tue d'eventuels sldl.exe orphelins d'un run precedent.
-
-    Un sldl reste parfois vivant (loggue, port d'ecoute Soulseek 50300 ouvert) apres
-    une fermeture brutale de l'app. Le sldl suivant ne peut alors PAS binder le port
-    -> 'Failed to start listening on 0.0.0.0:50300' -> crash. On nettoie avant de lancer.
-    """
-    try:
-        if platform.system() == "Windows":
-            r = subprocess.run(["taskkill", "/IM", "sldl.exe", "/F"],
-                               capture_output=True, text=True, **_no_window_kwargs())
-            return r.returncode == 0
-        r = subprocess.run(["pkill", "-f", "sldl"], capture_output=True, text=True)
-        return r.returncode == 0
-    except Exception as e:  # noqa: BLE001
-        logger.debug("stop_orphan_sldl: %r", e)
-        return False
-
-
 # --- Choix du port d'ecoute Soulseek -----------------------------------------
 # sldl/slskd ecoutent par defaut sur 50300, qui tombe dans la plage ephemere Windows
 # (49152-65535) que Hyper-V/WSL/Docker RESERVENT par blocs. Le bind y echoue alors

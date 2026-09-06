@@ -19,7 +19,7 @@ meme installee dans un emplacement en lecture seule. Voir `ddd/paths.py`.
 
 ```powershell
 # une fois : installer l'outillage de build dans le venv
-.\.venv\Scripts\python.exe -m pip install -e ".[gui,build]"
+.\.venv\Scripts\python.exe -m pip install -e ".[gui,build,test]"
 
 # build
 .\packaging\build.ps1            # ou: .\packaging\build.ps1 -Clean
@@ -71,3 +71,5 @@ l'OS depuis le projet slsk-batchdl et la placer dans `bin/sldl/`.
 - Taille du bundle : ~150-250 MB (client Flutter + scipy + sldl). Normal pour une
   app desktop Python+Flutter.
 - La CLI reste disponible sans empaquetage : `python -m ddd scan|upgrade|rename|buy|scrape|acquire|gui`.
+
+Le script Windows lance toute la suite pytest avant PyInstaller. Le workflow macOS depend de la suite Windows/Linux/macOS via `tests.yml`. Un echec bloque le packaging. Les tests incluent les scenarios historiques isoles, le cablage CLI et la construction GUI.

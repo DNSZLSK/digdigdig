@@ -12,15 +12,14 @@ Dry-run par defaut : rien n'est touche tant que `apply=False`.
 from __future__ import annotations
 
 import csv
-import hashlib
 import logging
 import re
-from collections import defaultdict
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Dict, List, Sequence
 
 from . import trash
+from .content import duplicate_paths as _dup_groups
 from .naming import resolve_name
 from .scan import iter_audio_files
 
@@ -71,36 +70,6 @@ class RenameReport:
 def _sanitize(name: str) -> str:
     """Remplace les caracteres interdits et retire point/espace de fin (Windows)."""
     return _ILLEGAL.sub("_", name).strip().rstrip(". ")
-
-
-def _file_hash(p: Path, chunk: int = 1 << 20) -> str:
-    h = hashlib.sha1()
-    with open(p, "rb") as fh:
-        for blk in iter(lambda: fh.read(chunk), b""):
-            h.update(blk)
-    return h.hexdigest()
-
-
-def _dup_groups(files: Sequence[Path]) -> List[List[Path]]:
-    """Groupes de fichiers byte-identiques : meme taille PUIS meme hash (hash que si collision de taille)."""
-    by_size: Dict[int, List[Path]] = defaultdict(list)
-    for f in files:
-        try:
-            by_size[f.stat().st_size].append(f)
-        except OSError:
-            pass
-    groups: List[List[Path]] = []
-    for fs in by_size.values():
-        if len(fs) < 2:
-            continue
-        by_hash: Dict[str, List[Path]] = defaultdict(list)
-        for f in fs:
-            try:
-                by_hash[_file_hash(f)].append(f)
-            except OSError:
-                pass
-        groups.extend(g for g in by_hash.values() if len(g) > 1)
-    return groups
 
 
 def _choose_keep(group: Sequence[Path]) -> Path:

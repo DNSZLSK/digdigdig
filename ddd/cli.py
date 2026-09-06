@@ -27,7 +27,7 @@ from .core import soulseek
 # Ordre d'affichage du resume (du plus actionnable au moins)
 VERDICT_ORDER = [LOSSLESS, HQ, DOUTEUX, MAUVAIS, "ERROR", "SKIPPED"]
 VERDICT_LABEL = {
-    LOSSLESS: "lossless (full spectrum)",
+    LOSSLESS: "wide spectrum (compression history unknown)",
     HQ: "HQ (club-playable, >=18 kHz)",
     DOUTEUX: "iffy (16-18 kHz)",
     MAUVAIS: "bad (<16 kHz)",
@@ -144,12 +144,14 @@ def _cmd_upgrade(args: argparse.Namespace) -> int:
             print(f"  scan [{a[0]}/{a[1]}] {Path(a[2]).name}", file=sys.stderr)
 
     print(f"Upgrade of {folder}  ->  library {dl_dir}", file=sys.stderr)
-    print("(real lossless added to the library; fake sources sent to trash)",
+    print(("(verified copies added; originals sent to trash after verification)"
+           if args.trash_original else "(verified copies added; originals retained)"),
           file=sys.stderr)
     outcomes = upgrade_mod.run_upgrade(
         folder, root=root, staging_dir=staging, download_dir=dl_dir,
         preset=preset, exclude_names=args.exclude,
         limit=args.limit, profile=args.profile, progress=progress, log_path=log_path,
+        trash_original=args.trash_original,
     )
 
     from collections import Counter
@@ -158,9 +160,9 @@ def _cmd_upgrade(args: argparse.Namespace) -> int:
     for action, n in counts.most_common():
         print(f"  {action:<16} {n:>5}")
 
-    replaced = [o for o in outcomes if o.action in (upgrade_mod.ACT_REPLACED, upgrade_mod.ACT_WOULD_REPLACE)]
+    replaced = [o for o in outcomes if o.action in (upgrade_mod.ACT_REPLACED, upgrade_mod.ACT_KEPT_BESIDE, upgrade_mod.ACT_WOULD_REPLACE)]
     if replaced:
-        print(f"\n  --- {len(replaced)} AUTHENTIC upgrade(s) ---")
+        print(f"\n  --- {len(replaced)} accepted upgrade(s) ---")
         for o in replaced:
             print(f"  {o.artist} - {o.title}  cutoff {o.new_cutoff_hz:.0f} Hz")
 
@@ -601,7 +603,7 @@ def _cmd_acquire(args: argparse.Namespace) -> int:
         print(f"  {action:<16} {n:>5}")
     acquired = [o for o in outcomes if o.action == upgrade_mod.ACT_ACQUIRED]
     if acquired:
-        print(f"\n  --- {len(acquired)} AUTHENTIC track(s) in the library ---")
+        print(f"\n  --- {len(acquired)} accepted track(s) in the library ---")
         for o in acquired:
             print(f"  {o.artist} - {o.title}  cutoff {o.new_cutoff_hz:.0f} Hz")
     buy_html = stores_mod.write_unfindable(outcomes, paths.outputs_dir(), src.stem)
@@ -625,9 +627,10 @@ def _cmd_import(args: argparse.Namespace) -> int:
     print(f"Import of {src}  ->  library {dl_dir}", file=sys.stderr)
     stats = upgrade_mod.import_folder(src, dl_dir, exclude_names=args.exclude, progress=progress)
     print(f"\n=== Import: {src.name} ===")
-    print(f"  {stats['kept']:>5}  real lossless moved to the library")
-    print(f"  {stats['duplicates']:>5}  duplicates (already in library) -> trash")
-    print(f"  {stats['trashed']:>5}  non-lossless -> trash")
+    print(f"  {stats['kept']:>5}  accepted files moved to the library")
+    print(f"  {stats['duplicates']:>5}  confirmed duplicates retained at source")
+    print(f"  {stats['retained']:>5}  below threshold, retained for review")
+    print(f"  {stats['errors']:>5}  unreadable / failed, retained")
     print(f"  {stats['total']:>5}  files scanned in total")
     return 0
 
@@ -715,6 +718,8 @@ def build_parser() -> argparse.ArgumentParser:
     p_up.add_argument("--profile", default=None,
                       help="force a sldl profile (default: derived from --preset)")
     p_up.add_argument("-v", "--verbose", action="store_true", help="show each scanned file")
+    p_up.add_argument("--trash-original", action="store_true",
+                      help="send originals to trash only after verified installation (default: retain)")
     p_up.set_defaults(func=_cmd_upgrade)
 
     p_sc = sub.add_parser("scrape", help="scrape favorites/tracklists -> CSV want-list (-> acquire)")
@@ -743,7 +748,7 @@ def build_parser() -> argparse.ArgumentParser:
     p_ac.set_defaults(func=_cmd_acquire)
 
     p_im = sub.add_parser("import",
-                          help="migrate a folder into the library (lossless kept, the rest trashed)")
+                          help="move accepted files into the library; retain rejects, errors and duplicates")
     p_im.add_argument("folder", help="folder to import/sort")
     p_im.add_argument("--download-dir", help="target library (default: config / ~/Music/DDD)")
     p_im.add_argument("-x", "--exclude", action="append", default=[], metavar="NAME",
