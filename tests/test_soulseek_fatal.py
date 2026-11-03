@@ -16,7 +16,7 @@ from ddd.core import soulseek
 
 # Cascade REELLE capturee dans logs/ddd_upgrade.log : la cause est le port, pas les creds.
 PORT_CASCADE = [
-    "Login failed definitively for DNSZLSK after 1 attempts.",
+    "Login failed definitively for someuser after 1 attempts.",
     "Failed to ensure Soulseek connection and login: Failed to start listening on "
     "0.0.0.0:50300; the IP and/or port may be in use or are otherwise unavailable",
     "Failed to initialize Soulseek client: Soulseek login failed: Failed to start "

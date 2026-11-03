@@ -58,7 +58,7 @@ def parse_filename(path) -> ParsedName:
     stem = Path(path).stem
     stem_clean = _TRACK_PREFIX.sub("", stem)
 
-    # separateur " - " (avec espaces) ; tolere variantes "_- " vues dans GAMOLKA
+    # separateur " - " (avec espaces) ; tolere variantes "_- " vues sur de vraies bibliotheques
     sep = re.search(r"\s[-_]\s|\s-\s", stem_clean)
     if not sep:
         return ParsedName("", clean(stem_clean), False, stem)

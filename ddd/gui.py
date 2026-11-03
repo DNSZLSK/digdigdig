@@ -1053,8 +1053,8 @@ def main(page: ft.Page) -> None:
         except ValueError:
             return 0
         return n if n > 0 else 0
-    djset_url = ft.TextField(label="YouTube URL, or a tracklist file (for 1001TL: paste to a file)",
-                             width=560, hint_text="YouTube set/playlist/channel URL, or path to a .txt tracklist")
+    djset_url = ft.TextField(label="YouTube / SoundCloud URL, or a tracklist file (for 1001TL: paste to a file)",
+                             width=560, hint_text="YouTube set/playlist/channel or SoundCloud likes/set/mix URL, or a .txt tracklist")
     acquire_table_col = ft.ListView(expand=True, spacing=2)
     djset_table_col = ft.ListView(expand=True, spacing=2)
 
@@ -1110,7 +1110,7 @@ def main(page: ft.Page) -> None:
             return username, ""
         username = (djset_url.value or "").strip()      # djset : l'URL / le fichier
         if not username:
-            status.value = "Enter a YouTube set / playlist / channel URL, or the path to a .txt tracklist file (1001TL: paste it to a file first)."
+            status.value = "Enter a YouTube set / playlist / channel URL, a SoundCloud likes / set / mix URL, or the path to a .txt tracklist file (1001TL: paste it to a file first)."
             page.update()
             return None, None
         return username, ""
@@ -1693,8 +1693,11 @@ def main(page: ft.Page) -> None:
 
     djset_tab = ft.Container(
         content=ft.Column([
-            ft.Text("Paste a YouTube set, playlist or channel URL (each video = a track), or the path "
-                    "to a .txt tracklist file. DDD scrapes it, then downloads in real lossless.\n"
+            ft.Text("Paste a YouTube set, playlist or channel URL (each video = a track), a public SoundCloud "
+                    "likes / set / profile URL (each sound = a track, liked EPs unfolded) or a SoundCloud mix, "
+                    "or the path to a .txt tracklist file. DDD scrapes it, then downloads in real lossless.\n"
+                    "Private lists (YouTube 'Liked videos' / 'Watch later') can't be read: DDD never logs in "
+                    "to your accounts. Copy them into a public or unlisted playlist.\n"
                     "1001Tracklists blocks scrapers (Cloudflare): open the page in your browser, "
                     "copy the tracklist into a .txt file (one 'Artist - Title' per line), and give that file here.",
                     size=12, color=TXT_DIM),
@@ -1735,7 +1738,7 @@ def main(page: ft.Page) -> None:
     # -> expand casse et un fond gris Material transparait. Ici le contenu vit dans un
     # Container creme que l'on pilote a la main -> fond uniforme + expand correct).
     _tab_defs = [("Library", library_tab), ("Identify", identify_tab),
-                 ("Get favorites", acquire_tab), ("YouTube set", djset_tab),
+                 ("Get favorites", acquire_tab), ("YouTube / SoundCloud", djset_tab),
                  ("Sort by genre", sort_tab)]
     tab_content = ft.Container(content=library_tab, expand=True, bgcolor=BG)
     tab_texts: list = []

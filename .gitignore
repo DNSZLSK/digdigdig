@@ -51,3 +51,6 @@ Thumbs.db
 !inputs/.gitkeep
 !outputs/.gitkeep
 !bin/.gitkeep
+
+# Doc de travail locale : contient pseudos/identifiants -> jamais publique (repo public)
+CLAUDE.md

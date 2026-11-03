@@ -16,6 +16,14 @@ def _close_splash() -> None:
 
 
 if __name__ == "__main__":
+    import sys
+    # `DDD.exe --selftest [--offline] [--report X]` : rejoue les chaines reelles DANS le
+    # bundle gele (decode, fpcalc, sldl, ONNX, GUI, scrapers) et ecrit un rapport. Avant le
+    # verrou single-instance : il ne lance ni fenetre ni login Soulseek.
+    if "--selftest" in sys.argv:
+        _close_splash()
+        from ddd.core.selftest import main as _selftest
+        raise SystemExit(_selftest(sys.argv[1:]))
     # Garde-fou single-instance AVANT les imports lourds : un 2e double-clic (reflexe
     # frequent pendant le demarrage lent) ne doit pas ouvrir une 2e fenetre ni un 2e
     # sldl (collision port 50300). On pose le verrou des le depart.

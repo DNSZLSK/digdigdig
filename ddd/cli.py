@@ -725,7 +725,7 @@ def build_parser() -> argparse.ArgumentParser:
     p_sc = sub.add_parser("scrape", help="scrape favorites/tracklists -> CSV want-list (-> acquire)")
     p_sc.add_argument("source", choices=["discogs", "bandcamp", "djset"], help="source to scrape")
     p_sc.add_argument("username", metavar="USER_OR_URL",
-                      help="username (discogs/bandcamp) OR URL (djset: YouTube set/channel/playlist, 1001Tracklists)")
+                      help="username (discogs/bandcamp) OR URL (djset: YouTube set/channel/playlist, SoundCloud likes/set/mix, 1001Tracklists)")
     p_sc.add_argument("-o", "--out", help="output CSV (default: outputs/<source>_<user>.csv)")
     p_sc.add_argument("--token", help="Discogs token (else $DISCOGS_TOKEN or ddd config)")
     p_sc.add_argument("--include-collection", action="store_true", help="Discogs: also the collection")
@@ -835,7 +835,18 @@ def build_parser() -> argparse.ArgumentParser:
 
     p_gui = sub.add_parser("gui", help="launch the native window (Flet)")
     p_gui.set_defaults(func=_cmd_gui)
+
+    p_st = sub.add_parser("selftest", help="end-to-end self check (decode, fpcalc, sldl, "
+                          "genre model, GUI, live scrapers) -> report (same as DDD.exe --selftest)")
+    p_st.add_argument("--offline", action="store_true", help="skip the live scraper checks")
+    p_st.add_argument("--report", help="report path (default: logs/selftest.txt)")
+    p_st.set_defaults(func=_cmd_selftest)
     return parser
+
+
+def _cmd_selftest(args: argparse.Namespace) -> int:
+    from .core.selftest import run
+    return run(offline=args.offline, report=Path(args.report) if args.report else None)
 
 
 def _cmd_gui(args: argparse.Namespace) -> int:

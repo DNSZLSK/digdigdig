@@ -7,6 +7,8 @@ tracks depuis les sources possibles, et on renvoie une want-list au format stand
 Sources :
 - YouTube : la description + les commentaires (yt-dlp), ou trainent souvent les
   tracklists "0:00 Artiste - Titre" (le commentaire epingle, surtout).
+- SoundCloud : une liste publique (likes, set, profil) -> chaque son = un track ;
+  un mix -> description + commentaires. Pas de cookies : listes publiques seulement.
 - 1001Tracklists : base communautaire, la plus fournie pour l'electronique
   (Cloudflare -> cloudscraper, comme bandcamp.py). Faisabilite a verifier en live.
 Skip les "ID - ID" (tracks inconnus). Dedup sur lower(artist) - lower(title).
@@ -73,6 +75,24 @@ def _is_id(s: str) -> bool:
     return s.lower().strip() in ("id", "id - id", "???", "unknown")
 
 
+def _top_level_sep(s: str, sep: str = _SEP) -> int:
+    """Position du 1er `sep` HORS parentheses/crochets, -1 sinon.
+    'Track (X Remix - Edit)' n'est pas 'Track (X Remix' / 'Edit)' ; idem pour un '|'
+    dans '[Dubstep | Monstercat]'."""
+    depth = 0
+    i = 0
+    while i < len(s):
+        c = s[i]
+        if c in "([":
+            depth += 1
+        elif c in ")]":
+            depth = max(0, depth - 1)
+        elif depth == 0 and s.startswith(sep, i):
+            return i
+        i += 1
+    return -1
+
+
 def _split_artist_title(s: str) -> Optional[Pair]:
     """'Artiste - Titre' -> (artist, title). None si pas parsable ou ID inconnu.
 
@@ -84,9 +104,10 @@ def _split_artist_title(s: str) -> Optional[Pair]:
     "Jean-Michel Jarre - Oxygene" ne se coupe PAS sur le trait d'union interne.
     """
     s = norm_dashes(s)
-    if _SEP not in s:
+    cut = _top_level_sep(s)
+    if cut < 0:
         return None
-    artist, title = (p.strip() for p in s.split(_SEP, 1))
+    artist, title = s[:cut].strip(), s[cut + len(_SEP):].strip()
     if not artist or not title or _is_id(artist) or _is_id(title):
         return None
     if len(artist) > 120 or len(title) > 160:
@@ -164,22 +185,31 @@ def _strip_catalog(s: str) -> str:
     return _titlecase_if_lower(s)           # "tiko - the mood" -> "Tiko - The Mood"
 
 
-def _rows_from_pairs(pairs: List[Pair], source: str, url: str) -> List[Dict]:
+def _rows_from_pairs(pairs: list, source: str, url: str) -> List[Dict]:
+    """Paires -> want-list. Une paire peut porter une 3e valeur : la duree en secondes
+    (SoundCloud), qui part en colonne `Length` -> filtre `length-tol` de sldl au download
+    + controle +-10 % au re-audit. Seulement quand la duree EST celle du morceau : jamais
+    une duree de video YouTube (clip/intro/outro -> ferait rejeter le bon fichier)."""
     rows: List[Dict] = []
-    seen = set()
-    for artist, title in pairs:
+    seen: Dict[str, Dict] = {}
+    for p in pairs:
+        artist, title = p[0], p[1]
+        length = p[2] if len(p) > 2 and p[2] else ""
         artist = _strip_catalog(artist)
         title = _strip_catalog(title)         # vire les [catalogue] -> recherche propre +
         if not artist or not title:           # dedup correcte (clean == avec-catalogue)
             continue
         key = f"{artist.lower()} - {title.lower()}"
         if key in seen:
+            if length and not seen[key]["Length"]:   # doublon qui connait la duree : on la garde
+                seen[key]["Length"] = length
             continue
-        seen.add(key)
-        rows.append({
-            "Artist": artist, "Title": title, "Album": "", "Length": "",
+        row = {
+            "Artist": artist, "Title": title, "Album": "", "Length": length,
             "Year": "", "Source": source, "SourceUrl": url,
-        })
+        }
+        seen[key] = row
+        rows.append(row)
     return rows
 
 
@@ -231,8 +261,12 @@ def _youtube_music_section(video_url: str) -> List[Pair]:
     return pairs
 
 
-def _scrape_youtube(url: str, progress: ProgressCb) -> List[Pair]:
-    """3 couches YouTube combinees : description + section Musique (Content ID) + commentaires."""
+def _scrape_youtube(url: str, progress: ProgressCb, music_section: bool = True) -> List[Pair]:
+    """3 couches YouTube combinees : description + section Musique (Content ID) + commentaires.
+
+    Sert aussi aux URL non-YouTube que yt-dlp sait lire (mix SoundCloud, Mixcloud...) :
+    `music_section=False` saute la section Musique, qui n'existe que sur YouTube.
+    """
     try:
         import yt_dlp  # noqa: PLC0415
     except ImportError as e:
@@ -241,11 +275,15 @@ def _scrape_youtube(url: str, progress: ProgressCb) -> List[Pair]:
     opts = {
         "quiet": True, "no_warnings": True, "noprogress": True, "socket_timeout": 30,
         "getcomments": True,
+        # on ne lit que les metadonnees : un audio DRM (SoundCloud major) ne doit pas
+        # faire echouer la lecture de sa description
+        "ignore_no_formats_error": True,
         "extractor_args": {"youtube": {"max_comments": ["80", "all", "0"],
                                        "comment_sort": ["top"]}},
     }
     if progress:
-        progress("YouTube: description + Music + comments...")
+        progress("Description + Music + comments..." if music_section
+                 else "Description + comments...")
     with yt_dlp.YoutubeDL(opts) as ydl:
         info = ydl.extract_info(url, download=False)
 
@@ -263,11 +301,12 @@ def _scrape_youtube(url: str, progress: ProgressCb) -> List[Pair]:
     if len(best) < 4:
         best = []
     # section Musique (Content ID) : la grosse source manquante, via la page
-    try:
-        music = _youtube_music_section(url)
-    except Exception as e:  # noqa: BLE001
-        music = []
-        logger.debug("section Musique echec: %r", e)
+    music: List[Pair] = []
+    if music_section:
+        try:
+            music = _youtube_music_section(url)
+        except Exception as e:  # noqa: BLE001
+            logger.debug("section Musique echec: %r", e)
     if progress:
         progress(f"  -> {len(music)} Music + {len(desc)} description + {len(best)} comment")
     return music + desc + best   # le dedup se fait dans _rows_from_pairs
@@ -317,6 +356,17 @@ _UC_IN_URL = re.compile(r"/channel/" + _UC_RX, re.I)
 _UC_IN_PAGE = re.compile(r'"(?:externalId|channelId|browseId)":"' + _UC_RX + '"')
 
 
+def _youtube_private_list(url: str) -> bool:
+    """Vrai pour une liste perso YouTube SANS video ciblee (`/playlist?list=LL` ou `WL`).
+    Avec un `v=`, l'intention est la video (le set) -> scrapee normalement."""
+    try:
+        q = parse_qs(urlparse(url).query)
+    except ValueError:
+        return False
+    lid = (q.get("list") or [""])[0].strip().upper()
+    return lid in ("LL", "WL", "LM") and not q.get("v")
+
+
 def _channel_uploads_id(url: str) -> Optional[str]:
     """URL de chaine (@handle, /c/, /user/, /channel/UC...) -> ID de playlist 'uploads'
     (UU...). None si ce n'est pas une chaine ou si on n'a pas pu resoudre le channelId.
@@ -343,8 +393,12 @@ def _clean_video_title(title: str) -> str:
     """Titre de video YouTube -> propre pour le split : vire le bruit (Official Video,
     Lyric Video, | Channel, Free DL...). Garde les (Original Mix)/(X Remix)."""
     s = norm_dashes(_YT_NOISE.sub("", title or ""))   # tirets unicode/invisibles -> ' - ' detectable
-    head = s.split("|", 1)[0]            # segment apres '|' = label/chaine, vire si le debut
-    if _SEP in head:                     # garde encore 'Artiste - Titre'
+    # segment apres un '|' = label/chaine, vire si le debut garde 'Artiste - Titre'.
+    # Seulement un '|' HORS crochets : '[Dubstep | Monstercat]' coupe laissait '[Dubstep'
+    # ouvert -> parti tel quel dans la recherche Soulseek (match strict rate).
+    cut = _top_level_sep(s, "|")
+    head = s[:cut] if cut >= 0 else s
+    if _SEP in head:
         s = head
     return re.sub(r"\s{2,}", " ", s).strip()
 
@@ -519,6 +573,165 @@ def _scrape_youtube_channel(url: str, uploads_id: str, progress: ProgressCb,
     return pairs
 
 
+# ---- SoundCloud (likes / sets / tracks d'un profil, ou un mix) ---------------
+#
+# Une liste SoundCloud (likes, playlist/set, tracks d'un profil) : chaque son = un track.
+# yt-dlp sait la paginer (client_id, anti-bot Datadome, retries) mais ses entrees "flat"
+# n'ont que le TITRE ('Heartbreak (Kerri Chandler Remix)'), sans l'artiste, et rien du
+# tout pour les sets (ids seuls). Plutot que de reimplementer l'API (fragile), on laisse
+# yt-dlp faire tout le travail et on ECOUTE les reponses JSON de l'API qu'il recoit : les
+# objets `kind=track` portent titre + uploader + `publisher_metadata.artist`.
+# Une URL de son unique (un mix) -> description + commentaires, comme un set YouTube.
+# Pas de cookies, jamais : seules les listes PUBLIQUES sont lisibles.
+
+_SC_IES = ("SoundcloudUser", "SoundcloudSet", "SoundcloudPlaylist", "SoundcloudUserPermalink")
+_SC_MAX_TRACK_S = 15 * 60   # au-dela, c'est un mix/podcast, pas un morceau a chercher
+
+
+def _sc_collect_tracks(obj, out: Dict[str, dict]) -> None:
+    """Range tout objet `kind=track` d'une reponse API SoundCloud dans out[id]."""
+    if isinstance(obj, dict):
+        if obj.get("kind") == "track" and obj.get("id") and obj.get("title"):
+            out[str(obj["id"])] = obj
+        for v in obj.values():
+            _sc_collect_tracks(v, out)
+    elif isinstance(obj, list):
+        for v in obj:
+            _sc_collect_tracks(v, out)
+
+
+def _sc_pair(title: str, track: Optional[dict]) -> Optional[Pair]:
+    """Un son SoundCloud -> (artist, title). Pur, testable sans reseau.
+
+    1. Le titre contient deja 'Artiste - Titre' (cas des labels : Ninja Tune poste
+       'Henri Texier - Les La-Bas (Bonobo Remix)') -> le parseur commun decide.
+    2. Sinon l'artiste vient des metadonnees : `publisher_metadata.artist` (renseigne par
+       les labels/distributeurs ; on garde le 1er si liste 'A, B, C'), a defaut l'uploader.
+    """
+    track = track or {}
+    title = (title or track.get("title") or "").strip()
+    if not title:
+        return None
+    clean = _clean_video_title(_clean_line(title))
+    p = _split_artist_title(clean)
+    if p:
+        return p
+    pub = ((track.get("publisher_metadata") or {}).get("artist") or "").strip()
+    artist = pub.split(",")[0].strip() if pub else ""
+    if not artist:
+        artist = ((track.get("user") or {}).get("username") or "").strip()
+    if not artist or not clean or _is_id(clean):
+        return None
+    return artist, clean
+
+
+def _sc_is_set(entry: dict) -> bool:
+    """Entree de liste = un set (album/EP/playlist like), pas un son."""
+    return "/sets/" in (entry.get("url") or "") or entry.get("ie_key") == "SoundcloudSet"
+
+
+def _sc_pairs_from_entries(entries, tracks: Dict[str, dict],
+                           expand: Optional[Callable[[dict], list]] = None,
+                           cancel: CancelCb = None) -> Tuple[List[Pair], int, int]:
+    """Entrees flat yt-dlp + tracks captures -> ([(artist, title)], mixes ecartes, sets deplies).
+
+    Un set like (album/EP) est DEPLIE en ses morceaux via `expand(entry)` (liker un EP =
+    vouloir ses tracks, comme une release Discogs/Bandcamp) - jamais pris pour un morceau.
+    Pur si `expand` est fourni par le test : pas de reseau ici.
+    """
+    pairs: List[Pair] = []
+    skipped_mix = n_sets = 0
+    for e in entries or []:
+        if cancel and cancel():
+            break
+        if not isinstance(e, dict):
+            continue
+        if _sc_is_set(e):
+            if expand is None:
+                continue
+            n_sets += 1
+            sub, sub_mix, _ = _sc_pairs_from_entries(expand(e) or [], tracks, None, cancel)
+            pairs.extend(sub)
+            skipped_mix += sub_mix
+            continue
+        t = tracks.get(str(e.get("id")))
+        # full_duration d'abord : un son en extrait (Go+/DRM) a duration = 30 s de preview
+        dur_ms = (t or {}).get("full_duration") or (t or {}).get("duration") or 0
+        if dur_ms and dur_ms / 1000 > _SC_MAX_TRACK_S:
+            skipped_mix += 1
+            continue
+        p = _sc_pair(e.get("title") or "", t)
+        if p:
+            secs = int(round(dur_ms / 1000)) if dur_ms else 0
+            pairs.append((p[0], p[1], secs) if secs >= 30 else p)   # < 30 s : extrait, pas fiable
+    return pairs, skipped_mix, n_sets
+
+
+def _scrape_soundcloud(url: str, progress: ProgressCb, newest: int = 0,
+                       cancel: CancelCb = None) -> List[Pair]:
+    """URL SoundCloud -> paires. Liste (likes/set/profil) : chaque son = un track, chaque
+    set like deplie en ses morceaux. Son unique (un mix) : description + commentaires.
+    `newest` = N dernieres ENTREES de la liste (un set like compte pour une)."""
+    try:
+        import yt_dlp  # noqa: PLC0415
+    except ImportError as e:
+        raise RuntimeError("yt-dlp missing: pip install yt-dlp") from e
+
+    if progress:
+        progress("SoundCloud: reading the list...")
+    tracks: Dict[str, dict] = {}
+    opts = {"quiet": True, "no_warnings": True, "noprogress": True, "socket_timeout": 30,
+            "extract_flat": "in_playlist", "skip_download": True}
+    if newest and newest > 0:
+        opts["playlistend"] = int(newest)   # likes = plus recents d'abord
+    with yt_dlp.YoutubeDL(opts) as ydl:
+        for key in _SC_IES:                 # ecoute les reponses API (voir bloc ci-dessus)
+            try:
+                ie = ydl.get_info_extractor(key)
+                orig = ie._call_api
+
+                def _tap(*a, _orig=orig, **kw):
+                    res = _orig(*a, **kw)
+                    _sc_collect_tracks(res, tracks)
+                    return res
+                ie._call_api = _tap
+            except Exception as e:  # noqa: BLE001 - yt-dlp a change : titres seuls, pas d'artiste
+                logger.debug("soundcloud tap %s: %r", key, e)
+        info = ydl.extract_info(url, download=False)
+
+        entries = info.get("entries")
+        if entries is None:                 # son unique : un mix -> sa tracklist
+            return _scrape_youtube(url, progress, music_section=False)
+        entries = list(entries)
+        ydl.params["playlistend"] = None    # le cap vaut pour la liste, pas pour un EP deplie
+        n_sets_total = sum(1 for e in entries if isinstance(e, dict) and _sc_is_set(e))
+        done = [0]
+
+        def _expand(e: dict) -> list:
+            done[0] += 1
+            if progress:
+                progress(f"  set {done[0]}/{n_sets_total}: {e.get('title') or e.get('url')}")
+            try:
+                sub = ydl.extract_info(e["url"], download=False)
+                return list(sub.get("entries") or [])
+            except Exception as ex:  # noqa: BLE001 - un set prive/supprime n'arrete pas le reste
+                logger.debug("soundcloud set %s: %r", e.get("url"), ex)
+                return []
+
+        pairs, skipped_mix, n_sets = _sc_pairs_from_entries(entries, tracks, _expand, cancel)
+
+    if progress:
+        n = len(entries)
+        msg = f"  -> {n} entries ({n_sets} sets unfolded), {len(pairs)} parsed as Artist - Title"
+        if skipped_mix:
+            msg += f" ({skipped_mix} mix/podcast > 15 min skipped)"
+        progress(msg)
+        if not n:
+            progress("  -> 0 sound: the list may be private, empty, or the URL is wrong "
+                     "(only public SoundCloud lists can be read).")
+    return pairs
+
+
 # ---- 1001Tracklists (cloudscraper, comme bandcamp.py) -----------------------
 
 def _make_scraper():
@@ -611,7 +824,15 @@ def scrape_djset(url: str, progress: ProgressCb = None, newest: int = 0,
                 progress(f"{len(rows)} track(s) found.")
             return rows
 
-    if "youtube.com" in low or "youtu.be" in low:
+    if ("youtube.com" in low or "youtu.be" in low) and _youtube_private_list(url):
+        # "Videos que j'aime" (LL) / "A regarder plus tard" (WL) sans video : listes
+        # PRIVEES, illisibles sans se connecter. Pas de cookies, par choix -> on le dit au
+        # lieu de rendre un "0 track" muet.
+        if progress:
+            progress("YouTube 'Liked videos' / 'Watch later' are private lists: DDD does not "
+                     "log in to your account. Copy the videos into a public or unlisted "
+                     "playlist and paste that playlist's URL instead.")
+    elif "youtube.com" in low or "youtu.be" in low:
         list_id = _playlist_id(url)
         uploads_id = None if list_id else _channel_uploads_id(url)
         if list_id:                              # playlist : chaque video = un track
@@ -635,6 +856,13 @@ def scrape_djset(url: str, progress: ProgressCb = None, newest: int = 0,
             except Exception as e:  # noqa: BLE001
                 if progress:
                     progress(f"YouTube failed: {e}")
+    elif "soundcloud.com" in low:
+        source = "djset:soundcloud"
+        try:
+            pairs = _scrape_soundcloud(url, progress, newest=newest, cancel=cancel)
+        except Exception as e:  # noqa: BLE001
+            if progress:
+                progress(f"SoundCloud failed: {e}")
     elif "1001tracklists.com" in low:
         source = "djset:1001"
         try:
@@ -650,9 +878,9 @@ def scrape_djset(url: str, progress: ProgressCb = None, newest: int = 0,
             if progress:
                 progress(f"set79 failed: {e}")
     else:
-        # URL inconnue : yt-dlp gere aussi SoundCloud/Mixcloud/etc., on tente.
+        # URL inconnue : yt-dlp gere aussi Mixcloud/etc. -> description + commentaires.
         try:
-            pairs = _scrape_youtube(url, progress)
+            pairs = _scrape_youtube(url, progress, music_section=False)
         except Exception as e:  # noqa: BLE001
             if progress:
                 progress(f"extraction failed: {e}")

@@ -71,7 +71,7 @@ def main():
     class _CrashProc:
         def __init__(self):
             self.stdout = iter([
-                "Login DNSZLSK\n",
+                "Login someuser\n",
                 "Failed to start listening on 0.0.0.0:50300; the IP and/or port may be in use\n",
                 "Unhandled exception. System.InvalidOperationException: Soulseek login failed\n",
             ])
