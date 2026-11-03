@@ -184,22 +184,31 @@ def _strip_catalog(s: str) -> str:
     return _titlecase_if_lower(s)           # "tiko - the mood" -> "Tiko - The Mood"
 
 
-def _rows_from_pairs(pairs: List[Pair], source: str, url: str) -> List[Dict]:
+def _rows_from_pairs(pairs: list, source: str, url: str) -> List[Dict]:
+    """Paires -> want-list. Une paire peut porter une 3e valeur : la duree en secondes
+    (SoundCloud), qui part en colonne `Length` -> filtre `length-tol` de sldl au download
+    + controle +-10 % au re-audit. Seulement quand la duree EST celle du morceau : jamais
+    une duree de video YouTube (clip/intro/outro -> ferait rejeter le bon fichier)."""
     rows: List[Dict] = []
-    seen = set()
-    for artist, title in pairs:
+    seen: Dict[str, Dict] = {}
+    for p in pairs:
+        artist, title = p[0], p[1]
+        length = p[2] if len(p) > 2 and p[2] else ""
         artist = _strip_catalog(artist)
         title = _strip_catalog(title)         # vire les [catalogue] -> recherche propre +
         if not artist or not title:           # dedup correcte (clean == avec-catalogue)
             continue
         key = f"{artist.lower()} - {title.lower()}"
         if key in seen:
+            if length and not seen[key]["Length"]:   # doublon qui connait la duree : on la garde
+                seen[key]["Length"] = length
             continue
-        seen.add(key)
-        rows.append({
-            "Artist": artist, "Title": title, "Album": "", "Length": "",
+        row = {
+            "Artist": artist, "Title": title, "Album": "", "Length": length,
             "Year": "", "Source": source, "SourceUrl": url,
-        })
+        }
+        seen[key] = row
+        rows.append(row)
     return rows
 
 
@@ -641,13 +650,15 @@ def _sc_pairs_from_entries(entries, tracks: Dict[str, dict],
             skipped_mix += sub_mix
             continue
         t = tracks.get(str(e.get("id")))
-        dur_ms = (t or {}).get("duration") or (t or {}).get("full_duration") or 0
+        # full_duration d'abord : un son en extrait (Go+/DRM) a duration = 30 s de preview
+        dur_ms = (t or {}).get("full_duration") or (t or {}).get("duration") or 0
         if dur_ms and dur_ms / 1000 > _SC_MAX_TRACK_S:
             skipped_mix += 1
             continue
         p = _sc_pair(e.get("title") or "", t)
         if p:
-            pairs.append(p)
+            secs = int(round(dur_ms / 1000)) if dur_ms else 0
+            pairs.append((p[0], p[1], secs) if secs >= 30 else p)   # < 30 s : extrait, pas fiable
     return pairs, skipped_mix, n_sets
 
 

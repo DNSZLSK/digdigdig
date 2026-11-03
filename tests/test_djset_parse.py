@@ -339,7 +339,7 @@ def test_sc_pairs_unfold_sets_and_skip_mixes():
 
     pairs, mixes, n_sets = _sc_pairs_from_entries(entries, tracks, expand)
     # le set n'est PAS pris pour un morceau 'Some' - 'EP' : il est deplie
-    assert pairs == [("A", "Short"), ("C", "EP Track")]
+    assert pairs == [("A", "Short", 300), ("C", "EP Track", 400)]   # duree en s
     assert (mixes, n_sets) == (1, 1)
     assert expanded == ["https://soundcloud.com/c/sets/some-ep"]
 
@@ -378,3 +378,19 @@ def test_scrape_djset_routes_soundcloud(monkeypatch):
     rows = djset.scrape_djset("https://soundcloud.com/someone/likes", newest=20)
     assert seen["args"] == ("https://soundcloud.com/someone/likes", 20)
     assert rows[0]["Source"] == "djset:soundcloud" and rows[0]["Artist"] == "Girl Ultra"
+
+
+def test_sc_length_prefers_full_duration_and_reaches_rows():
+    from ddd.core.scrapers.djset import _rows_from_pairs, _sc_pairs_from_entries
+    # extrait Go+/DRM : duration = 30 s de preview, full_duration = le vrai morceau
+    tracks = {"1": {"title": "Long", "duration": 30_000, "full_duration": 412_400,
+                    "user": {"username": "A"}},
+              "2": {"title": "NoDur", "user": {"username": "B"}}}
+    pairs, _, _ = _sc_pairs_from_entries([{"id": "1", "title": "Long"},
+                                          {"id": "2", "title": "NoDur"}], tracks)
+    assert pairs == [("A", "Long", 412), ("B", "NoDur")]
+    rows = _rows_from_pairs(pairs + [("a", "long")], "djset:soundcloud", "u")
+    assert [r["Length"] for r in rows] == [412, ""]
+    # doublon : la version qui connait la duree complete l'autre
+    rows = _rows_from_pairs([("X", "Y"), ("x", "y", 200)], "s", "u")
+    assert len(rows) == 1 and rows[0]["Length"] == 200
