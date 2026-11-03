@@ -105,7 +105,7 @@ def test_strip_catalog_and_dedup():
 
 def test_scrape_djset_dedup_and_format(monkeypatch):
     # URL quelconque -> branche yt-dlp ; on la mock pour rester offline
-    monkeypatch.setattr(d, "_scrape_youtube", lambda url, prog: [("A", "B"), ("A", "B"), ("C", "D")])
+    monkeypatch.setattr(d, "_scrape_youtube", lambda url, prog, **kw: [("A", "B"), ("A", "B"), ("C", "D")])
     rows = scrape_djset("http://example.com/x", progress=None)
     assert len(rows) == 2                                        # dedup lower(a)-lower(t)
     assert rows[0]["Artist"] == "A" and rows[0]["Title"] == "B"
@@ -289,3 +289,92 @@ def test_scrape_djset_routes_channel(monkeypatch):
     rows = scrape_djset("https://www.youtube.com/@SomeDigger/videos", progress=None)
     assert [(r["Artist"], r["Title"]) for r in rows] == [("A", "B"), ("C", "D (Original Mix)")]
     assert rows[0]["Source"] == "djset:youtube-channel"   # routage + dedup lower(a)-lower(t)
+
+
+# ---- separateur hors parentheses (parseur commun) + SoundCloud ----------------
+
+def test_split_ignores_sep_inside_parens():
+    from ddd.core.scrapers.djset import _split_artist_title
+    assert _split_artist_title("THE FUTURE (Notre Dame Remix - Edit)") is None
+    assert _split_artist_title("Ankhoi - THE FUTURE (Notre Dame Remix - Edit)") == (
+        "Ankhoi", "THE FUTURE (Notre Dame Remix - Edit)")
+    assert _split_artist_title("Jean-Michel Jarre - Oxygene") == ("Jean-Michel Jarre", "Oxygene")
+
+
+def test_sc_pair_title_split_wins_then_publisher_then_uploader():
+    from ddd.core.scrapers.djset import _sc_pair
+    label = {"user": {"username": "Ninja Tune"}, "publisher_metadata": {"artist": "Simon Green"}}
+    # le titre porte deja 'Artiste - Titre' (upload de label) -> il gagne
+    assert _sc_pair("Henri Texier - Les La-Bas (Bonobo Remix)", label) == (
+        "Henri Texier", "Les La-Bas (Bonobo Remix)")
+    # sinon artiste editeur, 1er de la liste
+    pub = {"user": {"username": "bonobo"}, "publisher_metadata": {"artist": "Bonobo, TEED"}}
+    assert _sc_pair("Heartbreak (Kerri Chandler Remix)", pub) == (
+        "Bonobo", "Heartbreak (Kerri Chandler Remix)")
+    # sinon l'uploader
+    assert _sc_pair("Denisse", {"user": {"username": "Girl Ultra"}}) == ("Girl Ultra", "Denisse")
+    # set : titre absent de l'entree flat -> titre du track capture
+    assert _sc_pair("", {"title": "THAT KID", "user": {"username": "Elliott Skinner"}}) == (
+        "Elliott Skinner", "THAT KID")
+    assert _sc_pair("Lonely title", None) is None   # ni artiste ni metadonnees
+
+
+def test_sc_pairs_unfold_sets_and_skip_mixes():
+    from ddd.core.scrapers.djset import _sc_pairs_from_entries
+    tracks = {
+        "1": {"title": "Short", "duration": 300_000, "user": {"username": "A"}},
+        "2": {"title": "Radio Show", "duration": 3_600_000, "user": {"username": "B"}},
+        "3": {"title": "EP Track", "duration": 400_000, "user": {"username": "C"}},
+    }
+    entries = [
+        {"id": "1", "title": "Short", "url": "https://soundcloud.com/a/short"},
+        {"id": "2", "title": "Radio Show", "url": "https://soundcloud.com/b/show"},
+        {"id": "9", "title": "Some - EP", "url": "https://soundcloud.com/c/sets/some-ep"},
+    ]
+    expanded = []
+
+    def expand(e):
+        expanded.append(e["url"])
+        return [{"id": "3", "url": "https://soundcloud.com/c/ep-track"}]
+
+    pairs, mixes, n_sets = _sc_pairs_from_entries(entries, tracks, expand)
+    # le set n'est PAS pris pour un morceau 'Some' - 'EP' : il est deplie
+    assert pairs == [("A", "Short"), ("C", "EP Track")]
+    assert (mixes, n_sets) == (1, 1)
+    assert expanded == ["https://soundcloud.com/c/sets/some-ep"]
+
+
+def test_sc_collect_tracks_walks_nested_api_json():
+    from ddd.core.scrapers.djset import _sc_collect_tracks
+    out = {}
+    _sc_collect_tracks({"collection": [{"track": {"kind": "track", "id": 5, "title": "T"}},
+                                       {"playlist": {"kind": "playlist", "id": 6, "title": "P",
+                                                     "tracks": [{"kind": "track", "id": 7,
+                                                                 "title": "U"}]}}]}, out)
+    assert sorted(out) == ["5", "7"]
+
+
+def test_youtube_private_lists_get_explicit_message(monkeypatch):
+    from ddd.core.scrapers import djset
+    from ddd.core.scrapers.djset import _youtube_private_list, scrape_djset
+    assert _youtube_private_list("https://www.youtube.com/playlist?list=LL")
+    assert _youtube_private_list("https://www.youtube.com/playlist?list=WL")
+    assert not _youtube_private_list("https://www.youtube.com/watch?v=abc&list=LL")  # set -> scrape
+    assert not _youtube_private_list("https://www.youtube.com/playlist?list=PLabc")
+    monkeypatch.setattr(djset, "_scrape_youtube", lambda *a, **k: (_ for _ in ()).throw(AssertionError))
+    msgs = []
+    assert scrape_djset("https://www.youtube.com/playlist?list=LL", progress=msgs.append) == []
+    assert any("private" in m for m in msgs)
+
+
+def test_scrape_djset_routes_soundcloud(monkeypatch):
+    from ddd.core.scrapers import djset
+    seen = {}
+
+    def fake(url, progress, newest=0, cancel=None):
+        seen["args"] = (url, newest)
+        return [("Girl Ultra", "Denisse")]
+    monkeypatch.setattr(djset, "_scrape_soundcloud", fake)
+    rows = djset.scrape_djset("https://soundcloud.com/someone/likes", newest=20)
+    assert seen["args"] == ("https://soundcloud.com/someone/likes", 20)
+    assert rows[0]["Source"] == "djset:soundcloud" and rows[0]["Artist"] == "Girl Ultra"
