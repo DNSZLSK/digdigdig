@@ -394,3 +394,14 @@ def test_sc_length_prefers_full_duration_and_reaches_rows():
     # doublon : la version qui connait la duree complete l'autre
     rows = _rows_from_pairs([("X", "Y"), ("x", "y", 200)], "s", "u")
     assert len(rows) == 1 and rows[0]["Length"] == 200
+
+
+def test_clean_video_title_pipe_inside_brackets_kept_balanced():
+    from ddd.core.scrapers.djset import _clean_video_title, _rows_from_pairs, _split_artist_title
+    # '|' dans des crochets : avant, coupe -> '[Dubstep' ouvert parti dans la recherche
+    c = _clean_video_title("Whales - Hands All Over Me [Dubstep | Monstercat]")
+    assert c == "Whales - Hands All Over Me [Dubstep | Monstercat]"
+    row = _rows_from_pairs([_split_artist_title(c)], "s", "u")[0]
+    assert row["Title"] == "Hands All Over Me"            # crochet entier vire ensuite
+    # '|' de chaine HORS crochets : toujours coupe
+    assert _clean_video_title("Artist - Track | Some Channel") == "Artist - Track"

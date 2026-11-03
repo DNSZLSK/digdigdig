@@ -75,9 +75,10 @@ def _is_id(s: str) -> bool:
     return s.lower().strip() in ("id", "id - id", "???", "unknown")
 
 
-def _top_level_sep(s: str) -> int:
-    """Position du 1er ' - ' HORS parentheses/crochets, -1 sinon.
-    'Track (X Remix - Edit)' n'est pas 'Track (X Remix' / 'Edit)'."""
+def _top_level_sep(s: str, sep: str = _SEP) -> int:
+    """Position du 1er `sep` HORS parentheses/crochets, -1 sinon.
+    'Track (X Remix - Edit)' n'est pas 'Track (X Remix' / 'Edit)' ; idem pour un '|'
+    dans '[Dubstep | Monstercat]'."""
     depth = 0
     i = 0
     while i < len(s):
@@ -86,7 +87,7 @@ def _top_level_sep(s: str) -> int:
             depth += 1
         elif c in ")]":
             depth = max(0, depth - 1)
-        elif depth == 0 and s.startswith(_SEP, i):
+        elif depth == 0 and s.startswith(sep, i):
             return i
         i += 1
     return -1
@@ -392,8 +393,12 @@ def _clean_video_title(title: str) -> str:
     """Titre de video YouTube -> propre pour le split : vire le bruit (Official Video,
     Lyric Video, | Channel, Free DL...). Garde les (Original Mix)/(X Remix)."""
     s = norm_dashes(_YT_NOISE.sub("", title or ""))   # tirets unicode/invisibles -> ' - ' detectable
-    head = s.split("|", 1)[0]            # segment apres '|' = label/chaine, vire si le debut
-    if _SEP in head:                     # garde encore 'Artiste - Titre'
+    # segment apres un '|' = label/chaine, vire si le debut garde 'Artiste - Titre'.
+    # Seulement un '|' HORS crochets : '[Dubstep | Monstercat]' coupe laissait '[Dubstep'
+    # ouvert -> parti tel quel dans la recherche Soulseek (match strict rate).
+    cut = _top_level_sep(s, "|")
+    head = s[:cut] if cut >= 0 else s
+    if _SEP in head:
         s = head
     return re.sub(r"\s{2,}", " ", s).strip()
 
