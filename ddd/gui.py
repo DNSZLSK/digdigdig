@@ -580,6 +580,64 @@ def main(page: ft.Page) -> None:
             actions=[ft.TextButton("Close", on_click=lambda _e: page.close(dlg))])
         page.open(dlg)
 
+    SPEC_W, SPEC_H = 900, 300
+
+    def open_spectrogram(rec) -> None:
+        """Spectrogramme du morceau : voir la coupure de ses propres yeux avant de juger.
+        Le rendu (0,2-1,5 s) tourne dans un thread ; le dialogue s'ouvre tout de suite."""
+        q = rec.quality
+        title, artist = theme.track_title_artist(rec)
+        body = ft.Container(
+            ft.Row([ft.ProgressRing(width=18, height=18, stroke_width=2, color=SPIN),
+                    ft.Text("Reading the whole track...", color=TXT_DIM, size=12)],
+                   spacing=10),
+            width=SPEC_W, height=SPEC_H, alignment=ft.alignment.center)
+        cut = f"{q.cutoff_hz / 1000:.1f} kHz" if q.cutoff_hz else "-"
+        dur = f"{int(q.duration_s // 60)}:{int(q.duration_s % 60):02d}" if q.duration_s else "-"
+        caption = ft.Text(
+            f"cutoff {cut}  ·  {theme.band_label(q.verdict)}  ·  {theme.format_label(q)}  ·  {dur}",
+            size=12, color=TXT, font_family=FONT_MONO)
+        hint = ft.Text("Red line: measured cutoff. Dotted lines: 16 / 18 / 20 kHz. "
+                       "Left to right: the whole track.", size=11, color=TXT_DIM)
+        dlg = ft.AlertDialog(
+            title=ft.Column([
+                ft.Text(title or q.filename, color=TXT, weight=ft.FontWeight.BOLD, size=16),
+                ft.Text(artist or "", color=TXT_DIM, size=12)], spacing=2, tight=True),
+            bgcolor=SURFACE,
+            content=ft.Column([body, caption, hint], spacing=8, tight=True),
+            actions=[ft.TextButton("Close", on_click=lambda _e: page.close(dlg))])
+        page.open(dlg)
+
+        def _work() -> None:
+            from .core import spectrogram as spectro_mod
+            try:
+                sp = spectro_mod.render(q.path, width=SPEC_W, height=SPEC_H,
+                                        cutoff_hz=q.cutoff_hz or None)
+            except Exception as e:  # noqa: BLE001
+                body.content = ft.Text(f"Can't draw this file: {e}", color=theme.ALERT, size=12)
+                page.update()
+                return
+            import base64
+            labels = []
+            for hz in (20000, 18000, 16000):
+                if hz < sp.nyquist:
+                    labels.append(ft.Container(
+                        ft.Text(f"{hz // 1000}k", size=10, color=TXT_DIM, font_family=FONT_MONO),
+                        left=6, top=max(0, sp.y_of(hz) - 15)))
+            if q.cutoff_hz and q.cutoff_hz < sp.nyquist:
+                labels.append(ft.Container(
+                    ft.Text(cut, size=10, color=theme.ALERT, font_family=FONT_MONO,
+                            weight=ft.FontWeight.BOLD),
+                    right=6, top=max(0, sp.y_of(q.cutoff_hz) - 16)))
+            body.alignment = None
+            body.content = ft.Stack([
+                ft.Image(src_base64=base64.b64encode(sp.png).decode("ascii"),
+                         width=SPEC_W, height=SPEC_H, fit=ft.ImageFit.FILL),
+                *labels], width=SPEC_W, height=SPEC_H)
+            page.update()
+
+        threading.Thread(target=_work, daemon=True).start()
+
     def render_summary() -> None:
         from collections import Counter
         summary_row.controls.clear()
@@ -656,7 +714,7 @@ def main(page: ft.Page) -> None:
     table_header = ft.Container(
         ft.Row([
             ft.Container(width=COL_CHECK),
-            _hcell("TRACK", expand=True),
+            _hcell("TRACK  ·  CLICK FOR SPECTROGRAM", expand=True),
             _hcell("FORMAT", width=COL_FMT),
             _hcell("CUTOFF", width=COL_CUT),
             _hcell("BAND", width=COL_BAND),
@@ -682,11 +740,14 @@ def main(page: ft.Page) -> None:
                             data=idx, on_change=_on_check, fill_color=PINK, check_color=BG),
                 width=COL_CHECK)
             title, artist = theme.track_title_artist(rec)
-            track_cell = ft.Column(
+            # Titre + cutoff cliquables -> spectrogramme (pas d'icone par ligne : chaque
+            # controle en plus alourdit le page.update() sur ~1000 lignes).
+            spectro = (lambda _e, r=rec: open_spectrogram(r)) if _is_audio_row(q) else None
+            track_cell = ft.Container(ft.Column(
                 [ft.Text(title or q.filename, size=14, weight=ft.FontWeight.W_600,
                          color=TXT, no_wrap=True),
                  ft.Text(artist or "-", size=11, color=TXT_DIM, no_wrap=True)],
-                spacing=3, expand=True)
+                spacing=3), expand=True, on_click=spectro)
             cut = f"{q.cutoff_hz / 1000:.1f} kHz" if q.cutoff_hz else "-"
             st_text, st_problem = theme.status_oneliner(rec, preset)
             ring, txt, status_cell = make_status_cell(
@@ -694,7 +755,8 @@ def main(page: ft.Page) -> None:
             state.row_status[q.path] = (ring, txt)
             row = ft.Row([
                 checkbox, track_cell, _format_pill(q),
-                ft.Text(cut, width=COL_CUT, size=12, color=TXT_DIM, font_family=FONT_MONO),
+                ft.Container(ft.Text(cut, size=12, color=TXT_DIM, font_family=FONT_MONO),
+                             width=COL_CUT, on_click=spectro),
                 _band_pill(q), status_cell,
             ], spacing=12, vertical_alignment=ft.CrossAxisAlignment.CENTER)
             table_col.controls.append(ft.Container(
@@ -765,7 +827,8 @@ def main(page: ft.Page) -> None:
                 render_table()
                 _refresh_preset_label()
                 n_up = sum(1 for r in state.records if _is_upgradable(r.quality, _preset()))
-                status.value = f"{len(state.records)} files scanned - {n_up} to upgrade."
+                status.value = (f"{len(state.records)} files scanned - {n_up} to upgrade. "
+                                "Click a track to see its spectrogram.")
                 _refresh_footer()
             except Exception as ex:  # noqa: BLE001
                 status.value = f"Scan error: {ex}"
