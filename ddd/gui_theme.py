@@ -4,7 +4,7 @@ Module PUR (aucun import flet) : couleurs + petites fonctions de formatage de
 chaines pour le tableau. Importable headless (le test de build GUI s'en sert).
 
 Le miroir de cette palette vit dans docs/index.html (:root) si on veut que le site
-colle a l'app. Sync optionnelle et separee (le site reste sombre pour l'instant).
+colle a l'app (synchronise sur le theme sombre "club").
 """
 
 from __future__ import annotations
