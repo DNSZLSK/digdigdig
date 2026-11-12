@@ -76,6 +76,21 @@ def band_label(verdict: str) -> str:
     return VERDICT_LABEL.get(verdict, verdict).upper()
 
 
+# Debits CBR standard (MPEG-1 Layer III + AAC courants). Le debit mesure inclut les tags
+# et la pochette (taille*8/duree) -> un CBR 320 s'affichait "mp3 321" / "mp3 322".
+_STD_KBPS = (32, 40, 48, 56, 64, 80, 96, 112, 128, 160, 192, 224, 256, 320)
+
+
+def display_kbps(kbps: float) -> int:
+    """Cale un debit mesure sur le CBR standard le plus proche s'il est a moins de 3 %.
+    Un vrai VBR (ex. 245) reste tel quel. Affichage seulement : le tri qualite garde la mesure."""
+    k = round(kbps or 0)
+    if k <= 0:
+        return 0
+    std = min(_STD_KBPS, key=lambda s: abs(s - k))
+    return std if abs(std - k) <= std * 0.03 else k
+
+
 def format_label(q) -> str:
     """Format lisible pour la colonne FORMAT : '.flac' / '.wav' / 'mp3 320' / '-'."""
     if q.verdict in (quality.SKIPPED, quality.ERROR):
@@ -83,7 +98,7 @@ def format_label(q) -> str:
     ext = (q.ext or "").lower()
     if q.format_class == "lossy":
         codec = ext.lstrip(".") or "mp3"
-        kbps = round(q.container_bitrate or 0)
+        kbps = display_kbps(q.container_bitrate)
         return f"{codec} {kbps}" if kbps else codec
     return ext or "-"
 
