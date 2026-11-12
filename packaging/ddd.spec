@@ -46,7 +46,9 @@ _fpcalc_dir = ROOT / "bin" / "fpcalc"
 if _fpcalc_dir.exists():
     datas.append((str(_fpcalc_dir), "bin/fpcalc"))
 binaries = []
-hiddenimports = ["ddd", "ddd.gui", "ddd.cli"]
+hiddenimports = ["ddd", "ddd.gui", "ddd.cli",
+                 # imports dans des fonctions (spectrogramme ouvert au clic) : explicites par securite
+                 "ddd.core.spectrogram", "ddd.core.scancache", "sqlite3"]
 
 # Tout ramener pour ces paquets :
 #  - flet/flet_desktop : client desktop ; soundfile : libsndfile (decodage audio)
