@@ -23,6 +23,7 @@ staging/
 .cache-dl/
 .genre-cache/
 .acoustid-cache/
+.scan-cache/
 logs/
 inputs/*.csv
 inputs/*.json

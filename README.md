@@ -65,6 +65,7 @@ No need to be a developer: download the `.exe`, double-click, it's a window.
   - **HQ** (blue): >= 18 kHz, playable on a big system (includes MP3 320).
   - **Iffy** (yellow): 16-18 kHz, borderline.
   - **Review** (red): reduced bandwidth or bitrate below the configured floor.
+  - **Rescans are near-instant**: each file's analysis is remembered until the file changes (size or date), so after an upgrade only new or replaced files are re-analyzed. `ddd scan --no-cache` forces a full pass.
 - **Reads pretty much anything**: FLAC, WAV, AIFF, MP3, OGG/Opus, **MP4 / M4A** (AAC *and* ALAC), **WMA** (including WMA Lossless), APE, TTA, WavPack. That old folder of iTunes-era `.mp4` rips or Windows Media `.wma` gets scanned like the rest, instead of showing up empty. What's *inside* the container decides: an ALAC `.m4a` is treated as lossless and put through the same anti-upscale spectral check as a FLAC, not written off as lossy because of its extension.
 - **Quality / target modes** (in Settings) - the bar DDD keeps to, and what it goes hunting for:
   - **DJ Club** (>= 18 kHz) - *default*: keeps anything club-playable, MP3 320 included.
