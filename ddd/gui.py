@@ -42,17 +42,17 @@ from .core import updates as updates_mod
 from .core.naming import match_key
 from .core.scan import ScanRecord, duplicate_groups, scan_library
 
-# --- Palette creme "crate digger" (definie dans gui_theme, miroir docs/index.html) ---
+# --- Palette sombre "club" (definie dans gui_theme, miroir docs/index.html) ---
 # On garde les memes NOMS qu'avant (BG/SURFACE/BORDER/TXT/...) pour ne pas reecrire
-# tous les `color=`/`bgcolor=` du fichier : seules les valeurs basculent vers le creme.
-BG = theme.BG               # fond fenetre + zone table (ivoire chaud, uniforme)
+# tous les `color=`/`bgcolor=` du fichier : seules les valeurs changent.
+BG = theme.BG               # fond fenetre + zone table (quasi noir, uniforme)
 SURFACE = theme.SURFACE     # pastilles / petits panneaux
 FIELD_BG = theme.FIELD_BG   # fond des champs de saisie
 BORDER = theme.LINE         # filets / dividers discrets
 TXT = theme.INK             # texte principal (brun presque noir)
 TXT_DIM = theme.INK_DIM     # texte secondaire (brun-gris chaud)
 TXT_FAINT = theme.INK_FAINT  # en-tetes de colonnes (capitales pales)
-ACCENT = theme.PINK         # accent crimson (Upgrade + onglet actif + coches)
+ACCENT = theme.PINK         # accent lime (Upgrade + onglet actif + coches)
 PINK = theme.PINK           # alias explicite (coches, bordure focus, statut probleme)
 SPIN = theme.PINK           # spinners / progress, sur l'accent
 
@@ -63,7 +63,7 @@ MAX_TABLE_ROWS = 1000
 
 # Polices custom (servies depuis ddd/assets/fonts via ft.app(assets_dir=...)).
 FONT_SLAB = "Anton"         # wordmark DIGDIGDIG (display Anton, repli sur le defaut si absente)
-FONT_MONO = "DMMono"        # tagline + pastilles + cutoff (DM Mono, repli si absente)
+FONT_MONO = "JetBrainsMono"        # tagline + pastilles + cutoff (DM Mono, repli si absente)
 
 # Formulaire de retours (Google Form / Tally) : case "je kiffe l'app" + suggestions.
 # Aucun compte requis cote user. Colle l'URL de TON formulaire ici une fois cree.
@@ -112,9 +112,9 @@ ACTION_LABEL = {
     upgrade_mod.ACT_KEPT_BESIDE: ("kept beside ✓", theme.GREEN, False),
     upgrade_mod.ACT_ACQUIRED: ("kept in inbox ✓", theme.GREEN, False),
     upgrade_mod.ACT_ALREADY_GOOD: ("already good ✓", theme.BLUE, False),
-    upgrade_mod.ACT_REJECTED_FAKE: ("below threshold ✗", theme.PINK, False),
-    upgrade_mod.ACT_TOO_SHORT: ("too short ✗", theme.PINK, False),
-    upgrade_mod.ACT_WRONG_MATCH: ("wrong match ✗", theme.PINK, False),
+    upgrade_mod.ACT_REJECTED_FAKE: ("below threshold ✗", theme.ALERT, False),
+    upgrade_mod.ACT_TOO_SHORT: ("too short ✗", theme.ALERT, False),
+    upgrade_mod.ACT_WRONG_MATCH: ("wrong match ✗", theme.ALERT, False),
     upgrade_mod.ACT_NOT_FOUND: ("not found ✗", TXT_DIM, False),
     upgrade_mod.ACT_UNPARSEABLE: ("unreadable name", TXT_DIM, False),
     upgrade_mod.ACT_DUPLICATE: ("already there", TXT_DIM, False),
@@ -223,7 +223,7 @@ def _font_map() -> dict:
     l'assets_dir passe a ft.app().
     """
     fonts_dir = paths.gui_assets_dir() / "fonts"
-    candidates = {FONT_SLAB: "Anton-Regular.ttf", FONT_MONO: "DMMono-Regular.ttf"}
+    candidates = {FONT_SLAB: "Anton-Regular.ttf", FONT_MONO: "JetBrainsMono-Regular.ttf"}
     return {name: f"fonts/{fn}" for name, fn in candidates.items()
             if (fonts_dir / fn).exists()}
 
@@ -270,14 +270,14 @@ def main(page: ft.Page) -> None:
     _icon = paths.app_icon()
     if _icon.exists():
         _set_window_icon(page, _icon)
-    page.theme_mode = ft.ThemeMode.LIGHT
-    # ColorScheme explicite et 100% creme -> Material n'injecte plus ses gris froids.
+    page.theme_mode = ft.ThemeMode.DARK
+    # ColorScheme explicite et 100% theme -> Material n'injecte plus ses gris par defaut.
     # On force AUSSI la famille surface_container* (fonds des dropdowns/menus/dialogs)
-    # sinon ces composants retombent sur des gris par defaut qui cassent l'ivoire.
+    # sinon ces composants retombent sur des gris par defaut qui cassent le fond.
     page.theme = ft.Theme(
         color_scheme=ft.ColorScheme(
-            primary=ACCENT, on_primary="#FFFFFF",
-            secondary=ACCENT, on_secondary="#FFFFFF",
+            primary=ACCENT, on_primary=theme.ON_ACCENT,
+            secondary=ACCENT, on_secondary=theme.ON_ACCENT,
             error=theme.BRICK, on_error="#FFFFFF",
             background=BG, on_background=TXT,
             surface=BG, on_surface=TXT,
@@ -338,7 +338,7 @@ def main(page: ft.Page) -> None:
 
     def _banner(msg: str, ok: bool) -> None:
         """Bandeau de fin (SnackBar), vert eteint si succes, gris sinon."""
-        bg = "#3C4A3A" if ok else SURFACE
+        bg = "#1F2A12" if ok else SURFACE
         try:
             page.open(ft.SnackBar(ft.Text(msg, color=TXT), bgcolor=bg, duration=8000))
         except Exception:  # noqa: BLE001  (fallback API Flet plus ancienne)
@@ -371,7 +371,7 @@ def main(page: ft.Page) -> None:
         on_click=lambda _e: _open_url(updates_mod.RELEASES_PAGE),
         tooltip="Open the download page (GitHub releases)",
         visible=False, bgcolor=SURFACE, border=ft.border.all(1, ACCENT),
-        border_radius=8, padding=ft.padding.symmetric(horizontal=12, vertical=8),
+        border_radius=3, padding=ft.padding.symmetric(horizontal=12, vertical=8),
         margin=ft.margin.only(bottom=2))
 
     # --- Liens d'achat pour les introuvables (helper commun upgrade + acquire) ----
@@ -478,12 +478,12 @@ def main(page: ft.Page) -> None:
     folder_field = ft.TextField(width=360, dense=True, text_size=13, color=TXT,
                                 prefix_icon=ft.Icons.FOLDER, hint_text="~/Music/incoming",
                                 value=cfg.get("last_folder", ""), bgcolor=FIELD_BG,
-                                border_color=BORDER, border_radius=8, focused_border_color=PINK)
+                                border_color=BORDER, border_radius=3, focused_border_color=PINK)
     # Miroir du dossier pour l'onglet Sort (un controle ne vit que dans un onglet).
     sort_folder_field = ft.TextField(width=360, dense=True, text_size=13, color=TXT,
                                      prefix_icon=ft.Icons.FOLDER, hint_text="folder to sort",
                                      value=cfg.get("last_folder", ""), bgcolor=FIELD_BG,
-                                     border_color=BORDER, border_radius=8, focused_border_color=PINK)
+                                     border_color=BORDER, border_radius=3, focused_border_color=PINK)
     summary_row = ft.Row(wrap=True, spacing=14)
     quality_bar = ft.Container(content=ft.Row(spacing=0, controls=[]), height=8,
                                border_radius=4, bgcolor=BORDER,
@@ -690,7 +690,7 @@ def main(page: ft.Page) -> None:
             cut = f"{q.cutoff_hz / 1000:.1f} kHz" if q.cutoff_hz else "-"
             st_text, st_problem = theme.status_oneliner(rec, preset)
             ring, txt, status_cell = make_status_cell(
-                st_text, width=COL_STATUS, color=(PINK if st_problem else TXT_DIM))
+                st_text, width=COL_STATUS, color=(theme.ALERT if st_problem else TXT_DIM))
             state.row_status[q.path] = (ring, txt)
             row = ft.Row([
                 checkbox, track_cell, _format_pill(q),
@@ -938,9 +938,9 @@ def main(page: ft.Page) -> None:
             else:
                 label, color = "left as-is", theme.NEUTRAL
             badge = ft.Container(
-                content=ft.Text(label, size=11, color="#FFFFFF", no_wrap=True, font_family=FONT_MONO),
+                content=ft.Text(label, size=11, color=theme.ON_ACCENT, no_wrap=True, font_family=FONT_MONO),
                 bgcolor=color, padding=ft.padding.symmetric(vertical=2, horizontal=8),
-                border_radius=8, width=140)
+                border_radius=3, width=140)
             styles = ft.Text(o.styles or "", size=11, color=TXT_DIM, width=220, no_wrap=True)
             name = ft.Text(Path(o.src).name, expand=True, size=12, no_wrap=True, color=TXT)
             sort_table_col.controls.append(
@@ -1253,7 +1253,7 @@ def main(page: ft.Page) -> None:
     identify_folder_field = ft.TextField(
         width=360, dense=True, text_size=13, color=TXT,
         prefix_icon=ft.Icons.FOLDER, hint_text="folder of no-name / mislabeled tracks",
-        bgcolor=FIELD_BG, border_color=BORDER, border_radius=8, focused_border_color=PINK)
+        bgcolor=FIELD_BG, border_color=BORDER, border_radius=3, focused_border_color=PINK)
     identify_table_col = ft.ListView(expand=True, spacing=2)
 
     def on_id_folder_picked(e) -> None:
@@ -1560,19 +1560,20 @@ def main(page: ft.Page) -> None:
                    spacing=6, vertical_alignment=ft.CrossAxisAlignment.CENTER),
             settings_body,
         ], spacing=6, scroll=ft.ScrollMode.AUTO, expand=True),
-        padding=8, border=ft.border.all(1, BORDER), border_radius=8, bgcolor=SURFACE,
+        padding=8, border=ft.border.all(1, BORDER), border_radius=3, bgcolor=SURFACE,
         visible=False, expand=True)
 
     # ====================================================================
     #  Boutons
     # ====================================================================
     # Styles : Scan/Fetch = encre (presque noir), Upgrade/Apply = rose, Browse = contour.
-    _btn_shape = ft.RoundedRectangleBorder(radius=8)
+    _btn_shape = ft.RoundedRectangleBorder(radius=3)
     _btn_pad = ft.padding.symmetric(horizontal=18, vertical=13)
     _btn_txt = ft.TextStyle(weight=ft.FontWeight.BOLD, size=13)
-    _ink_style = ft.ButtonStyle(bgcolor=TXT, color=BG, shape=_btn_shape, padding=_btn_pad,
+    _ink_style = ft.ButtonStyle(bgcolor=theme.BTN_BG, color=theme.BTN_FG, shape=_btn_shape,
+                                side=ft.BorderSide(1, BORDER), padding=_btn_pad,
                                 text_style=_btn_txt)
-    _pink_style = ft.ButtonStyle(bgcolor=ACCENT, color="#FFFFFF", shape=_btn_shape,
+    _pink_style = ft.ButtonStyle(bgcolor=ACCENT, color=theme.ON_ACCENT, shape=_btn_shape,
                                  padding=_btn_pad, text_style=_btn_txt)
     _outline_style = ft.ButtonStyle(color=TXT, bgcolor=FIELD_BG, side=ft.BorderSide(1, BORDER),
                                     shape=_btn_shape, padding=ft.padding.symmetric(horizontal=14,
@@ -1630,7 +1631,7 @@ def main(page: ft.Page) -> None:
     #  Header : wordmark slab + tagline + statut slsk + engrenage
     # ====================================================================
     wordmark = ft.Text("DIGDIGDIG", font_family=FONT_SLAB, size=30,
-                       weight=ft.FontWeight.BOLD, color=TXT,
+                       weight=ft.FontWeight.BOLD, color=ACCENT,
                        style=ft.TextStyle(letter_spacing=1))
     tagline = ft.Text("the crate digger that digs x3", font_family=FONT_MONO,
                       size=11, color=TXT_DIM)
@@ -1651,7 +1652,7 @@ def main(page: ft.Page) -> None:
         ], vertical_alignment=ft.CrossAxisAlignment.CENTER, spacing=16),
         padding=ft.padding.only(left=4, right=4, top=4, bottom=8))
 
-    # Zone table : FLUSH sur l'ivoire (PAS de carte grise) ; juste un filet sous l'en-tete
+    # Zone table : FLUSH sur le fond (PAS de carte grise) ; juste un filet sous l'en-tete
     # et un divider faible par ligne (les lignes portent leur propre bordure basse).
     def _table_surface(header_row, body) -> ft.Container:
         inner = ([header_row, ft.Divider(height=1, thickness=1, color=BORDER), body]
@@ -1736,7 +1737,7 @@ def main(page: ft.Page) -> None:
 
     # Nav custom (PAS ft.Tabs : sa TabBarView donne une hauteur non bornee a son contenu
     # -> expand casse et un fond gris Material transparait. Ici le contenu vit dans un
-    # Container creme que l'on pilote a la main -> fond uniforme + expand correct).
+    # Container au fond du theme que l'on pilote a la main -> fond uniforme + expand correct).
     _tab_defs = [("Library", library_tab), ("Identify", identify_tab),
                  ("Get favorites", acquire_tab), ("YouTube / SoundCloud", djset_tab),
                  ("Sort by genre", sort_tab)]
