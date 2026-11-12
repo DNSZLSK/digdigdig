@@ -1752,7 +1752,17 @@ def main(page: ft.Page) -> None:
     tab_texts: list = []
     tab_buttons: list = []
 
+    # Message de statut PAR onglet : sans ca, "Preview: 16 would be filed" (Sort) restait
+    # affiche sur Identify/Library. On range le message de l'onglet quitte et on ressort
+    # celui de l'onglet ouvert. Pendant une tache (busy), la barre appartient a la tache.
+    tab_status: dict = {}
+    current_tab = [0]
+
     def _select_tab(idx: int) -> None:
+        if not state.busy and idx != current_tab[0]:
+            tab_status[current_tab[0]] = status.value
+            status.value = tab_status.get(idx, "")
+        current_tab[0] = idx
         tab_content.content = _tab_defs[idx][1]
         for j, t in enumerate(tab_texts):
             active = j == idx
