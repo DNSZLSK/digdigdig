@@ -19,9 +19,15 @@ logger = logging.getLogger(__name__)
 
 try:
     import mutagen
+    from mutagen.id3 import ID3 as _ID3
     _MUTAGEN = True
 except ImportError:  # pragma: no cover
     _MUTAGEN = False
+
+# WAV/AIFF : mutagen n'a pas de mode "easy" pour ces conteneurs -> File(easy=True) rend de
+# l'ID3 BRUT (cles TPE1/TIT2...). Sans ce mapping, artiste/titre/genre sortaient vides
+# pour tous les WAV/AIFF tagues (Beatport, Rekordbox) et Sort tombait sur le modele audio.
+_ID3_FRAMES = {"artist": "TPE1", "title": "TIT2", "album": "TALB", "genre": "TCON"}
 
 # Codes label/catalogue en crochets : [MELCURE010], [001], [KTLP001V1]
 _LABEL_CODE = re.compile(r"\[[A-Za-z0-9]+\]")
@@ -138,8 +144,14 @@ def read_tags(path) -> Dict[str, str]:
     if mf is None or not getattr(mf, "tags", None):
         return {}
 
+    raw_id3 = isinstance(mf.tags, _ID3)
+
     def first(key: str) -> str:
-        val = mf.tags.get(key) if mf.tags else None
+        if raw_id3:
+            frame = mf.tags.get(_ID3_FRAMES[key])
+            val = frame.text if frame is not None else None
+        else:
+            val = mf.tags.get(key) if mf.tags else None
         if not val:
             return ""
         # str() AVANT strip : les tags ASF/WMA rendent des ASFUnicodeAttribute (pas des

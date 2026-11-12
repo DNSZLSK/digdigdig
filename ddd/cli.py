@@ -65,7 +65,8 @@ def _cmd_scan(args: argparse.Namespace) -> int:
             print(f"  [{i}/{total}] {f.name}", file=sys.stderr)
 
     print(f"Scanning {folder} ...", file=sys.stderr)
-    records = scan_library(folder, exclude_names=args.exclude, progress=progress)
+    records = scan_library(folder, exclude_names=args.exclude, progress=progress,
+                           use_cache=not args.no_cache)
 
     out_csv = Path(args.out) if args.out else paths.outputs_dir() / f"scan_{folder.name}.csv"
     out_json = out_csv.with_suffix(".json")
@@ -702,6 +703,8 @@ def build_parser() -> argparse.ArgumentParser:
     p_scan.add_argument("-x", "--exclude", action="append", default=[],
                         metavar="NAME", help="subfolder name to ignore (repeatable, e.g. -x PROD)")
     p_scan.add_argument("-v", "--verbose", action="store_true", help="show each file")
+    p_scan.add_argument("--no-cache", action="store_true",
+                        help="re-analyze every file (ignore the cache of unchanged files)")
     p_scan.set_defaults(func=_cmd_scan)
 
     p_up = sub.add_parser("upgrade",

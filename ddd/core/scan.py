@@ -19,7 +19,9 @@ from typing import Callable, Dict, Iterator, List, Optional, Sequence
 from . import audit as audit_mod
 from .content import duplicate_paths
 from .audit import NameAudit
+from . import scancache
 from .quality import CSV_FIELDS, LOSSLESS_EXTS, LOSSY_EXTS, QualityResult, analyze_file
+from .quality import _current_detector
 
 logger = logging.getLogger(__name__)
 
@@ -40,24 +42,61 @@ def iter_audio_files(root, exclude_names: Sequence[str] = ()) -> Iterator[Path]:
                 yield Path(dirpath) / fn
 
 
+def _analyze(f: Path, cache, detector: str) -> QualityResult:
+    """analyze_file, servi par le cache si le fichier n'a pas change depuis la derniere
+    analyse. Toute erreur de cache est absorbee : on retombe sur l'analyse complete."""
+    if cache is None:
+        return analyze_file(f)
+    try:
+        st = f.stat()
+        hit = cache.get(f, st)
+    except Exception as e:  # noqa: BLE001
+        logger.debug("scan cache get %s: %r", f, e)
+        return analyze_file(f)
+    if hit is not None:
+        return hit
+    q = analyze_file(f, detector=detector)
+    try:
+        cache.put(f, st, q)
+    except Exception as e:  # noqa: BLE001
+        logger.debug("scan cache put %s: %r", f, e)
+    return q
+
+
+def _close(cache) -> None:
+    if cache is None:
+        return
+    logger.info("scan cache: %d fichier(s) repris sans re-analyse", cache.hits)
+    try:
+        cache.close()
+    except Exception as e:  # noqa: BLE001
+        logger.warning("scan cache close: %r", e)
+
+
 def scan_folder(
     root,
     exclude_names: Sequence[str] = (),
     progress: Optional[ProgressCb] = None,
+    use_cache: bool = True,
 ) -> List[QualityResult]:
     """Analyse tous les fichiers audio sous `root`."""
     files = list(iter_audio_files(root, exclude_names))
     total = len(files)
     results: List[QualityResult] = []
-    for i, f in enumerate(files, 1):
-        try:
-            results.append(analyze_file(f))
-        except Exception as e:  # noqa: BLE001
-            # Un seul fichier bancal (tag exotique, I/O reseau en rade...) ne doit JAMAIS
-            # tuer tout le scan : on le loggue et on l'ignore.
-            logger.warning("scan: fichier ignore %s: %r", f, e)
-        if progress:
-            progress(i, total, f)
+    detector = _current_detector()
+    cache = scancache.open_cache(detector) if use_cache else None
+    try:
+        for i, f in enumerate(files, 1):
+            try:
+                results.append(_analyze(f, cache, detector))
+            except Exception as e:  # noqa: BLE001
+                # Un seul fichier bancal (tag exotique, I/O reseau en rade...) ne doit JAMAIS
+                # tuer tout le scan : on le loggue et on l'ignore.
+                logger.warning("scan: fichier ignore %s: %r", f, e)
+            if progress:
+                progress(i, total, f)
+    finally:
+        _close(cache)
     return results
 
 
@@ -137,26 +176,32 @@ def scan_library(
     root,
     exclude_names: Sequence[str] = (),
     progress: Optional[ProgressCb] = None,
+    use_cache: bool = True,
 ) -> List[ScanRecord]:
     """Scan complet : pour chaque fichier, qualite + nommage/tags, puis doublons confirmes par contenu."""
     files = list(iter_audio_files(root, exclude_names))
     total = len(files)
     raw = []
-    for i, f in enumerate(files, 1):
-        try:
-            q = analyze_file(f)
-            n = audit_mod.audit_file(f)
+    detector = _current_detector()
+    cache = scancache.open_cache(detector) if use_cache else None
+    try:
+        for i, f in enumerate(files, 1):
             try:
-                size = f.stat().st_size
-            except OSError:
-                size = 0
-            raw.append((q, n, size))
-        except Exception as e:  # noqa: BLE001
-            # Un seul fichier bancal (tag exotique, I/O reseau en rade...) ne doit JAMAIS
-            # tuer tout le scan : on le loggue et on l'ignore.
-            logger.warning("scan: fichier ignore %s: %r", f, e)
-        if progress:
-            progress(i, total, f)
+                q = _analyze(f, cache, detector)
+                n = audit_mod.audit_file(f)
+                try:
+                    size = f.stat().st_size
+                except OSError:
+                    size = 0
+                raw.append((q, n, size))
+            except Exception as e:  # noqa: BLE001
+                # Un seul fichier bancal (tag exotique, I/O reseau en rade...) ne doit JAMAIS
+                # tuer tout le scan : on le loggue et on l'ignore.
+                logger.warning("scan: fichier ignore %s: %r", f, e)
+            if progress:
+                progress(i, total, f)
+    finally:
+        _close(cache)
 
     records: List[ScanRecord] = []
     for q, n, size in raw:

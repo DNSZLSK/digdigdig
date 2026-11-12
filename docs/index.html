@@ -4,32 +4,34 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>DigDigDig - the crate digger that digs three times</title>
-<meta name="description" content="DDD scans your library, flags limited bandwidth, searches for candidates on Soulseek and files it by genre - from the spectrum, not the filename. Download the Windows app.">
+<meta name="description" content="DDD scans your music library, flags limited bandwidth, hunts better copies on Soulseek, checks them by spectrum and files them by genre. Pulls from your folders, Discogs, Bandcamp, YouTube and SoundCloud. Windows and macOS app.">
+<meta name="theme-color" content="#111316">
 <meta property="og:title" content="DigDigDig">
 <meta property="og:description" content="The crate digger that digs three times. Club-playable quality, verified by spectrum.">
 <meta property="og:image" content="logo.png">
 <link rel="icon" href="logo.png">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Anton&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Anton&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
 <style>
-  /* Palette = celle du GUI (ddd/gui_theme.py) : creme "crate digger", accent crimson. */
+  /* Palette = celle du GUI (ddd/gui_theme.py) : sombre "club", accent lime. */
   :root {
-    --bg: #F6EEDD;        /* corps (ivoire chaud) */
-    --panel: #EFE6D2;     /* cartes / pastilles */
-    --panel2: #E7DCC4;    /* code / badges, un cran plus dense */
-    --field: #FBF5E8;     /* champs / surfaces claires */
-    --txt: #1F1A14;       /* encre (brun presque noir) */
-    --muted: #8A7E68;     /* texte secondaire */
-    --faint: #A2967E;     /* tres pale (capitales) */
-    --line: #E2D5BC;      /* filets */
-    --pink: #C4476B;      /* accent crimson (= app) */
-    --green: #4A7D5E;     /* Lossless */
-    --blue: #4F6C8A;      /* HQ */
-    --tan: #8A6F3A;       /* Iffy */
-    --brick: #9E5A52;     /* Bad */
+    --bg: #111316;        /* corps (quasi noir) */
+    --shell: #0B0C0E;     /* hero / pied de page */
+    --panel: #1A1D22;     /* cartes / pastilles */
+    --panel2: #252930;    /* code / badges */
+    --txt: #E8E8E8;       /* texte principal */
+    --muted: #8B9099;     /* texte secondaire */
+    --faint: #5E636C;     /* capitales pales */
+    --line: #2A2E35;      /* filets */
+    --accent: #C6DD62;    /* lime (= app) */
+    --on-accent: #111316;
+    --green: #9CCB5B;     /* Wide */
+    --blue: #55BDD8;      /* HQ */
+    --tan: #DDA84E;       /* Iffy */
+    --brick: #E0584C;     /* Review */
     --display: "Anton", Impact, "Arial Narrow", sans-serif;
-    --mono: "DM Mono", ui-monospace, "Consolas", "SF Mono", Menlo, monospace;
+    --mono: "JetBrains Mono", ui-monospace, "Consolas", "SF Mono", Menlo, monospace;
   }
   * { box-sizing: border-box; margin: 0; padding: 0; }
   html { scroll-behavior: smooth; }
@@ -40,124 +42,104 @@
     line-height: 1.6;
     -webkit-font-smoothing: antialiased;
   }
-  a { color: var(--pink); text-decoration: none; }
+  a { color: var(--accent); text-decoration: none; }
   a:hover { text-decoration: underline; }
-  .wrap { max-width: 980px; margin: 0 auto; padding: 0 24px; }
+  b { color: var(--txt); font-weight: 600; }
+  .wrap { max-width: 1040px; margin: 0 auto; padding: 0 24px; }
   .mono { font-family: var(--mono); }
 
-  /* Hero - oval logo + wordmark Anton + tagline DM Mono (comme l'en-tete du GUI) */
-  .hero { text-align: center; padding: 60px 24px 46px; }
-  .hero img.logo { width: 100%; max-width: 150px; height: auto; opacity: 0.96; }
+  /* Hero - logo ovale (fond noir natif) + wordmark lime, comme l'en-tete du GUI */
+  .hero { text-align: center; padding: 64px 24px 54px; background: var(--shell); border-bottom: 1px solid var(--line); }
+  .hero img.logo { width: 100%; max-width: 170px; height: auto; }
   .wordmark {
-    font-family: var(--display);
-    font-size: clamp(2.6rem, 9vw, 5.2rem);
+    font-family: var(--display); font-weight: 400;
+    font-size: clamp(2.8rem, 10vw, 5.6rem);
     letter-spacing: 2px; line-height: 1;
-    color: var(--txt); margin-top: 12px;
+    color: var(--accent); margin-top: 14px;
   }
-  .tagline { font-family: var(--mono); font-size: 1rem; color: var(--muted); margin-top: 16px; }
-  .three { font-family: var(--mono); color: var(--faint); margin-top: 8px; font-size: 0.85rem; letter-spacing: 0.3px; }
+  .tagline { font-family: var(--mono); font-size: 0.98rem; color: var(--muted); margin-top: 16px; }
+  .three { font-family: var(--mono); color: var(--faint); margin-top: 8px; font-size: 0.84rem; }
   .three b { color: var(--txt); font-weight: 500; }
 
-  /* Download - bouton plein crimson (= bouton Upgrade du GUI) */
-  .cta { margin-top: 30px; }
+  .cta { margin-top: 32px; display: flex; gap: 12px; justify-content: center; flex-wrap: wrap; }
   .btn {
-    display: inline-block;
-    background: var(--pink);
-    color: #FFFFFF;
-    font-weight: 700;
-    font-size: 1rem;
-    padding: 13px 28px;
-    border-radius: 8px;
-    border: none;
+    display: inline-block; font-weight: 700; font-size: 1rem;
+    padding: 13px 26px; border-radius: 3px;
+    background: var(--accent); color: var(--on-accent); border: 1px solid var(--accent);
   }
-  .btn:hover { background: #b03c5e; text-decoration: none; }
-  .btn + .btn { margin-left: 12px; }
-  .cta .meta { font-family: var(--mono); color: var(--muted); font-size: 0.8rem; margin-top: 13px; }
+  .btn:hover { background: #D4E87A; text-decoration: none; }
+  .btn.ghost { background: transparent; color: var(--txt); border-color: var(--line); }
+  .btn.ghost:hover { border-color: var(--accent); background: transparent; }
+  .meta { font-family: var(--mono); color: var(--muted); font-size: 0.78rem; margin-top: 16px; }
 
   /* Sections */
-  section { padding: 46px 0; border-top: 1px solid var(--line); }
-  h2 { font-family: var(--display); font-size: 1.7rem; letter-spacing: 1px; margin-bottom: 8px; font-weight: 400; }
-  h2 .accent { color: var(--pink); }
-  .lead { color: var(--muted); margin-bottom: 24px; }
+  section { padding: 52px 0; border-top: 1px solid var(--line); }
+  section:first-child { border-top: none; }
+  h2 { font-family: var(--display); font-size: 1.8rem; letter-spacing: 1px; margin-bottom: 8px; font-weight: 400; }
+  h2 .accent { color: var(--accent); }
+  .lead { color: var(--muted); margin-bottom: 26px; max-width: 780px; }
 
-  /* Captures - 2x2, cadre creme plat comme les conteneurs du GUI */
+  /* 3 D */
+  .cards { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; }
+  .card { background: var(--panel); border: 1px solid var(--line); border-radius: 3px; padding: 20px; }
+  .card .num { font-family: var(--mono); font-size: 0.72rem; font-weight: 500; letter-spacing: 2px; color: var(--accent); }
+  .card h3 { font-family: var(--display); font-size: 1.2rem; letter-spacing: 0.5px; margin: 8px 0; font-weight: 400; }
+  .card p { color: var(--muted); font-size: 0.9rem; }
+
+  /* Captures */
   .shots { display: grid; grid-template-columns: repeat(2, 1fr); gap: 22px; }
-  .shot img {
+  .strips { display: grid; gap: 22px; margin-top: 26px; }
+  figure img {
     width: 100%; height: auto; display: block;
-    border: 1px solid var(--line); border-radius: 10px;
-    background: var(--panel);
-    cursor: zoom-in; transition: border-color 0.15s, transform 0.15s;
+    border: 1px solid var(--line); border-radius: 3px; background: var(--shell);
+    cursor: zoom-in; transition: border-color 0.15s;
   }
-  .shot img:hover { border-color: var(--pink); transform: translateY(-2px); }
-  .shot figcaption { color: var(--muted); font-size: 0.86rem; margin-top: 10px; text-align: center; }
+  figure img:hover { border-color: var(--accent); }
+  figcaption { color: var(--muted); font-size: 0.86rem; margin-top: 10px; }
+  figcaption b { font-family: var(--mono); font-weight: 500; color: var(--accent); }
 
-  /* Lightbox - clic sur une capture pour l'agrandir (fond sombre chaud = encre du theme) */
   .lightbox {
     position: fixed; inset: 0; z-index: 50;
     display: none; align-items: center; justify-content: center;
-    background: rgba(31, 26, 20, 0.88);
-    padding: 28px; cursor: zoom-out;
+    background: rgba(5, 6, 8, 0.92); padding: 28px; cursor: zoom-out;
   }
   .lightbox.open { display: flex; }
-  .lightbox img {
-    max-width: 96%; max-height: 92%;
-    border: 1px solid var(--line); border-radius: 10px;
-    box-shadow: 0 16px 50px rgba(0, 0, 0, 0.45);
-  }
-  .lightbox .x {
-    position: absolute; top: 16px; right: 26px;
-    color: var(--bg); font-family: var(--mono); font-size: 1.8rem; line-height: 1;
-    opacity: 0.85; user-select: none;
-  }
-
-  /* 3 D - panneaux creme */
-  .cards { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; }
-  .card { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 20px; }
-  .card .num { font-family: var(--mono); font-size: 0.72rem; font-weight: 500; letter-spacing: 2px; color: var(--faint); }
-  .card h3 { font-family: var(--display); font-size: 1.15rem; letter-spacing: 0.5px; margin: 8px 0 8px; font-weight: 400; }
-  .card p { color: var(--muted); font-size: 0.9rem; }
+  .lightbox img { max-width: 96%; max-height: 92%; border: 1px solid var(--line); border-radius: 3px; }
+  .lightbox .x { position: absolute; top: 16px; right: 26px; color: var(--txt); font-family: var(--mono); font-size: 1.8rem; line-height: 1; opacity: 0.8; }
 
   /* Encart */
-  .highlight {
-    background: var(--panel);
-    border: 1px solid var(--line);
-    border-left: 3px solid var(--pink);
-    border-radius: 10px;
-    padding: 22px 24px;
-  }
+  .highlight { background: var(--panel); border: 1px solid var(--line); border-left: 3px solid var(--accent); border-radius: 3px; padding: 24px 26px; }
   .highlight h2 { margin-bottom: 10px; }
-  .highlight p { color: var(--txt); }
-  .highlight .pts { margin-top: 16px; display: flex; flex-wrap: wrap; gap: 9px; }
-  /* Pastilles = badges BAND du GUI (fond creme, texte de la bande, filet discret) */
-  .tag { font-family: var(--mono); font-size: 0.74rem; padding: 4px 10px; border-radius: 6px;
-         font-weight: 500; letter-spacing: 0.4px; background: var(--field); border: 1px solid var(--line); }
-  .tag.ok { color: var(--green); }
-  .tag.hq { color: var(--blue); }
-  .tag.susp { color: var(--tan); }
-  .tag.fake { color: var(--brick); }
+  .highlight p { color: var(--muted); }
+  .pts { margin-top: 18px; display: flex; flex-wrap: wrap; gap: 9px; }
+  .tag { font-family: var(--mono); font-size: 0.74rem; padding: 4px 10px; border-radius: 3px;
+         font-weight: 500; letter-spacing: 0.4px; background: var(--bg); border: 1px solid var(--line); }
+  .tag.ok { color: var(--green); } .tag.hq { color: var(--blue); }
+  .tag.susp { color: var(--tan); } .tag.fake { color: var(--brick); }
+
+  /* Sources */
+  .sources { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 4px; }
+  .src { font-family: var(--mono); font-size: 0.78rem; padding: 5px 11px; border: 1px solid var(--line); border-radius: 3px; color: var(--txt); background: var(--panel); }
 
   /* Etapes */
   ol.steps { list-style: none; counter-reset: s; }
   ol.steps li { counter-increment: s; padding: 11px 0 11px 42px; position: relative; color: var(--muted); }
   ol.steps li::before {
-    content: counter(s);
-    position: absolute; left: 0; top: 9px;
-    width: 26px; height: 26px; border-radius: 6px;
-    background: var(--field); border: 1px solid var(--line);
-    color: var(--pink); font-family: var(--mono); font-weight: 500; text-align: center; line-height: 24px; font-size: 0.82rem;
+    content: counter(s); position: absolute; left: 0; top: 9px;
+    width: 26px; height: 26px; border-radius: 3px; background: var(--panel); border: 1px solid var(--line);
+    color: var(--accent); font-family: var(--mono); font-weight: 500; text-align: center; line-height: 24px; font-size: 0.82rem;
   }
-  ol.steps li b { color: var(--txt); }
-  code { background: var(--panel2); padding: 2px 7px; border-radius: 6px; font-size: 0.86em; color: var(--txt);
-         font-family: var(--mono); }
+  code { background: var(--panel2); padding: 2px 7px; border-radius: 3px; font-size: 0.84em; color: var(--txt); font-family: var(--mono); }
+  .cli { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
 
-  footer { text-align: center; padding: 38px 24px 56px; color: var(--muted); font-size: 0.86rem; border-top: 1px solid var(--line); }
+  footer { text-align: center; padding: 40px 24px 58px; color: var(--muted); font-size: 0.86rem; border-top: 1px solid var(--line); background: var(--shell); }
+  footer .legal { margin: 16px auto 0; font-size: 0.78rem; max-width: 640px; color: var(--faint); }
 
-  @media (max-width: 680px) {
+  @media (max-width: 720px) {
     .cards, .shots { grid-template-columns: 1fr; }
-    .hero { padding-top: 44px; }
-    /* Empile les boutons DL en pleine largeur : en inline-block ils se chevauchaient au wrap (padding > line-height) */
-    .cta { display: flex; flex-direction: column; }
-    .btn + .btn { margin-left: 0; margin-top: 12px; }
+    .hero { padding-top: 46px; }
+    .cta { flex-direction: column; }
+    .btn { text-align: center; }
   }
 </style>
 </head>
@@ -171,9 +153,9 @@
       <p class="three">Dig your <b>sources</b> &nbsp;-&gt;&nbsp; Dig <b>Soulseek</b> &nbsp;-&gt;&nbsp; Dig the <b>spectrum</b></p>
       <div class="cta">
         <a class="btn" href="https://github.com/DNSZLSK/digdigdig/releases/latest/download/DDD-windows.zip">Download for Windows</a>
-        <a class="btn" href="https://github.com/DNSZLSK/digdigdig/releases/latest/download/DDD-macos-AppleSilicon.zip">Download for macOS</a>
-        <p class="meta">Double-click, no install. No Python, no ffmpeg needed. macOS: Apple Silicon, right-click -&gt; Open on first launch.</p>
+        <a class="btn ghost" href="https://github.com/DNSZLSK/digdigdig/releases/latest/download/DDD-macos-AppleSilicon.zip">Download for macOS</a>
       </div>
+      <p class="meta">Double-click, no install. No Python, no ffmpeg. macOS: Apple Silicon, right-click -&gt; Open on first launch.</p>
     </div>
   </header>
 
@@ -183,66 +165,72 @@
       <h2>What is it?</h2>
       <p class="lead">
         DDD cleans up your music library and bumps it to <b>club-playable quality</b>, on its own.
-        It flags limited bandwidth for review and searches for candidates on Soulseek
-        (FLAC, WAV or AIFF, with an automatic MP3 320 fallback), checks every file by spectrum, and files
-        it into a clean library - sorted by genre <b>from the audio itself</b>, not the filename.
-        No need to be a developer&nbsp;: it's a window.
+        It flags limited bandwidth for review, searches Soulseek for a better copy
+        (FLAC, WAV or AIFF, with an automatic MP3 320 fallback), checks every download by spectrum, and files
+        it into one clean library, sorted by genre <b>from the audio itself</b> when the tags are empty.
+        No need to be a developer: it's a window.
       </p>
       <div class="cards">
         <div class="card">
           <div class="num">1 · DIG</div>
           <h3>Your sources</h3>
-          <p>Scan any folder on your disk, pull your Discogs and Bandcamp favorites, or paste a YouTube set / playlist.
-          Reads FLAC, WAV, AIFF, MP3, MP4&nbsp;/ M4A, WMA, APE and more&nbsp;- old rips included.</p>
+          <p>Scan any folder, pull your Discogs wantlist or Bandcamp wishlist, or paste a YouTube set / playlist / channel or your SoundCloud likes, sets and mixes.
+          Reads FLAC, WAV, AIFF, MP3, MP4&nbsp;/ M4A, WMA, APE and more, old rips included.</p>
         </div>
         <div class="card">
           <div class="num">2 · DOWNLOAD</div>
           <h3>Soulseek</h3>
-          <p>Looks for FLAC / WAV / AIFF, with an automatic MP3 320 fallback, live per-track status and automatic resume. Anything not found comes out as Discogs / Bandcamp buy links.</p>
+          <p>Looks for FLAC / WAV / AIFF with an automatic MP3 320 fallback, live per-track status and automatic resume. Anything not found comes out as Discogs / Bandcamp buy links.</p>
         </div>
         <div class="card">
           <div class="num">3 · DETECT</div>
           <h3>The spectrum</h3>
-          <p>FFT analysis&nbsp;: ranks as Wide / HQ / Iffy / Review, plus duration and identity checks. Only the right track, above your bar, is kept.</p>
+          <p>FFT analysis ranks each file Wide / HQ / Iffy / Review, plus duration and identity checks. Only the right track, above your bar, is kept.</p>
         </div>
       </div>
     </section>
 
     <section>
       <h2>What it looks like</h2>
-      <p class="lead">Four tabs, a native window. No terminal.</p>
+      <p class="lead">Five tabs, one native window. No terminal.</p>
       <div class="shots">
-        <figure class="shot">
-          <img src="screenshot-library.png" alt="Library tab: quality scan and upgrade">
-          <figcaption>Library&nbsp;: scan a folder - Lossless, HQ, Iffy or Bad? - then upgrade with live per-track status.</figcaption>
+        <figure>
+          <img src="screenshot-library.png" alt="Library tab: quality scan of a folder, files below the bar ticked for upgrade">
+          <figcaption><b>Library</b>&nbsp; scan a folder: Wide, HQ, Iffy or Review? Fake lossless and low bitrates are flagged, then upgraded with live per-track status. Click any track to see its spectrogram.</figcaption>
         </figure>
-        <figure class="shot">
-          <img src="screenshot-sort-by.png" alt="Sort by genre tab: audio-ML filing">
-          <figcaption>Sort by genre&nbsp;: files loose tracks into your vibe folders, read from the <b>spectrum</b> (local audio-ML) - even a track named Track_01.flac.</figcaption>
+        <figure>
+          <img src="screenshot-sort-by.png" alt="Sort by genre tab: preview of tracks filed into vibe folders">
+          <figcaption><b>Sort by genre</b>&nbsp; preview, then file loose tracks into your vibe folders, from the tags, Discogs, or the audio itself.</figcaption>
         </figure>
-        <figure class="shot">
-          <img src="screenshot-get-favorite.png" alt="Get favorites tab: Discogs and Bandcamp">
-          <figcaption>Get favorites&nbsp;: pull your Discogs / Bandcamp favorites straight into your library.</figcaption>
+      </div>
+      <div class="strips">
+        <figure>
+          <img src="screenshot-youtube.png" alt="YouTube / SoundCloud tab: paste a set, playlist, channel or SoundCloud likes URL">
+          <figcaption><b>YouTube / SoundCloud</b>&nbsp; paste a set, playlist, channel, or SoundCloud likes / set / mix URL. DDD scrapes the tracklist and grabs it in real lossless. 1001Tracklists: paste the list into a text file.</figcaption>
         </figure>
-        <figure class="shot">
-          <img src="screenshot-youtube.png" alt="YouTube set tab: paste a set or playlist URL">
-          <figcaption>YouTube set&nbsp;: paste a set / playlist URL, DDD scrapes the tracklist and grabs it in real lossless.</figcaption>
+        <figure>
+          <img src="screenshot-get-favorite.png" alt="Get favorites tab: Discogs or Bandcamp, latest additions only">
+          <figcaption><b>Get favorites</b>&nbsp; your Discogs / Bandcamp favorites straight into your library, everything or only the latest additions.</figcaption>
+        </figure>
+        <figure>
+          <img src="screenshot-identify.png" alt="Identify tab: recover names of no-name files by acoustic fingerprint">
+          <figcaption><b>Identify</b>&nbsp; lost the names? Recover <i>Artist - Title</i> by acoustic fingerprint (AcoustID). You confirm each match before anything is renamed.</figcaption>
         </figure>
       </div>
     </section>
 
     <section>
       <div class="highlight">
-        <h2>The thing that changes everything&nbsp;: <span class="accent">measure, compare, review</span></h2>
+        <h2>Measure, compare, <span class="accent">review</span></h2>
         <p>
           Spectral analysis measures <b>bandwidth</b>, not compression history.
-          A genuine filtered recording can have little high-frequency content.
-          DDD flags measurements against your chosen threshold; listen before removing originals.
+          A genuine filtered recording can have little high-frequency content, so
+          DDD flags measurements against your chosen threshold: listen before removing originals.
           Every downloaded file is <b>re-audited</b> (spectrum + duration + title/artist identity) and ranked
-          by its real cutoff. You pick what DDD keeps - and what it hunts for&nbsp;:
+          by its real cutoff. You pick what DDD keeps, and what it hunts for:
           <b>DJ Club</b> (&gt;= 18 kHz, default, MP3 320 included), <b>Audiophile</b> (&gt;= 20 kHz),
-          <b>Purist</b> (wide spectrum), or a target-format mode&nbsp;- <b>MP3 320</b> (vintage / mobile),
-          <b>WAV/AIFF only</b> or <b>FLAC only</b>. MP3s below 320 kbps are banned no matter what&nbsp;; originals are retained by default.
+          <b>Purist</b> (wide spectrum), or a target format: <b>MP3 320</b> (vintage gear / mobile),
+          <b>WAV/AIFF only</b> or <b>FLAC only</b>. MP3s below 320 kbps are banned no matter what; originals are retained by default.
         </p>
         <div class="pts">
           <span class="tag ok">WIDE SPECTRUM</span>
@@ -257,8 +245,8 @@
       <h2>Sorted by the <span class="accent">sound</span>, not the name</h2>
       <p class="lead">
         "Sort by genre" files your loose tracks into your own vibe folders (ACID, DEEPWATER, HOUSERZ,
-        TECHNO, TRANCE, DISCO-FUNK, ...). It reads the ID3 genre tag, asks Discogs - and when both come up
-        empty, it <b>classifies the audio</b> with a local Discogs-EffNet model (400 Discogs styles, run
+        TECHNO, TRANCE, DISCO-FUNK, ...). It reads the genre tag, asks Discogs, and when both come up
+        empty it <b>classifies the audio</b> with a local Discogs-EffNet model (400 Discogs styles, run
         on-device, no cloud). So even a badly named, untagged, never-released edit lands in the right folder
         instead of an <code>_INBOX</code> pile.
       </p>
@@ -268,17 +256,23 @@
       <h2>How it works</h2>
       <p class="lead">A few clicks in the window.</p>
       <ol class="steps">
-        <li><b>Fill in your access</b> (Settings)&nbsp;: Soulseek login, Discogs token, and the library folder.</li>
-        <li><b>Scan a folder</b> (or pull your favorites)&nbsp;: DDD ranks every file and spots duplicates.</li>
-        <li><b>Upgrade</b>&nbsp;: what passes your bar lands in your library, originals are retained by default.</li>
-        <li><b>Sort by genre</b>&nbsp;: file the whole pile into vibe folders, read from the spectrum. One clean, de-duplicated library.</li>
-        <li><b>Identify</b> (lost the names?)&nbsp;: recover <i>Artist - Title</i> for no-name files by acoustic fingerprint (AcoustID) - you confirm each match, then it renames + tags.</li>
+        <li><b>Fill in your access</b> (gear, top right): Soulseek login, Discogs token, and the library folder.</li>
+        <li><b>Scan a folder</b>, or pull your favorites / a set: DDD ranks every file and spots duplicates.</li>
+        <li><b>Upgrade</b>: what passes your bar lands in your library, originals are retained by default.</li>
+        <li><b>Sort by genre</b>: file the whole pile into vibe folders. One clean, de-duplicated library.</li>
+        <li><b>Identify</b> the no-name leftovers by fingerprint, confirm, rename + tag.</li>
       </ol>
+      <p class="lead" style="margin-top:20px; margin-bottom:0">
+        Also on the command line, portable Python core (Windows / Mac / Linux):
+      </p>
+      <div class="cli">
+        <code>ddd scan</code><code>ddd upgrade</code><code>ddd import</code><code>ddd rename</code>
+        <code>ddd identify</code><code>ddd sort</code><code>ddd buy</code><code>ddd scrape</code>
+        <code>ddd acquire</code><code>ddd detector-shadow</code><code>ddd selftest</code><code>ddd config</code><code>ddd gui</code>
+      </div>
       <p class="lead" style="margin-top:18px">
-        Also available on the command line&nbsp;: <code>ddd scan</code>, <code>ddd upgrade</code>,
-        <code>ddd sort</code>, <code>ddd rename</code>, <code>ddd identify</code>, <code>ddd buy</code>,
-        <code>ddd scrape</code>, <code>ddd acquire</code>, <code>ddd config</code>, <code>ddd gui</code>. Portable Python core
-        (Windows / Mac / Linux).
+        Something off on your machine? Run <code>DDD.exe --selftest</code>: it checks decoding, fingerprinting,
+        Soulseek, the genre model and the scrapers end to end, and writes a report you can send along.
       </p>
     </section>
 
@@ -293,9 +287,9 @@
       <a href="https://github.com/DNSZLSK/digdigdig">Source code on GitHub</a>
     </p>
     <p style="margin-top:10px" class="mono">DDD - DigDigDig · measure, compare, review.</p>
-    <p style="margin-top:16px; font-size:0.78rem; max-width:640px; margin-left:auto; margin-right:auto; color:var(--muted);">
-      DDD is a tool to manage your library&nbsp;; it hosts and provides no content.
-      Soulseek is a peer-to-peer network&nbsp;: downloading copyrighted music without authorization
+    <p class="legal">
+      DDD is a tool to manage your library; it hosts and provides no content.
+      Soulseek is a peer-to-peer network: downloading copyrighted music without authorization
       may be illegal in your country. You are solely responsible for your use and for complying with copyright law.
     </p>
   </footer>
@@ -304,15 +298,13 @@
   <script>
     (function () {
       var lb = document.getElementById('lightbox'), img = lb.querySelector('img');
-      // Sur un ecran HiDPI (Windows a 150/175%...), afficher l'image plus large que sa
-      // resolution NATIVE en pixels device la rend floue. On plafonne a naturalWidth/dpr
-      // (= mapping 1:1 device-pixel) tout en restant dans le viewport.
+      // HiDPI : plafonne a naturalWidth/dpr (mapping 1:1 device-pixel) pour rester net.
       function fit() {
         var dpr = window.devicePixelRatio || 1;
         img.style.maxWidth = Math.min(window.innerWidth * 0.96, img.naturalWidth / dpr) + 'px';
         img.style.maxHeight = Math.min(window.innerHeight * 0.92, img.naturalHeight / dpr) + 'px';
       }
-      document.querySelectorAll('.shot img').forEach(function (t) {
+      document.querySelectorAll('figure img').forEach(function (t) {
         t.addEventListener('click', function () {
           img.src = t.src; img.alt = t.alt; lb.classList.add('open');
           if (img.complete) fit(); else img.onload = fit;

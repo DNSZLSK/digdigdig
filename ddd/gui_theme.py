@@ -1,40 +1,44 @@
-"""Palette + helpers de presentation pour la fenetre DDD (theme creme "crate digger").
+"""Palette + helpers de presentation pour la fenetre DDD (theme sombre "club").
 
 Module PUR (aucun import flet) : couleurs + petites fonctions de formatage de
 chaines pour le tableau. Importable headless (le test de build GUI s'en sert).
 
 Le miroir de cette palette vit dans docs/index.html (:root) si on veut que le site
-colle a l'app. Sync optionnelle et separee (le site reste sombre pour l'instant).
+colle a l'app (synchronise sur le theme sombre "club").
 """
 
 from __future__ import annotations
 
 from .core import naming, quality
 
-# --- Palette creme "crate digger" -------------------------------------------
-# Valeurs EXACTES reprises du mockup HTML de reference (Desktop/DigDigDig.html).
-BG = "#F6EEDD"        # corps de l'app (ivoire chaud, UNIFORME : pas de carte grise)
-SHELL = "#E1D2B6"     # pourtour / barre de titre du mockup (beige plus dense)
-SURFACE = "#EFE6D2"   # fond des pastilles BAND
-FIELD_BG = "#FBF5E8"  # champs de saisie (un poil plus clair que le corps)
-LINE = "#E2D5BC"      # filets / dividers / bordures discretes
-INK = "#1F1A14"       # texte principal + bouton Scan + wordmark (brun presque noir)
-INK_DIM = "#8A7E68"   # texte secondaire (artiste, cutoff, tagline, footer)
-INK_FAINT = "#A2967E"  # en-tetes de colonnes en capitales
-PINK = "#C4476B"      # accent crimson (onglet actif, Upgrade, coches, statut probleme)
-DOT_GREEN = "#3DA56A"  # point "slsk connected" (vert plus vif que la bande)
+# --- Palette sombre "club" ---------------------------------------------------
+# Fond quasi noir froid, accent lime acide (flyer rave), bandes saturees.
+BG = "#111316"        # corps de l'app
+SHELL = "#0B0C0E"     # pourtour
+SURFACE = "#1A1D22"   # fond des pastilles BAND / petits panneaux
+FIELD_BG = "#181B20"  # champs de saisie
+LINE = "#2A2E35"      # filets / dividers / bordures
+INK = "#E8E8E8"       # texte principal + bouton Scan + wordmark
+INK_DIM = "#8B9099"   # texte secondaire
+INK_FAINT = "#5E636C"  # en-tetes de colonnes en capitales
+PINK = "#C6DD62"      # ACCENT lime (onglet actif, Upgrade, coches, focus) - nom garde pour compat
+ON_ACCENT = "#111316"  # texte pose sur l'accent
+ALERT = "#EC6156"     # statut probleme (sous la barre, rejets)
+BTN_BG = "#252930"    # boutons d'action secondaires (Scan, Sort, Fetch, Identify)
+BTN_FG = "#E8E8E8"    # texte de ces boutons
+DOT_GREEN = "#9CCB5B"  # point "slsk connected"
 
 # Bande qualite - tons VIFS pour les points de stats + la barre empilee + le statut.
-GREEN = "#5A8C6E"
-BLUE = "#5E7D9C"
-TAN = "#A8843F"
-BRICK = "#B06258"
-NEUTRAL = "#9A8E78"
-# Bande qualite - tons SOMBRES pour le TEXTE des pastilles BAND (lisible sur #EFE6D2).
-BAND_GREEN = "#4A7D5E"
-BAND_BLUE = "#4F6C8A"
-BAND_TAN = "#8A6F3A"
-BAND_BRICK = "#9E5A52"
+GREEN = "#9CCB5B"
+BLUE = "#55BDD8"
+TAN = "#DDA84E"
+BRICK = "#E0584C"
+NEUTRAL = "#6B7079"
+# Bande qualite - texte des pastilles BAND (memes tons vifs, lisibles sur fond sombre).
+BAND_GREEN = GREEN
+BAND_BLUE = BLUE
+BAND_TAN = TAN
+BAND_BRICK = BRICK
 
 VERDICT_COLOR = {
     quality.LOSSLESS: GREEN,
@@ -72,6 +76,21 @@ def band_label(verdict: str) -> str:
     return VERDICT_LABEL.get(verdict, verdict).upper()
 
 
+# Debits CBR standard (MPEG-1 Layer III + AAC courants). Le debit mesure inclut les tags
+# et la pochette (taille*8/duree) -> un CBR 320 s'affichait "mp3 321" / "mp3 322".
+_STD_KBPS = (32, 40, 48, 56, 64, 80, 96, 112, 128, 160, 192, 224, 256, 320)
+
+
+def display_kbps(kbps: float) -> int:
+    """Cale un debit mesure sur le CBR standard le plus proche s'il est a moins de 3 %.
+    Un vrai VBR (ex. 245) reste tel quel. Affichage seulement : le tri qualite garde la mesure."""
+    k = round(kbps or 0)
+    if k <= 0:
+        return 0
+    std = min(_STD_KBPS, key=lambda s: abs(s - k))
+    return std if abs(std - k) <= std * 0.03 else k
+
+
 def format_label(q) -> str:
     """Format lisible pour la colonne FORMAT : '.flac' / '.wav' / 'mp3 320' / '-'."""
     if q.verdict in (quality.SKIPPED, quality.ERROR):
@@ -79,7 +98,7 @@ def format_label(q) -> str:
     ext = (q.ext or "").lower()
     if q.format_class == "lossy":
         codec = ext.lstrip(".") or "mp3"
-        kbps = round(q.container_bitrate or 0)
+        kbps = display_kbps(q.container_bitrate)
         return f"{codec} {kbps}" if kbps else codec
     return ext or "-"
 

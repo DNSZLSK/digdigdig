@@ -28,7 +28,7 @@
 
 **DDD cleans up your music library and bumps it to club-playable quality, on its own.**
 
-You point it at a folder (or your Discogs / Bandcamp favorites), and DDD:
+You point it at a folder (or your Discogs / Bandcamp favorites, a YouTube set or your SoundCloud likes), and DDD:
 - flags **limited bandwidth and suspicious encodings** for review,
 - searches for a **candidate version** on Soulseek (FLAC, WAV or AIFF, with an automatic MP3 320 fallback if nothing lossless turns up),
 - checks the downloaded file against your **bandwidth threshold**, requested identity and duration,
@@ -38,21 +38,25 @@ No need to be a developer: download the `.exe`, double-click, it's a window.
 
 ## What it looks like
 
-**Library - scan a folder and upgrade** (Lossless, HQ, Iffy or Bad? live per-track status):
+**Library - scan a folder and upgrade** (Wide, HQ, Iffy or Review? fake lossless and low bitrates flagged, live per-track status):
 
 <p align="center"><img src="docs/screenshot-library.png" alt="Library tab: quality scan + upgrade" width="900"></p>
 
-**Sort by genre - filed from the spectrum** (local audio-ML; even untagged / badly named tracks):
+**Sort by genre - preview, then file** into your vibe folders (tags, Discogs, or local audio-ML for untagged tracks):
 
 <p align="center"><img src="docs/screenshot-sort-by.png" alt="Sort by genre tab: audio-ML filing" width="900"></p>
 
-**Get favorites - Discogs / Bandcamp** straight to lossless:
+**Get favorites - Discogs / Bandcamp** straight to lossless (everything, or only the latest additions):
 
 <p align="center"><img src="docs/screenshot-get-favorite.png" alt="Get favorites tab" width="900"></p>
 
-**YouTube set - paste a set / playlist URL**, DDD scrapes the tracklist:
+**YouTube / SoundCloud - paste a set, playlist, channel or SoundCloud likes / set / mix URL**, DDD scrapes the tracklist:
 
-<p align="center"><img src="docs/screenshot-youtube.png" alt="YouTube set tab" width="900"></p>
+<p align="center"><img src="docs/screenshot-youtube.png" alt="YouTube / SoundCloud tab" width="900"></p>
+
+**Identify - recover lost names** by acoustic fingerprint, you confirm each match:
+
+<p align="center"><img src="docs/screenshot-identify.png" alt="Identify tab" width="900"></p>
 
 ## What it does
 
@@ -61,6 +65,8 @@ No need to be a developer: download the `.exe`, double-click, it's a window.
   - **HQ** (blue): >= 18 kHz, playable on a big system (includes MP3 320).
   - **Iffy** (yellow): 16-18 kHz, borderline.
   - **Review** (red): reduced bandwidth or bitrate below the configured floor.
+  - **See it for yourself**: click a track (or its cutoff) to open its **spectrogram** - the whole track, with the measured cutoff and the 16 / 18 / 20 kHz marks. A fake lossless shows a hard wall where the MP3 encoder cut.
+  - **Rescans are near-instant**: each file's analysis is remembered until the file changes (size or date), so after an upgrade only new or replaced files are re-analyzed. `ddd scan --no-cache` forces a full pass.
 - **Reads pretty much anything**: FLAC, WAV, AIFF, MP3, OGG/Opus, **MP4 / M4A** (AAC *and* ALAC), **WMA** (including WMA Lossless), APE, TTA, WavPack. That old folder of iTunes-era `.mp4` rips or Windows Media `.wma` gets scanned like the rest, instead of showing up empty. What's *inside* the container decides: an ALAC `.m4a` is treated as lossless and put through the same anti-upscale spectral check as a FLAC, not written off as lossy because of its extension.
 - **Quality / target modes** (in Settings) - the bar DDD keeps to, and what it goes hunting for:
   - **DJ Club** (>= 18 kHz) - *default*: keeps anything club-playable, MP3 320 included.
@@ -70,7 +76,7 @@ No need to be a developer: download the `.exe`, double-click, it's a window.
   - **WAV/AIFF only** / **FLAC only**: target a single lossless container (old CDJs/samplers that won't read FLAC, or a FLAC-homogeneous library). DDD never transcodes what you already own - the mode just picks the format of what it fetches.
 - **Upgrade**: downloads candidates from Soulseek and retains the originals by default. The CLI `--trash-original` option or GUI checkbox explicitly enables removal, only after a verified copy has been installed. Name collisions retain both names using a numbered suffix. In **DJ Club / Audiophile** it looks for FLAC, WAV and AIFF (lots of DJs share in WAV/AIFF), with an **automatic MP3 320 fallback** for tracks that can't be found in lossless. MP3s below 320 kbps are **banned across the board**, whatever the mode.
 - **Get favorites**: scrapes your Discogs wantlist / Bandcamp wishlist and downloads it.
-- **YouTube set / playlist**: paste a set URL (YouTube / 1001Tracklists) or a **YouTube playlist** (each video = a track) -> DDD extracts the tracklist into a want-list (CSV).
+- **YouTube / SoundCloud**: paste a **YouTube** set, playlist or channel (each video = a track; a set's tracklist is read from YouTube's Music section, the description and comments), or a public **SoundCloud** likes / set / profile URL (each sound = a track, liked EPs unfolded, durations kept to filter Soulseek results) or a SoundCloud mix -> DDD extracts a want-list (CSV) and downloads it. Private lists (YouTube *Liked videos*, *Watch later*) can't be read: DDD never logs in to your accounts. **1001Tracklists** blocks scrapers (Cloudflare): copy the tracklist from your browser into a `.txt` file (one `Artist - Title` per line) and give DDD that file.
 - **Single library**: everything that passes lands in `~/Music/DDD` (changeable in Settings), de-duplicated. Rejected download candidates go to the **trash**. Import leaves rejected, unreadable and duplicate source files in place.
 - **Sort by genre** (*Sort by genre* button / `ddd sort`): files your loose tracks into your own **vibe folders** through a cascade - the file's **ID3 genre tag**, then **Discogs** (+ MusicBrainz), and when both come up empty a **local audio model** (Discogs-EffNet, 400 Discogs styles) that reads the genre **from the spectrum** - so even an untagged, badly-named edit (`Track_01.flac`) lands in the right folder instead of `_INBOX`. The default set is house/techno-oriented (ACID, DEEPWATER, HOUSERZ, PROG, TECHNO, TRANCE, GARAGE, DISCO-FUNK, BREAKS-ELECTRO) and is **fully editable** in Settings. **Dry-run by default** - you preview, then Apply. Only loose files are touched, never your curated subfolders. (The audio model runs **on-device, no cloud**; by the MTG/UPF, CC BY-NC.)
 - **Identify - recover lost names** (*Identify* tab / `ddd identify`): files called `YH1`, `track01`, `unknown 04`? DDD reads each file's **acoustic fingerprint** (Chromaprint) and matches it against **AcoustID** (the open, MusicBrainz-backed database, same idea as Shazam) to recover *Artist - Title*. It **proposes**, you **confirm track by track** (confident matches pre-ticked, uncertain ones flagged), then it renames + tags only what you kept - **never a blind rename**. Underground / unreleased tracks that aren't in the database just stay untouched.
@@ -91,6 +97,8 @@ Accepted downloads are copied without overwriting existing files, flushed and ch
    - the **library folder** (default `~/Music/DDD`).
 3. **Library** tab: pick a folder -> *Scan* -> check the files -> *Upgrade selection*.
    **Get favorites** tab: pick Discogs/Bandcamp -> *Fetch & download*.
+   **YouTube / SoundCloud** tab: paste a URL (or a tracklist `.txt`) -> *Fetch & download*.
+4. Something off? Run `DDD.exe --selftest`: it checks decoding, fingerprinting, Soulseek, the genre model and the scrapers end to end, and writes a report you can send along.
 
 > The 3 D's: **DIG** your sources -> **DOWNLOAD** from Soulseek -> **DETECT** by spectrum. The output
 > is a library of candidates checked against your selected thresholds, which you can then share / point anywhere you want.
@@ -112,8 +120,8 @@ productions, your promos / white-labels, public domain / CC, or re-downloading i
 Portable **Python** core (Windows / Mac / Linux) + native **Flet** window. Downloading via
 **sldl** ([fiso64/slsk-batchdl](https://github.com/fiso64/slsk-batchdl), bundled). Spectral detection
 via numpy/scipy/soundfile, with **PyAV** as the decoding fallback for what libsndfile won't open
-(MP4/M4A, WMA, APE...); genre-from-audio via a **Discogs-EffNet** ONNX model run with **onnxruntime** (no TensorFlow). Scrapers for Discogs (API), Bandcamp (cloudscraper), YouTube sets and
-playlists (yt-dlp). Everything is bundled into the `.exe` (no Python, no ffmpeg to install).
+(MP4/M4A, WMA, APE...); genre-from-audio via a **Discogs-EffNet** ONNX model run with **onnxruntime** (no TensorFlow). Scrapers for Discogs (API), Bandcamp (cloudscraper), YouTube sets,
+playlists and channels (yt-dlp + YouTube's Music section) and SoundCloud (public API). Everything is bundled into the `.exe` (no Python, no ffmpeg to install).
 
 ---
 
@@ -148,8 +156,9 @@ playlists (yt-dlp). Everything is bundled into the `.exe` (no Python, no ffmpeg 
 .\.venv\Scripts\python.exe -m ddd scrape bandcamp <user>
 .\.venv\Scripts\python.exe -m ddd acquire outputs\bandcamp_<user>.csv
 
-# DJ set or YouTube playlist (each video = a track) -> extract the tracklist to a want-list CSV
+# DJ set, YouTube playlist/channel, SoundCloud likes/set/mix, or a .txt tracklist -> want-list CSV
 .\.venv\Scripts\python.exe -m ddd scrape djset "https://www.youtube.com/playlist?list=..."
+.\.venv\Scripts\python.exe -m ddd scrape djset "https://soundcloud.com/<user>/likes" --newest 50
 
 # Not found -> Discogs + Bandcamp buy-links page (folder, upgrade report, or want-list)
 .\.venv\Scripts\python.exe -m ddd buy "C:\path\to\Music"
@@ -157,6 +166,12 @@ playlists (yt-dlp). Everything is bundled into the `.exe` (no Python, no ffmpeg 
 # Settings (library folder, Discogs token, Soulseek login) -> %APPDATA%\ddd
 .\.venv\Scripts\python.exe -m ddd config set download_dir "D:\My Library"
 .\.venv\Scripts\python.exe -m ddd config set discogs_token <token>
+
+# Preview what the forensic detector (opt-in) would change; modifies nothing
+.\.venv\Scripts\python.exe -m ddd detector-shadow "C:\path\to\Music"
+
+# End-to-end self check (decode, fpcalc, sldl, genre model, GUI, live scrapers) -> report
+.\.venv\Scripts\python.exe -m ddd selftest
 
 # The native window
 .\.venv\Scripts\python.exe -m ddd gui
