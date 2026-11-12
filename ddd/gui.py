@@ -1570,10 +1570,17 @@ def main(page: ft.Page) -> None:
     _btn_shape = ft.RoundedRectangleBorder(radius=3)
     _btn_pad = ft.padding.symmetric(horizontal=18, vertical=13)
     _btn_txt = ft.TextStyle(weight=ft.FontWeight.BOLD, size=13)
-    _ink_style = ft.ButtonStyle(bgcolor=theme.BTN_BG, color=theme.BTN_FG, shape=_btn_shape,
+    # Etat desactive explicite : sur fond sombre, un bouton accent inactif restait lime vif
+    # et se lisait comme cliquable (ex. "Rename + tag selection · 0").
+    _off = ft.ControlState.DISABLED
+    _on = ft.ControlState.DEFAULT
+    _ink_style = ft.ButtonStyle(bgcolor={_off: SURFACE, _on: theme.BTN_BG},
+                                color={_off: TXT_FAINT, _on: theme.BTN_FG}, shape=_btn_shape,
                                 side=ft.BorderSide(1, BORDER), padding=_btn_pad,
                                 text_style=_btn_txt)
-    _pink_style = ft.ButtonStyle(bgcolor=ACCENT, color=theme.ON_ACCENT, shape=_btn_shape,
+    _pink_style = ft.ButtonStyle(bgcolor={_off: SURFACE, _on: ACCENT},
+                                 color={_off: TXT_FAINT, _on: theme.ON_ACCENT}, shape=_btn_shape,
+                                 side={_off: ft.BorderSide(1, BORDER), _on: ft.BorderSide(0, ACCENT)},
                                  padding=_btn_pad, text_style=_btn_txt)
     _outline_style = ft.ButtonStyle(color=TXT, bgcolor=FIELD_BG, side=ft.BorderSide(1, BORDER),
                                     shape=_btn_shape, padding=ft.padding.symmetric(horizontal=14,
